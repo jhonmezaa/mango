@@ -1,4 +1,5 @@
 import {
+  APP_LARGE_STRINGS,
   call,
   INIT_TYPE,
   isSandboxOrigin,
@@ -8,6 +9,9 @@ import {
   SandboxError,
   serve,
   TIMEOUTS,
+  type AppRequest,
+  type AppToolResult,
+  type DisplayMode,
   type RunRequest,
   type RunResult,
   type SandboxEvent,
@@ -21,9 +25,30 @@ import {
  * internal ids (TM-UI4). No UI of its own: Canvas (K1) and MCP Apps (A2) frame it.
  */
 
+/** What the SPA does for an MCP App (D125 (3), (4)): the runner asks, Mango decides. */
+export interface AppHandlers {
+  /** A `tools/call` of the app: through mango-api, or rejected with the reason to show. */
+  callTool(name: string, args: Record<string, unknown>): Promise<AppToolResult>;
+  /** The app asked for a display mode; resolves with the one Mango grants. */
+  requestDisplayMode(mode: DisplayMode): DisplayMode;
+  /** A request of the app the host does not attend (TM-UI7). */
+  refused?(method: string): void;
+}
+
 export interface SandboxSession {
   /** Run code or HTML in a new inner frame of the runner; ends with the run. */
   run(request: RunRequest, options?: { signal?: AbortSignal }): Promise<RunResult>;
+  /**
+   * Start an MCP App in a new inner frame; resolves once the app initialized. It lives until
+   * `stop`, another run or app, or `destroy`.
+   */
+  startApp(
+    request: AppRequest,
+    handlers: AppHandlers,
+    options?: { signal?: AbortSignal },
+  ): Promise<void>;
+  /** Tell the running app the display mode Mango gave it (its own buttons). */
+  setAppDisplayMode(mode: DisplayMode): Promise<void>;
   /** Stop what runs, destroying its inner frame. */
   stop(): Promise<void>;
   /** Events of the runner (status, errors, height); returns the unsubscribe. */
@@ -151,17 +176,29 @@ export function openSandbox(options: OpenSandboxOptions): Promise<SandboxSession
 
 function session(iframe: HTMLIFrameElement, init: InitPorts): SandboxSession {
   const listeners = new Set<(event: SandboxEvent) => void>();
-  // The runner's one method on this side: its events, checked and bounded (TM-UI3).
+  let app: AppHandlers | null = null;
+  // The runner's one method on this side: its events, checked and bounded (TM-UI3). What an
+  // MCP App asks (a tool call, a display mode) is answered here, only while an app runs.
   serve(init.replyPort, {
     parse: (arg) => {
       const event = parseSandboxEvent(arg);
       if (event === null) throw new SandboxError('BadRequest', 'Not an event of the sandbox.');
       return event;
     },
-    handle: (event) => {
+    handle: async (event) => {
+      if (event.type === 'app-tool-call') {
+        if (app === null) throw new SandboxError('NoApp', 'No app is running.');
+        const result = await app.callTool(event.name, event.arguments);
+        return { content: result.content.map((block) => ({ ...block })), isError: result.isError };
+      }
+      if (event.type === 'app-display-mode') {
+        return { mode: app === null ? 'inline' : app.requestDisplayMode(event.mode) };
+      }
+      if (event.type === 'app-refused') app?.refused?.(event.method);
       for (const listener of listeners) listener(event);
-      return Promise.resolve(null);
+      return null;
     },
+    answerLargeStrings: APP_LARGE_STRINGS,
   });
   let destroyed = false;
   return {
@@ -184,8 +221,30 @@ function session(iframe: HTMLIFrameElement, init: InitPorts): SandboxSession {
       }
       return { ok: (result as RunResult).ok, durationMs: (result as RunResult).durationMs };
     },
+    async startApp(request, handlers, appOptions = {}) {
+      if (destroyed) throw new SandboxError('Closed', 'The sandbox was closed.');
+      app = handlers;
+      const result = await call(init.ports.app, request, {
+        // The runner gives up first (its handshake time) and destroys the inner frame.
+        timeoutMs: TIMEOUTS.handshakeMs + 5_000,
+        largeStrings: APP_LARGE_STRINGS,
+        ...(appOptions.signal ? { signal: appOptions.signal } : {}),
+      });
+      if (
+        typeof result !== 'object' ||
+        result === null ||
+        (result as { ok?: unknown }).ok !== true
+      ) {
+        throw new SandboxError('BadResponse', 'Not an answer of the sandbox.');
+      }
+    },
+    async setAppDisplayMode(mode) {
+      if (destroyed) return;
+      await call(init.ports.appContext, { displayMode: mode });
+    },
     async stop() {
       if (destroyed) return;
+      app = null;
       await call(init.ports.stop, null);
     },
     onEvent(listener) {
@@ -195,6 +254,7 @@ function session(iframe: HTMLIFrameElement, init: InitPorts): SandboxSession {
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      app = null;
       listeners.clear();
       for (const port of [...Object.values(init.ports), init.replyPort]) port.close();
       iframe.remove();

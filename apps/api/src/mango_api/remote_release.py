@@ -20,7 +20,7 @@ import re
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -54,6 +54,8 @@ class ReleaseRemote:
 
     profile: RemoteProfile
     statement_sha256: str
+    ui_resources: Mapping[str, str] = field(default_factory=dict)
+    """The curated HTML of each MCP App of the profile, by its ``ui://`` resource (D125)."""
 
 
 def parse_remote_catalog(raw: str) -> Mapping[str, str]:
@@ -176,4 +178,8 @@ class ReleaseRemotes:
                 "remote profile is not the one of this release", extra={"profile": profile_id}
             )
             return None
-        return ReleaseRemote(profile=statement.profile, statement_sha256=actual)
+        return ReleaseRemote(
+            profile=statement.profile,
+            statement_sha256=actual,
+            ui_resources=dict(statement.ui_resources),
+        )

@@ -205,6 +205,18 @@ class BudgetService:
         for item in usage_days.updates(self._table, counters, today, spent=amount, turns=0):
             self._db.update_item(**item["Update"])
 
+    def has_headroom(self, scopes: list[BudgetScope], period: str) -> bool:
+        """Whether every scope has something left this period (committed, reservations
+        included, below its limit): the gate of a call that costs nothing of its own, as a
+        tool call of an MCP App (D125 (4)). Raises when the budget cannot be read."""
+        for scope in scopes:
+            item = self._db.get_item(
+                TableName=self._table, Key={"PK": {"S": scope.key}, "SK": {"S": period}}
+            ).get("Item", {})
+            if Decimal(item.get("committed", {}).get("N", "0")) >= scope.limit:
+                return False
+        return True
+
     def status(self, scope: BudgetScope, period: str) -> dict[str, str]:
         item = self._db.get_item(
             TableName=self._table, Key={"PK": {"S": scope.key}, "SK": {"S": period}}

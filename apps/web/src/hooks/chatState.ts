@@ -8,6 +8,17 @@ import { parseExportFiles, parseTextdocCards } from '../components/chat/canvas/t
 import { CODE_RECIPIENT, type CodeBlockData } from './codeBlock';
 import type { TurnView } from './turnView';
 
+/** An MCP App of an answer (D125): what the message knows of it. */
+export interface MessageApp {
+  readonly appId: string;
+  readonly registrationId: string;
+  readonly tool: string;
+}
+
+function appOf(app: { app_id: string; registration_id: string; tool: string }): MessageApp {
+  return { appId: app.app_id, registrationId: app.registration_id, tool: app.tool };
+}
+
 /**
  * `interrupted`: Mango lost the turn halfway (design round 40): the text it wrote stays, with
  * its notice and without «Reintentar». `away`: the session ended while the turn was read; the
@@ -192,6 +203,8 @@ export interface DisplayMessage {
   connectionAt?: number;
   /** Remote registrations whose tools answered («Leyó {servicio}», link dialog A1). */
   remoteSources?: string[];
+  /** MCP Apps of the answer (D125): drawn under its text, each one read by its id. */
+  apps?: MessageApp[];
   /**
    * A question of a turn another tab is answering (design round 40 «Desde otra pestaña»): shown
    * when this tab's message was refused because of it.
@@ -337,6 +350,7 @@ export function fromApiMessage(
     })),
     connectionRequired: message.connection_required ?? [],
     remoteSources: message.remote_sources ?? [],
+    ...(message.apps?.length ? { apps: message.apps.map(appOf) } : {}),
     ...(message.code?.length ? { code: { cells: parseCells(message.code), pending: 0 } } : {}),
     ...(message.textdocs?.length ? { textdocs: parseTextdocCards(message.textdocs) } : {}),
     ...(message.files?.length ? { files: parseExportFiles(message.files) } : {}),
@@ -449,6 +463,7 @@ function endOfTurn(message: DisplayMessage, view: TurnView): DisplayMessage {
       ...(stop === GUARDRAIL_STOP ? { guardrail: true } : {}),
       ...(stop === CAP_STOP ? { truncated: truncationOf(message) } : {}),
       ...(result.remote_sources?.length ? { remoteSources: result.remote_sources } : {}),
+      ...(result.apps?.length ? { apps: result.apps.map(appOf) } : {}),
       ...(result.usage
         ? {
             usage: {
@@ -672,6 +687,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             ...(event.stop_reason === CAP_STOP ? { truncated: truncationOf(message) } : {}),
             // The same registrations a reload reads from the stored message.
             ...(event.remote_sources?.length ? { remoteSources: event.remote_sources } : {}),
+            ...(event.apps?.length ? { apps: event.apps.map(appOf) } : {}),
             usage: {
               inputTokens: event.usage.input_tokens,
               outputTokens: event.usage.output_tokens,

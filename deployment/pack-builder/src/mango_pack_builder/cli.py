@@ -153,7 +153,8 @@ def _remote_check(args: argparse.Namespace) -> None:
     toolsets = ", ".join(toolset.id for toolset in profile.toolsets)
     print(
         f"{profile.id} {profile.version}: profile and tool schema are valid; "
-        f"{len(profile.tools)} read tools in toolsets {toolsets}"
+        f"{len(profile.tools)} read tools in toolsets {toolsets}; "
+        f"{len(profile.apps)} MCP apps with their HTML checked"
     )
 
 

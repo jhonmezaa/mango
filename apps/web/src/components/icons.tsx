@@ -445,3 +445,11 @@ export const DiffIcon = createIcon(
 
 /** Design round 41 `memory.jsx`: the comments of the agent in the Canvas. */
 export const CommentIcon = createIcon('Comment', <path d="M4 5h16v11H9l-5 4z" />);
+
+export const PipIcon = createIcon(
+  'Pip',
+  <>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <rect x="12" y="11" width="7" height="6" rx="1" />
+  </>,
+);

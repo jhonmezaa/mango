@@ -73,6 +73,13 @@ MAX_INLINE_INPUT_CHARS = 128 * 1024
 MAX_RECORDED_CHARS = 512 * 1024
 """Input and answer kept of a recorded tool call (``task_reports.MAX_QUERY_CHARS``)."""
 MAX_RECORDED_CALLS = 20
+MAX_APP_CALLS = 3
+"""MCP Apps one answer shows (D125): the first calls of tools with an app that answered."""
+MAX_APP_INPUT_CHARS = 16 * 1024
+MAX_APP_OUTPUT_CHARS = 256 * 1024
+"""What is kept of the input and the answer of a call with an app: the input is what the
+model wrote (it must be a JSON object), the answer the Gateway's, already cut by the
+``RESPONSE`` interceptor. A call past either bound gets no app: its answer is never shown cut."""
 READ_MARGIN_SECONDS = 30
 """How much longer than the limit of a turn mango-api waits in silence for the harness. The
 harness ends the turn itself when the limit is up: the margin lets its answer arrive first."""
@@ -214,6 +221,17 @@ class ToolCall:
     took, without the time the model spent writing the call."""
 
 
+@dataclass(frozen=True)
+class AppCall:
+    """One answered call of a remote tool that has an MCP App (D125). Untrusted, like every
+    answer of a tool: it only goes to the app's own frame, in the second origin."""
+
+    gateway_tool: str
+    """The Gateway name of the tool (``remote-<registration>___<tool>``)."""
+    input: str
+    output: str
+
+
 @dataclass
 class InvocationResult:
     text: str = ""
@@ -240,6 +258,9 @@ class InvocationResult:
     person has not connected their account (D98 (20)). Ids only, never a URL."""
     remote_sources: list[str] = field(default_factory=list)
     """Registrations of remote MCPs whose tools answered in this turn (design «Leyó {servicio}»)."""
+    app_calls: list[AppCall] = field(default_factory=list)
+    """Calls of remote tools with an MCP App that answered (D125), in order, at most
+    ``MAX_APP_CALLS``: what their app gets as ``tool-input`` and ``tool-result``."""
     usage_final: bool = False
     """``usage`` is everything the turn cost: the stream was read to its end and every model
     call reported its usage. False after an error, a cut or a call whose usage never arrived:
@@ -698,6 +719,58 @@ class _RemoteCalls:
             yield from self.stop(index)
 
 
+class _AppCalls:
+    """Input and answer of the calls of remote tools with an MCP App (D125), by their id in the
+    stream. Only the invocation's own tools count (the name in the stream is the model's,
+    TM-LP1); a call that failed or passed a bound gets no app."""
+
+    def __init__(self, names: frozenset[str], result: InvocationResult) -> None:
+        self._names = names
+        self._result = result
+        self._by_index: dict[int, tuple[str, str]] = {}
+        self._calls: dict[str, dict[str, Any]] = {}
+
+    def call(self, index: int, call_id: str, raw_name: str) -> None:
+        name = _captured_tool(raw_name, self._names) if self._names and call_id else None
+        if name is None or len(self._calls) + len(self._result.app_calls) >= MAX_APP_CALLS:
+            return
+        self._calls[call_id] = {"name": name, "input": [], "output": [], "n": 0, "m": 0}
+        self._by_index[index] = (call_id, "input")
+
+    def answer(self, index: int, call_id: str, *, failed: bool) -> None:
+        if call_id not in self._calls:
+            return
+        if failed:
+            del self._calls[call_id]
+            return
+        self._by_index[index] = (call_id, "output")
+
+    def add(self, index: int, piece: str) -> None:
+        target = self._by_index.get(index)
+        call = self._calls.get(target[0]) if target is not None else None
+        if target is None or call is None:
+            return
+        size, bound = (
+            ("n", MAX_APP_INPUT_CHARS) if target[1] == "input" else ("m", MAX_APP_OUTPUT_CHARS)
+        )
+        call[size] += len(piece)
+        if call[size] > bound:
+            del self._calls[target[0]]
+            return
+        call[target[1]].append(piece)
+
+    def stop(self, index: int) -> None:
+        target = self._by_index.pop(index, None)
+        if target is None or target[1] != "output":
+            return
+        call = self._calls.pop(target[0], None)
+        if call is None or not call["output"]:
+            return
+        self._result.app_calls.append(
+            AppCall(call["name"], "".join(call["input"]), "".join(call["output"]))
+        )
+
+
 def _result_pieces(delta: Any) -> Iterator[str]:
     """The text of a tool result delta: a list of blocks with ``text`` or ``json``."""
     for block in delta if isinstance(delta, list) else [delta]:
@@ -753,6 +826,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     skills: frozenset[str] = frozenset(),
     on_skill: Callable[[str], None] | None = None,
     remotes: Mapping[str, str] | None = None,
+    apps: frozenset[str] = frozenset(),
     clock: Callable[[], float] = time.monotonic,
 ) -> Iterator[StreamEvent]:
     """Invoke the harness and translate its event stream. Fills ``result`` as it goes.
@@ -787,6 +861,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     registration (D93): a call to one that answers ``consent_required`` is reported once per
     registration as a ``remote_connection_required`` event, and ``result`` keeps which
     registrations needed a connection and which ones answered.
+
+    ``apps`` names the Gateway tools of the invocation that have an MCP App (D125): the input
+    and the answer of their calls that answered are kept in ``result.app_calls``.
     """
     progress = _Progress()
     # The tool name in the stream is written by the model and the guardrail does not check it:
@@ -816,6 +893,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     searches = _Searches(request.get("allowedTools", []))
     skill_calls = _SkillCalls(skills, on_skill)
     remote_calls = _RemoteCalls(remotes or {}, result)
+    app_calls = _AppCalls(apps, result)
     code_runs = code_run_names(request.get("allowedTools", []))
     code_calls: set[str] = set()
     textdoc_tools = textdoc_names(request.get("allowedTools", []))
@@ -867,6 +945,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 recorded.call(index, tool_id, name)
                 searches.call(tool_id, raw_name)
                 remote_calls.call(tool_id, raw_name)
+                app_calls.call(index, tool_id, raw_name)
                 tool_names[tool_id] = name
                 tool_blocks[index] = tool_id
                 called_at[tool_id] = clock()
@@ -906,6 +985,9 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 remote_calls.answer(
                     block.get("contentBlockIndex", -1), tool_id, failed=status == "error"
                 )
+                app_calls.answer(
+                    block.get("contentBlockIndex", -1), tool_id, failed=status == "error"
+                )
                 result.tools.append({"name": name, "status": status})
                 cell: dict[str, Any] = {"code": True} if tool_id in code_calls else {}
                 if tool_id in textdoc_calls:
@@ -937,11 +1019,13 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                 write_calls.add(index, piece)
                 inline_calls.add(index, piece)
                 recorded.add(index, piece)
+                app_calls.add(index, piece)
             if "toolResult" in delta:
                 for part in _result_pieces(delta["toolResult"]):
                     recorded.add(index, part)
                     searches.add(index, part)
                     remote_calls.add(index, part)
+                    app_calls.add(index, part)
         elif "contentBlockStop" in event:
             index = event["contentBlockStop"].get("contentBlockIndex", -1)
             if index in tool_blocks:
@@ -949,6 +1033,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             write_calls.stop(index)
             inline_calls.stop(index)
             recorded.stop(index)
+            app_calls.stop(index)
             yield from remote_calls.stop(index)
             search = searches.stop(index)
             if search is not None:

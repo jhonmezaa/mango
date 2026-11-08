@@ -28,6 +28,7 @@ El esquema de `profile.yaml` es `RemoteProfile` en `packages/py/mango-packs/src/
 | `toolsets` | Lo que un administrador puede elegir y cómo se agrupan las tools. No llevan valor de cabecera: al servidor solo se le dicen las tools. Al menos uno no es `always`. Opcionales (D98 (6)): `sensitivity` (hoy solo `source_code`: Mango pone la insignia «Código fuente» y el aviso), `note` y `requirement`, texto plano de hasta 300 caracteres (letras, dígitos, espacios y puntuación de frase; sin `<`, `>`, `&`, Markdown ni saltos de línea) que la web muestra tal cual. Añadir o cambiar solo estos campos no cambia tools ni cabeceras: tras instalar, el barrido firma otra vez sin aprobación (D101 (4)) |
 | `probe` | La tool del sondeo de «Conectar»; debe estar en un toolset `always` |
 | `tools` | Una por tool del esquema, con su toolset y `access: read`. Otra clase, o ninguna, hace fallar el check (D84 (5)) |
+| `tools[].ui` | Opcional: la MCP App de la tool (D125), curada por Mango. `resource_uri` (`ui://<id>/<nombre>`), `html` (un archivo de `ui/` del perfil), `html_sha256` (sha256 de sus bytes), `csp` (`connect_domains` y `resource_domains`, vacías en v1: la app solo llega a sus datos por `tools/call`, regla 3) y `calls`, las tools del perfil que la app puede llamar. El HTML viaja dentro de la declaración firmada (`ui_resources`) |
 | `tools_sha256` | sha256 del JSON canónico de `tool-schema.json` (`mango_packs.canonical`) |
 | `max_result_chars` | Recorte de cada resultado en el interceptor `RESPONSE` |
 
@@ -45,7 +46,9 @@ El esquema de `profile.yaml` es `RemoteProfile` en `packages/py/mango-packs/src/
 - `forced_headers` trae algo distinto de las dos cabeceras;
 - las tools no caben en `X-MCP-Tools` (4096 caracteres);
 - el esquema trae una anotación MCP que lo contradice (`readOnlyHint: false` o `destructiveHint: true`; D84 (4));
-- el esquema pasa de 1 MB (la cuota de esquema inline de un target).
+- el esquema pasa de 1 MB (la cuota de esquema inline de un target);
+- una tool del esquema trae `_meta` (el `_meta.ui` de una app lo cura Mango en el perfil, D125);
+- el HTML de una app no tiene el hash del perfil, pasa de 256 KiB, es un enlace o su recurso no es del perfil.
 
 El workflow `packs` (`.github/workflows/packs.yml`) arranca también con un cambio en `remotes/**`:
 

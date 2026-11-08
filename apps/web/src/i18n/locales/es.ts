@@ -15,6 +15,7 @@ import { home } from './es/home';
 import { inbox } from './es/inbox';
 import { knowledge } from './es/knowledge';
 import { marketplace } from './es/marketplace';
+import { mcpApps } from './es/mcpApps';
 import { mcpCatalog } from './es/mcpCatalog';
 import { memory } from './es/memory';
 import { ops } from './es/ops';
@@ -62,6 +63,7 @@ export const es = {
   groups,
   people,
   mcpCatalog,
+  mcpApps,
   remoteMcp,
   connections,
   approvals,

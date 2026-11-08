@@ -10,11 +10,14 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import ValidationError
 
 from mango_packs.remote import (
+    MAX_APP_HTML_BYTES,
     PAYLOAD_TYPE,
     RemoteProfile,
     RemoteProfileError,
     RemoteProfileStatement,
+    app_html_sha256,
     build_envelope,
+    check_app_html,
     check_tool_schema,
     forced_headers,
     picked_tools,
@@ -405,3 +408,109 @@ def test_a_signed_statement_that_breaks_a_rule_is_refused(
     pretty = json.dumps(statement.model_dump(mode="json"), indent=1).encode()
     with pytest.raises(PackSignatureError, match="canonical"):
         verify_envelope(_envelope(pretty, _sign(key, pretty)), _pem(key))
+
+
+# --- MCP Apps (D125) -----------------------------------------------------------------------
+
+APP_HTML = "<!doctype html><html><body><p>app</p></body></html>"
+APP_URI = "ui://fake-remote/items"
+
+
+def _app(**changes: Any) -> dict[str, Any]:
+    return {
+        "resource_uri": APP_URI,
+        "html": "ui/items.html",
+        "html_sha256": app_html_sha256(APP_HTML),
+        "calls": ["get_item"],
+    } | changes
+
+
+def _with_app(**changes: Any) -> list[dict[str, Any]]:
+    tools = profile_data()["tools"]
+    tools[1] = tools[1] | {"ui": _app(**changes)}
+    return list(tools)
+
+
+def _app_statement(ui_resources: dict[str, str] | None = None) -> RemoteProfileStatement:
+    return RemoteProfileStatement(
+        schema_version=1,
+        profile=_profile(tools=_with_app()),
+        tool_schema=SCHEMA,
+        source_revision="f" * 40,
+        ui_resources={APP_URI: APP_HTML} if ui_resources is None else ui_resources,
+    )
+
+
+def test_a_tool_may_carry_a_curated_app() -> None:
+    profile = _profile(tools=_with_app())
+    app = profile.apps["get_item"]
+    assert app.resource_uri == APP_URI
+    assert app.calls == ["get_item"]
+    assert app.csp.connect_domains == [] and app.csp.resource_domains == []
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"resource_uri": "ui://other-profile/items"}, "must be in ui://fake-remote/"),
+        ({"resource_uri": "https://example.com/app"}, "resource_uri"),
+        ({"html": "../profile.yaml"}, "html"),
+        ({"html": "ui/sub/app.html"}, "html"),
+        ({"calls": ["delete_everything"]}, "outside its profile"),
+        ({"csp": {"connect_domains": ["api.example.com"]}}, "connect_domains"),
+        ({"csp": {"resource_domains": ["cdn.example.com"]}}, "resource_domains"),
+        ({"visibility": ["model"]}, "visibility"),
+    ],
+)
+def test_an_app_breaking_a_rule_is_refused(changes: dict[str, Any], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        _profile(tools=_with_app(**changes))
+
+
+def test_the_statement_carries_exactly_the_pinned_html() -> None:
+    assert _app_statement().ui_resources == {APP_URI: APP_HTML}
+    with pytest.raises(ValidationError, match="HTML of ui://fake-remote/items changed"):
+        _app_statement({APP_URI: APP_HTML.replace("app", "App")})
+    with pytest.raises(ValidationError, match="exactly the profile's apps"):
+        _app_statement({})
+    with pytest.raises(ValidationError, match="exactly the profile's apps"):
+        _app_statement({APP_URI: APP_HTML, "ui://fake-remote/extra": APP_HTML})
+
+
+def test_check_app_html_refuses_an_html_too_large() -> None:
+    profile = _profile(tools=_with_app(html_sha256=app_html_sha256("x" * (MAX_APP_HTML_BYTES + 1))))
+    with pytest.raises(RemoteProfileError, match="exceeds"):
+        check_app_html(profile, {APP_URI: "x" * (MAX_APP_HTML_BYTES + 1)})
+
+
+def test_the_server_cannot_bring_its_own_meta() -> None:
+    schema = json.loads(json.dumps(SCHEMA))
+    schema["tools"][1]["_meta"] = {"ui": {"resourceUri": "ui://server/app"}}
+    profile = _profile(tools_sha256=tool_schema_sha256(schema))
+    with pytest.raises(RemoteProfileError, match="carries _meta"):
+        check_tool_schema(profile, schema)
+
+
+def test_a_statement_with_an_app_verifies_and_signs_its_html(
+    key: ec.EllipticCurvePrivateKey,
+) -> None:
+    payload = _app_statement().payload()
+    verified = verify_envelope(_envelope(payload, _sign(key, payload)), _pem(key))
+    assert verified.ui_resources == {APP_URI: APP_HTML}
+    tampered = payload.replace(b"<p>app</p>", b"<p>evil</p>")
+    with pytest.raises(PackSignatureError, match="does not match"):
+        verify_envelope(_envelope(tampered, _sign(key, payload)), _pem(key))
+    # Signed with another HTML than the profile pins: the signature is right, the rule is not.
+    data = _app_statement().model_dump(mode="json")
+    data["ui_resources"][APP_URI] = "<p>evil</p>"
+    raw = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+    with pytest.raises(PackSignatureError, match="not a valid remote profile"):
+        verify_envelope(_envelope(raw, _sign(key, raw)), _pem(key))
+
+
+def test_a_statement_signed_before_apps_still_verifies(
+    key: ec.EllipticCurvePrivateKey, statement: RemoteProfileStatement
+) -> None:
+    payload = statement.payload()
+    assert b"ui_resources" not in payload and b'"ui"' not in payload
+    assert verify_envelope(_envelope(payload, _sign(key, payload)), _pem(key)).payload() == payload

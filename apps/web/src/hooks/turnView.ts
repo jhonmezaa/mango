@@ -5,6 +5,7 @@ import { codeCellSchema } from '../api/codeSchemas';
 import type { Channels, Json } from '../api/deltas';
 import {
   approvalSchema,
+  messageAppsSchema,
   remoteSourcesSchema,
   type ChatApproval,
   type ToolStatus,
@@ -60,6 +61,7 @@ const resultSchema = z.object({
   usage: z.object({ input_tokens: z.number(), output_tokens: z.number() }).optional(),
   cost_usd: z.string().max(32).optional(),
   remote_sources: remoteSourcesSchema.optional(),
+  apps: messageAppsSchema.optional(),
 });
 
 const errorSchema = z.object({

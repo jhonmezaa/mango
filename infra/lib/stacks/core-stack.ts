@@ -1072,7 +1072,7 @@ export class CoreStack extends Stack {
           mfa: cfg.mfa,
           sessionHours: SESSION_HOURS,
         },
-        // D123, D124 (4): the second origin the Canvas frames for its preview.
+        // D123, D124 (4), D125: the second origin the Canvas and MCP Apps frame.
         sandboxOrigin: uiSandbox.origin,
       };
       edge.deploySpa(

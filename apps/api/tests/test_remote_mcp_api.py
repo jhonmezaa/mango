@@ -171,12 +171,19 @@ class FakeKms:
 
 def _statement() -> RemoteProfileStatement:
     folder = REPO / "remotes" / PROFILE
+    profile = yaml.safe_load((folder / "profile.yaml").read_text())
     return RemoteProfileStatement.model_validate(
         {
             "schema_version": 1,
-            "profile": yaml.safe_load((folder / "profile.yaml").read_text()),
+            "profile": profile,
             "tool_schema": json.loads((folder / "tool-schema.json").read_text()),
             "source_revision": "f" * 40,
+            # The HTML of its MCP Apps (D125), as the pack builder writes it.
+            "ui_resources": {
+                t["ui"]["resource_uri"]: (folder / t["ui"]["html"]).read_text()
+                for t in profile["tools"]
+                if t.get("ui")
+            },
         }
     )
 

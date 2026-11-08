@@ -88,12 +88,19 @@ class ProfileSigner:
         )
 
     def statement(self, profile: dict[str, Any] | None = None) -> RemoteProfileStatement:
+        profile = profile or profile_data()
         return RemoteProfileStatement.model_validate(
             {
                 "schema_version": 1,
-                "profile": profile or profile_data(),
+                "profile": profile,
                 "tool_schema": tool_schema(),
                 "source_revision": "f" * 40,
+                # The HTML of its MCP Apps (D125), as the pack builder writes it.
+                "ui_resources": {
+                    t["ui"]["resource_uri"]: (PROFILE_DIR / t["ui"]["html"]).read_text()
+                    for t in profile["tools"]
+                    if t.get("ui")
+                },
             }
         )
 

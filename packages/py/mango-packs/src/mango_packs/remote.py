@@ -65,12 +65,24 @@ FORCED_HEADERS: Final = {READONLY_HEADER: "true", TOOLS_HEADER: "{tools}"}
 # Separator and limit of `X-MCP-Tools`: keep in sync with `mango_core.remote_mcp`.
 TOOLS_SEPARATOR: Final = ", "
 MAX_TOOLS_HEADER_CHARS: Final = 4096
+# MCP Apps (D125): the interface of a tool, curated in the profile and signed with it. The
+# server never serves it: the Gateway has no `resources/read` (D98 (16)).
+APP_MIME_TYPE: Final = "text/html;profile=mcp-app"
+MAX_APP_HTML_BYTES: Final = 256 * 1024
+MAX_APPS: Final = 5
+MAX_APP_CALLS: Final = 20
 
 RemoteProfileId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{1,23}$")]
 ToolsetId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9-]{0,23}$")]
 # An OAuth scope: a name or `<resource>/<permission>`. No spaces: they separate scopes.
 OAuthScope = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")]
 ProbeValue = Annotated[str, StringConstraints(max_length=100)] | int | bool
+# `ui://<profile>/<name>`: the profile's own namespace, nothing the server chose.
+AppResourceUri = Annotated[
+    str, StringConstraints(pattern=r"^ui://[a-z][a-z0-9-]{1,23}/[a-z][a-z0-9-]{0,47}$")
+]
+# A file of the profile's own `ui/` folder: no other directory, no way out of it.
+AppHtmlPath = Annotated[str, StringConstraints(pattern=r"^ui/[a-z][a-z0-9-]{0,47}\.html$")]
 # Punctuation a toolset text may use besides letters, digits and spaces. No `<`, `>`, `&`,
 # Markdown marks or line breaks: the web shows the text as it is, as plain text (TM-023).
 _TEXT_PUNCTUATION: Final = frozenset(".,;:!¡?¿()«»\"'/+-")
@@ -167,11 +179,48 @@ class Probe(StrictModel):
     arguments: dict[ToolName, ProbeValue] = Field(default_factory=dict, max_length=10)
 
 
+class AppCsp(StrictModel):
+    """The CSP an app declares, as MCP Apps names it (`_meta.ui.csp`). Both lists are empty in
+    v1 (D125 (7)): the app reaches its data only through `tools/call`, which goes through the
+    Gateway (rule 3), and the ceiling of the second origin names no curated domain yet
+    (D123 (9) (d)). A domain here would be a way out that no policy of Mango sees."""
+
+    connect_domains: Annotated[list[EgressHost], Field(max_length=0)] = []
+    resource_domains: Annotated[list[EgressHost], Field(max_length=0)] = []
+
+
+class ToolUi(StrictModel):
+    """The curated interface of a tool (D125 (2)): the `_meta.ui` of MCP Apps, written by
+    Mango, never taken from the server. Its HTML is a file of the profile, signed with it."""
+
+    resource_uri: AppResourceUri
+    # File of the profile folder (`ui/<name>.html`); its text travels in the statement.
+    html: AppHtmlPath
+    # sha256 of the file's bytes: the pipeline checks it before signing, the release before
+    # shipping it, and the SPA once more before the runner draws it (TM-UI8).
+    html_sha256: Sha256Hex
+    csp: AppCsp = AppCsp()
+    # Tools of this profile the app may call (`visibility: ["app"]`), every one `read`; the
+    # app calls nothing else, and only the ones its registration approved (TM-UI6).
+    calls: Annotated[list[ToolName], Field(max_length=MAX_APP_CALLS)] = []
+
+
 class RemoteTool(StrictModel):
     name: ToolName
     toolset: ToolsetId
     # Required: an unclassified tool counts as a write (D84), and a profile only has reads.
     access: ToolAccess
+    # Its MCP App, if it has one (D125).
+    ui: ToolUi | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_no_ui(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A profile signed before D125 has no `ui` key: leaving it out when unset keeps its
+        # statement canonical, so it still verifies.
+        data: dict[str, Any] = handler(self)
+        if data.get("ui") is None:
+            data.pop("ui", None)
+        return data
 
 
 class RemoteProfile(StrictModel):
@@ -227,11 +276,32 @@ class RemoteProfile(StrictModel):
             raise ValueError("the probe tool must be a tool of a toolset that is always on")
         if len(TOOLS_SEPARATOR.join(names)) > MAX_TOOLS_HEADER_CHARS:
             raise ValueError(f"the tools do not fit in {TOOLS_HEADER}")
+        self._consistent_apps(set(names))
         return self
+
+    def _consistent_apps(self, names: set[str]) -> None:
+        apps = [tool.ui for tool in self.tools if tool.ui is not None]
+        if len(apps) > MAX_APPS:
+            raise ValueError(f"a profile has at most {MAX_APPS} apps")
+        uris = [app.resource_uri for app in apps]
+        if len(set(uris)) != len(uris) or len({app.html for app in apps}) != len(apps):
+            raise ValueError("two apps share a resource or an HTML file")
+        foreign = sorted(uri for uri in uris if not uri.startswith(f"ui://{self.id}/"))
+        if foreign:
+            raise ValueError(f"an app resource must be in ui://{self.id}/: {foreign}")
+        for app in apps:
+            unknown = sorted(set(app.calls) - names)
+            if unknown:
+                raise ValueError(f"an app calls tools outside its profile: {unknown}")
 
     @property
     def tool_names(self) -> frozenset[str]:
         return frozenset(tool.name for tool in self.tools)
+
+    @property
+    def apps(self) -> dict[str, ToolUi]:
+        """The MCP App of each tool that has one, by tool name."""
+        return {tool.name: tool.ui for tool in self.tools if tool.ui is not None}
 
 
 def tool_schema_sha256(schema: object) -> str:
@@ -257,6 +327,10 @@ def check_tool_schema(profile: RemoteProfile, schema: object) -> None:
         if not isinstance(tool, dict) or not isinstance(tool.get("name"), str):
             raise RemoteProfileError("the tool schema has a tool without a name")
         names.append(tool["name"])
+        if "_meta" in tool:
+            # The `_meta.ui` of an app is curated in the profile (D125 (2)); what the server
+            # put there never reaches the target nor the model.
+            raise RemoteProfileError(f"the tool schema of {tool['name']} carries _meta")
         annotations = tool.get("annotations")
         if isinstance(annotations, dict) and (
             annotations.get("readOnlyHint") is False or annotations.get("destructiveHint") is True
@@ -307,22 +381,57 @@ def forced_headers(profile: RemoteProfile, toolsets: list[str]) -> dict[str, str
     return {READONLY_HEADER: "true", TOOLS_HEADER: TOOLS_SEPARATOR.join(sorted(tools))}
 
 
+def app_html_sha256(html: str) -> str:
+    return sha256_hex(html.encode("utf-8"))
+
+
+def check_app_html(profile: RemoteProfile, ui_resources: dict[str, str]) -> None:
+    """Fail unless `ui_resources` holds exactly the HTML of each app of the profile, by its
+    resource, with the hash the profile pins (D125 (2), TM-UI8)."""
+    apps = {app.resource_uri: app for app in profile.apps.values()}
+    if set(ui_resources) != set(apps):
+        raise RemoteProfileError(
+            f"the statement must carry the HTML of exactly the profile's apps: {sorted(apps)}"
+        )
+    for uri, html in ui_resources.items():
+        if len(html.encode("utf-8")) > MAX_APP_HTML_BYTES:
+            raise RemoteProfileError(f"the HTML of {uri} exceeds {MAX_APP_HTML_BYTES} bytes")
+        actual = app_html_sha256(html)
+        if actual != apps[uri].html_sha256:
+            raise RemoteProfileError(
+                f"the HTML of {uri} changed: the profile pins {apps[uri].html_sha256}, the file "
+                f"is {actual}. Review the diff; a new interface needs review again"
+            )
+
+
 class RemoteProfileStatement(StrictModel):
-    """What the signature vouches for: this profile serves exactly this tool schema."""
+    """What the signature vouches for: this profile serves exactly this tool schema, and its
+    apps exactly this HTML."""
 
     schema_version: Literal[1]
     profile: RemoteProfile
     tool_schema: dict[str, Any]
     # Commit of the Mango repository the statement was written from.
     source_revision: GitRevision
+    # The HTML of each app, by its `ui://` resource (D125 (2)). Left out when there is none.
+    ui_resources: dict[AppResourceUri, str] = Field(default_factory=dict, max_length=MAX_APPS)
 
     @model_validator(mode="after")
     def _schema_is_the_pinned_one(self) -> Self:
         try:
             check_tool_schema(self.profile, self.tool_schema)
+            check_app_html(self.profile, self.ui_resources)
         except RemoteProfileError as error:
             raise ValueError(str(error)) from error
         return self
+
+    @model_serializer(mode="wrap")
+    def _omit_no_apps(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A statement signed before D125 has no `ui_resources`: it still verifies.
+        data: dict[str, Any] = handler(self)
+        if not data.get("ui_resources"):
+            data.pop("ui_resources", None)
+        return data
 
     def payload(self) -> bytes:
         return canonical_json(self.model_dump(mode="json"))

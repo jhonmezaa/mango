@@ -64,6 +64,20 @@ export const registrationIdSchema = z.string().regex(/^[a-z2-7]{12}$/);
  */
 export const remoteSourcesSchema = z.array(registrationIdSchema).max(50);
 
+/**
+ * MCP Apps of an answer (D125), in the stored message and in the live `done` event: ids and the
+ * tool only; the app itself is read with `GET /api/conversations/{id}/apps/{app}`.
+ */
+export const messageAppsSchema = z
+  .array(
+    z.object({
+      app_id: z.string().regex(/^[0-9a-f]{32}$/),
+      registration_id: registrationIdSchema,
+      tool: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
+    }),
+  )
+  .max(3);
+
 export const messageSchema = z.object({
   message_id: z.string(),
   role: z.enum(['user', 'assistant']),
@@ -90,6 +104,8 @@ export const messageSchema = z.object({
   connection_required: z.array(registrationIdSchema).max(10).optional(),
   /** Remote MCP registrations whose tools answered in this turn («Leyó {servicio}»). */
   remote_sources: remoteSourcesSchema.optional(),
+  /** MCP Apps of this answer (D125). */
+  apps: messageAppsSchema.optional(),
   /**
    * Why a stored answer was cut (R3b): `cancelled` («Detener») or `turn_interrupted`. Kept as a
    * bounded string so a reason added later does not break the conversation: unknown is none.

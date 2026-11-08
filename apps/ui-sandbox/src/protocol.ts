@@ -16,8 +16,11 @@ export const PROTOCOL_VERSION = 1;
 /** The `type` of the one message the runner sends through `window.postMessage`. */
 export const INIT_TYPE = 'mango-sandbox-init';
 
-/** Methods of the runner the host calls, one port each: exactly this set (TM-UI3). */
-export const RUNNER_METHODS = ['run', 'stop'] as const;
+/**
+ * Methods of the runner the host calls, one port each: exactly this set (TM-UI3). `app` starts an
+ * MCP App (D125 (3)) and `appContext` tells it the display mode the host gave it.
+ */
+export const RUNNER_METHODS = ['run', 'stop', 'app', 'appContext'] as const;
 export type RunnerMethod = (typeof RUNNER_METHODS)[number];
 
 /** Bounds of every value that crosses, in either direction. */
@@ -67,6 +70,40 @@ export interface RunResult {
   readonly durationMs: number;
 }
 
+/** Display modes of an MCP App (`ui/request-display-mode`, D125 (3)). */
+export const DISPLAY_MODES = ['inline', 'fullscreen', 'pip'] as const;
+export type DisplayMode = (typeof DISPLAY_MODES)[number];
+
+/** A block of a tool result as it reaches an app: text only (what the Gateway answered). */
+export interface AppContentBlock {
+  readonly type: 'text';
+  readonly text: string;
+}
+
+/** `CallToolResult` of MCP, as Mango gives it to an app: text blocks and the error mark. */
+export interface AppToolResult {
+  readonly content: readonly AppContentBlock[];
+  readonly isError: boolean;
+}
+
+/** What the host sends to start an MCP App: its HTML, already checked against its hash. */
+export interface AppRequest {
+  readonly html: string;
+  /** The arguments the model called the tool with (`ui/notifications/tool-input`). */
+  readonly toolInput: Record<string, unknown>;
+  /** What the tool answered (`ui/notifications/tool-result`). */
+  readonly toolResult: AppToolResult;
+  readonly displayMode: DisplayMode;
+}
+
+/** The answer of `app`: the app finished `ui/initialize` and got its input and result. */
+export interface AppStarted {
+  readonly ok: true;
+}
+
+/** Keys whose strings may be up to `LIMITS.sourceLength` in what concerns an app. */
+export const APP_LARGE_STRINGS = ['html', 'text'] as const;
+
 /** Phases a run reports while it goes. */
 export const RUN_PHASES = ['initializing', 'loading-packages', 'running'] as const;
 export type RunPhase = (typeof RUN_PHASES)[number];
@@ -77,7 +114,16 @@ export type SandboxEvent =
   | { readonly type: 'error'; readonly message: string; readonly line?: number }
   | { readonly type: 'complete'; readonly durationMs: number }
   | { readonly type: 'height'; readonly px: number }
-  | { readonly type: 'csp-violation'; readonly directive: string };
+  | { readonly type: 'csp-violation'; readonly directive: string }
+  // What an MCP App asks of the host (D125 (3), (4)): answered by the host's handler.
+  | {
+      readonly type: 'app-tool-call';
+      readonly name: string;
+      readonly arguments: Record<string, unknown>;
+    }
+  | { readonly type: 'app-display-mode'; readonly mode: DisplayMode }
+  // A request of the app the host does not attend (TM-UI7): counted, answered «no admitido».
+  | { readonly type: 'app-refused'; readonly method: string };
 
 export const SANDBOX_EVENT_TYPES = [
   'status',
@@ -85,7 +131,15 @@ export const SANDBOX_EVENT_TYPES = [
   'complete',
   'height',
   'csp-violation',
+  'app-tool-call',
+  'app-display-mode',
+  'app-refused',
 ] as const;
+
+/** A method name of the MCP Apps bridge as it may cross: short, plain. */
+export const APP_METHOD = /^[A-Za-z][A-Za-z0-9_/-]{0,63}$/;
+/** A tool name, as the profile writes it. */
+export const APP_TOOL = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
 /** An error as it crosses: a name and a message, never a stack. */
 export interface WireError {
@@ -216,9 +270,62 @@ export function parseSandboxEvent(value: unknown): SandboxEvent | null {
         /^[a-z-]{1,40}$/.test(value.directive)
         ? { type: 'csp-violation', directive: value.directive }
         : null;
+    case 'app-tool-call':
+      return keys === 'arguments,name,type' &&
+        typeof value.name === 'string' &&
+        APP_TOOL.test(value.name) &&
+        isRecord(value.arguments)
+        ? { type: 'app-tool-call', name: value.name, arguments: value.arguments }
+        : null;
+    case 'app-display-mode':
+      return keys === 'mode,type' && isDisplayMode(value.mode)
+        ? { type: 'app-display-mode', mode: value.mode }
+        : null;
+    case 'app-refused':
+      return keys === 'method,type' &&
+        typeof value.method === 'string' &&
+        APP_METHOD.test(value.method)
+        ? { type: 'app-refused', method: value.method }
+        : null;
     default:
       return null;
   }
+}
+
+export function isDisplayMode(value: unknown): value is DisplayMode {
+  return typeof value === 'string' && (DISPLAY_MODES as readonly string[]).includes(value);
+}
+
+/** `value` as a tool result an app may get, or `null`: text blocks and the error mark only. */
+export function parseAppToolResult(value: unknown): AppToolResult | null {
+  if (shapeError(value, APP_LARGE_STRINGS) !== null || !isRecord(value)) return null;
+  if (Object.keys(value).sort().join(',') !== 'content,isError') return null;
+  const { content, isError } = value;
+  if (typeof isError !== 'boolean' || !Array.isArray(content)) return null;
+  const blocks: AppContentBlock[] = [];
+  for (const block of content) {
+    if (!isRecord(block) || Object.keys(block).sort().join(',') !== 'text,type') return null;
+    if (block.type !== 'text' || typeof block.text !== 'string') return null;
+    blocks.push({ type: 'text', text: block.text });
+  }
+  return { content: blocks, isError };
+}
+
+/** `value` as a request to start an MCP App, or a {@link SandboxError} (`BadRequest`). */
+export function parseAppRequest(value: unknown): AppRequest {
+  const error = shapeError(value, APP_LARGE_STRINGS);
+  if (error) throw new SandboxError('BadRequest', `app: ${error}`);
+  if (!isRecord(value)) throw new SandboxError('BadRequest', 'app: not an object');
+  const { html, toolInput, toolResult, displayMode, ...rest } = value;
+  if (Object.keys(rest).length > 0) throw new SandboxError('BadRequest', 'app: unknown fields');
+  if (typeof html !== 'string' || html.length === 0) {
+    throw new SandboxError('BadRequest', 'app: no html');
+  }
+  if (!isRecord(toolInput)) throw new SandboxError('BadRequest', 'app: toolInput');
+  const result = parseAppToolResult(toolResult);
+  if (result === null) throw new SandboxError('BadRequest', 'app: toolResult');
+  if (!isDisplayMode(displayMode)) throw new SandboxError('BadRequest', 'app: displayMode');
+  return { html, toolInput, toolResult: result, displayMode };
 }
 
 function isCount(value: unknown): value is number {
@@ -246,6 +353,8 @@ function fromWireError(value: unknown): SandboxError {
 export interface Method<T> {
   readonly parse: (arg: unknown) => T;
   readonly handle: (arg: T, signal: AbortSignal) => Promise<unknown>;
+  /** Keys whose strings the answer may carry up to `LIMITS.sourceLength`. */
+  readonly answerLargeStrings?: readonly string[];
 }
 
 /**
@@ -268,7 +377,7 @@ export function serve<T>(port: MessagePort, method: Method<T>): void {
     void (async () => {
       try {
         const value = await method.handle(method.parse(data[1]), controller.signal);
-        const error = shapeError(value ?? null);
+        const error = shapeError(value ?? null, method.answerLargeStrings);
         if (error) throw new SandboxError('BadResponse', `answer: ${error}`);
         reply.postMessage(['RESOLVE', value ?? null]);
       } catch (error) {
@@ -285,6 +394,8 @@ export interface CallOptions {
   readonly signal?: AbortSignal;
   /** Keys whose strings may be up to `LIMITS.sourceLength` (see {@link shapeError}). */
   readonly largeStrings?: readonly string[];
+  /** The same, for the answer (a tool result an app asked for). */
+  readonly answerLargeStrings?: readonly string[];
 }
 
 /**
@@ -327,7 +438,7 @@ export function call(port: MessagePort, arg: unknown, options: CallOptions = {})
       const data = event.data;
       if (!Array.isArray(data) || data.length !== 2) return;
       if (data[0] === 'RESOLVE') {
-        const problem = shapeError(data[1]);
+        const problem = shapeError(data[1], options.answerLargeStrings);
         finish(() => {
           if (problem) reject(new SandboxError('BadResponse', problem));
           else resolve(data[1]);

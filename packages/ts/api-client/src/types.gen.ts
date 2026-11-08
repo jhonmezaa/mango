@@ -714,6 +714,36 @@ export type AnomalyOut = {
 };
 
 /**
+ * AppTextBlock
+ */
+export type AppTextBlock = {
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Type
+     */
+    type?: 'text';
+};
+
+/**
+ * AppToolResult
+ *
+ * ``CallToolResult`` as an app gets it: the text blocks of the answer and its error mark.
+ */
+export type AppToolResult = {
+    /**
+     * Content
+     */
+    content: Array<AppTextBlock>;
+    /**
+     * Is Error
+     */
+    is_error: boolean;
+};
+
+/**
  * ApprovalListOut
  */
 export type ApprovalListOut = {
@@ -3572,6 +3602,82 @@ export type LimitsOut = {
 };
 
 /**
+ * McpAppCallIn
+ */
+export type McpAppCallIn = {
+    /**
+     * Arguments
+     */
+    arguments?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * McpAppCallOut
+ */
+export type McpAppCallOut = {
+    /**
+     * Calls Limit
+     */
+    calls_limit: number;
+    /**
+     * Calls Used
+     */
+    calls_used: number;
+    result: AppToolResult;
+};
+
+/**
+ * McpAppOut
+ */
+export type McpAppOut = {
+    /**
+     * App Id
+     */
+    app_id: string;
+    /**
+     * Calls Limit
+     */
+    calls_limit: number;
+    /**
+     * Calls Used
+     */
+    calls_used: number;
+    /**
+     * Html
+     */
+    html: string;
+    /**
+     * Html Sha256
+     */
+    html_sha256: string;
+    /**
+     * Registration Id
+     */
+    registration_id: string;
+    /**
+     * Service
+     */
+    service: string;
+    /**
+     * Tool
+     */
+    tool: string;
+    /**
+     * Tool Input
+     */
+    tool_input: {
+        [key: string]: unknown;
+    };
+    tool_result: AppToolResult;
+};
+
+/**
  * MeCan
  *
  * Hints for the SPA only; the API authorizes every request on its own.
@@ -3777,6 +3883,26 @@ export type MemoryRecordOut = {
 };
 
 /**
+ * MessageAppOut
+ *
+ * An MCP App of an answer (D125): ids and its tool, never what the tool answered.
+ */
+export type MessageAppOut = {
+    /**
+     * App Id
+     */
+    app_id: string;
+    /**
+     * Registration Id
+     */
+    registration_id: string;
+    /**
+     * Tool
+     */
+    tool: string;
+};
+
+/**
  * MessageAttachmentOut
  *
  * A file of a question (D116): its name, kind and size, and whether it is still there.
@@ -3812,6 +3938,10 @@ export type MessageOut = {
      * Approvals
      */
     approvals?: Array<string>;
+    /**
+     * Apps
+     */
+    apps?: Array<MessageAppOut>;
     /**
      * Attachments
      */
@@ -10808,6 +10938,74 @@ export type GetConversationResponses = {
 };
 
 export type GetConversationResponse = GetConversationResponses[keyof GetConversationResponses];
+
+export type GetMcpAppData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * App Id
+         */
+        app_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/apps/{app_id}';
+};
+
+export type GetMcpAppErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetMcpAppError = GetMcpAppErrors[keyof GetMcpAppErrors];
+
+export type GetMcpAppResponses = {
+    /**
+     * Successful Response
+     */
+    200: McpAppOut;
+};
+
+export type GetMcpAppResponse = GetMcpAppResponses[keyof GetMcpAppResponses];
+
+export type CallMcpAppToolData = {
+    body: McpAppCallIn;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * App Id
+         */
+        app_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/apps/{app_id}/calls';
+};
+
+export type CallMcpAppToolErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type CallMcpAppToolError = CallMcpAppToolErrors[keyof CallMcpAppToolErrors];
+
+export type CallMcpAppToolResponses = {
+    /**
+     * Successful Response
+     */
+    200: McpAppCallOut;
+};
+
+export type CallMcpAppToolResponse = CallMcpAppToolResponses[keyof CallMcpAppToolResponses];
 
 export type ChatFileStatusData = {
     body?: never;

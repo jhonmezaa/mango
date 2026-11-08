@@ -32,6 +32,7 @@ from mango_api import (
     home,
     knowledge,
     mcp,
+    mcp_apps,
     memory,
     mfa_reset,
     observability,
@@ -162,6 +163,13 @@ LIMITS: dict[str, LimitSpec] = {
         MINUTE,
         shared=True,
         why="«Desconectar» of a remote MCP (D97 (3)): each one calls the Gateway.",
+    ),
+    "mcp_apps.calls": LimitSpec(
+        mcp_apps.CALLS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="Tool calls of the MCP Apps of one person (D125 (6), TM-UI6): each one calls the "
+        "Gateway and the remote server.",
     ),
     "connections.callbacks": LimitSpec(
         connections.CALLBACKS_PER_MINUTE,

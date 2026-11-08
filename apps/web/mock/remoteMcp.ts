@@ -34,7 +34,7 @@ type ChangeStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'cancell
 /** The profile of the release (remotes/azure-devops/profile.yaml), as the API shows it. */
 const PROFILE = {
   id: 'azure-devops',
-  version: '2026.10.27-4',
+  version: '2026.10.27-5',
   name: 'Azure DevOps',
   operator: 'Microsoft',
   provider: 'Microsoft',

@@ -22,19 +22,27 @@ afterEach(() => {
 function init(overrides: Record<string, unknown> = {}) {
   const run = channel();
   const stop = channel();
+  const app = channel();
+  const appContext = channel();
   const reply = channel();
   const data = {
     type: INIT_TYPE,
     version: PROTOCOL_VERSION,
     initId: INIT_ID,
-    ports: { run: run.port2, stop: stop.port2 },
+    ports: { run: run.port2, stop: stop.port2, app: app.port2, appContext: appContext.port2 },
     replyPort: reply.port2,
     ...overrides,
   };
   return {
     data,
-    ports: [run.port2, stop.port2, reply.port2],
-    runner: { run: run.port1, stop: stop.port1, reply: reply.port1 },
+    ports: [run.port2, stop.port2, app.port2, appContext.port2, reply.port2],
+    runner: {
+      run: run.port1,
+      stop: stop.port1,
+      app: app.port1,
+      appContext: appContext.port1,
+      reply: reply.port1,
+    },
   };
 }
 
@@ -195,5 +203,114 @@ describe('openSandbox', () => {
     await expect(session.run({ kind: 'html', source: '' })).rejects.toMatchObject({
       name: 'Closed',
     });
+  });
+});
+
+describe('an MCP App in the runner (D125 (3), (4))', () => {
+  let container: HTMLElement;
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.append(container);
+  });
+
+  async function opened() {
+    const pending = openSandbox({ origin: ORIGIN, container, title: 't' });
+    const iframe = container.querySelector('iframe');
+    const { data, ports, runner } = init();
+    const initId = new URLSearchParams(iframe?.src.split('#')[1]).get('initId');
+    window.dispatchEvent(
+      Object.assign(new Event('message'), {
+        data: { ...data, initId },
+        origin: ORIGIN,
+        source: iframe?.contentWindow,
+        ports,
+      }),
+    );
+    const session = await pending;
+    const ask = (value: unknown) =>
+      new Promise<unknown>((resolve) => {
+        const c = channel();
+        c.port1.onmessage = (m: MessageEvent<unknown>) => {
+          resolve(m.data);
+        };
+        runner.reply.postMessage(['CALL', value], [c.port2]);
+      });
+    return { session, runner, ask };
+  }
+
+  const request = {
+    html: '<p>app</p>',
+    toolInput: { id: 1 },
+    toolResult: { content: [{ type: 'text' as const, text: 'r'.repeat(40_000) }], isError: false },
+    displayMode: 'inline' as const,
+  };
+
+  it('starts the app and answers its tool calls and display modes through the handlers', async () => {
+    const { session, runner, ask } = await opened();
+    let started: unknown = null;
+    serve(runner.app, {
+      parse: (arg) => arg,
+      handle: (arg) => {
+        started = arg;
+        return Promise.resolve({ ok: true });
+      },
+    });
+    const callTool = vi.fn(() =>
+      Promise.resolve({
+        content: [{ type: 'text' as const, text: 'w'.repeat(30_000) }],
+        isError: false,
+      }),
+    );
+    const refused = vi.fn();
+    // Before an app runs, the runner's requests get nothing.
+    expect(
+      await ask({ type: 'app-tool-call', name: 'wit_work_item', arguments: {} }),
+    ).toMatchObject(['REJECT', { name: 'NoApp' }]);
+    await session.startApp(request, {
+      callTool,
+      requestDisplayMode: (mode) => (mode === 'pip' ? 'inline' : mode),
+      refused,
+    });
+    expect(started).toEqual(request);
+    const answer = (await ask({
+      type: 'app-tool-call',
+      name: 'wit_work_item',
+      arguments: { id: 2 },
+    })) as [string, { content: { text: string }[] }];
+    expect(callTool).toHaveBeenCalledWith('wit_work_item', { id: 2 });
+    expect(answer[0]).toBe('RESOLVE');
+    expect(answer[1].content[0]?.text).toHaveLength(30_000);
+    expect(await ask({ type: 'app-display-mode', mode: 'pip' })).toEqual([
+      'RESOLVE',
+      { mode: 'inline' },
+    ]);
+    expect(await ask({ type: 'app-refused', method: 'ui/message' })).toEqual(['RESOLVE', null]);
+    expect(refused).toHaveBeenCalledWith('ui/message');
+
+    let mode: unknown = null;
+    serve(runner.appContext, {
+      parse: (arg) => arg,
+      handle: (arg) => {
+        mode = arg;
+        return Promise.resolve(null);
+      },
+    });
+    await session.setAppDisplayMode('fullscreen');
+    expect(mode).toEqual({ displayMode: 'fullscreen' });
+    session.destroy();
+  });
+
+  it('gives the app the reason Mango did not make a call', async () => {
+    const { session, runner, ask } = await opened();
+    serve(runner.app, { parse: (arg) => arg, handle: () => Promise.resolve({ ok: true }) });
+    await session.startApp(request, {
+      callTool: () => Promise.reject(new Error('sin presupuesto')),
+      requestDisplayMode: (mode) => mode,
+    });
+    expect(await ask({ type: 'app-tool-call', name: 'wit_work_item', arguments: {} })).toEqual([
+      'REJECT',
+      { name: 'Error', message: 'sin presupuesto' },
+    ]);
+    session.destroy();
   });
 });

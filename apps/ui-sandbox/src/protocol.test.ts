@@ -4,6 +4,8 @@ import {
   call,
   isSandboxOrigin,
   LIMITS,
+  parseAppRequest,
+  parseAppToolResult,
   parseRunRequest,
   parseSandboxEvent,
   serve,
@@ -200,5 +202,68 @@ describe('isSandboxOrigin', () => {
   it('takes the loopback over http only when allowed', () => {
     expect(isSandboxOrigin('http://127.0.0.1:4601', true)).toBe(true);
     expect(isSandboxOrigin('http://example.com', true)).toBe(false);
+  });
+});
+
+describe('MCP Apps over the RPC (D125 (3))', () => {
+  const app = {
+    html: '<p>'.padEnd(20_000, 'x'),
+    toolInput: { id: 1 },
+    toolResult: { content: [{ type: 'text', text: 'y'.repeat(60_000) }], isError: false },
+    displayMode: 'inline',
+  };
+
+  it('accepts a request to start an app with a large HTML and result', () => {
+    expect(parseAppRequest(app).toolResult.content[0]?.text).toHaveLength(60_000);
+  });
+
+  it.each([
+    [{ ...app, extra: 1 }, /unknown fields/],
+    [{ ...app, html: '' }, /no html/],
+    [{ ...app, displayMode: 'modal' }, /displayMode/],
+    [
+      { ...app, toolResult: { content: [{ type: 'image', data: 'x' }], isError: false } },
+      /toolResult/,
+    ],
+    [{ ...app, toolResult: { content: [], isError: false, structuredContent: {} } }, /toolResult/],
+    [{ ...app, toolInput: [1] }, /toolInput/],
+  ])('refuses a malformed start %#', (value, error) => {
+    expect(() => parseAppRequest(value)).toThrow(error);
+  });
+
+  it('parses the events of an app and nothing looser', () => {
+    expect(
+      parseSandboxEvent({ type: 'app-tool-call', name: 'wit_work_item', arguments: {} }),
+    ).toEqual({
+      type: 'app-tool-call',
+      name: 'wit_work_item',
+      arguments: {},
+    });
+    expect(parseSandboxEvent({ type: 'app-tool-call', name: 'a b', arguments: {} })).toBeNull();
+    expect(parseSandboxEvent({ type: 'app-display-mode', mode: 'pip' })).toEqual({
+      type: 'app-display-mode',
+      mode: 'pip',
+    });
+    expect(parseSandboxEvent({ type: 'app-display-mode', mode: 'modal' })).toBeNull();
+    expect(parseSandboxEvent({ type: 'app-refused', method: 'ui/message' })).toEqual({
+      type: 'app-refused',
+      method: 'ui/message',
+    });
+    expect(parseSandboxEvent({ type: 'app-refused', method: '<x>' })).toBeNull();
+  });
+
+  it('lets a tool result answer cross only where it is allowed to be large', async () => {
+    const channel = new MessageChannel();
+    serve(channel.port1, {
+      parse: (arg) => arg,
+      handle: () =>
+        Promise.resolve({ content: [{ type: 'text', text: 'z'.repeat(30_000) }], isError: false }),
+      answerLargeStrings: ['text'],
+    });
+    await expect(call(channel.port2, null)).rejects.toThrow(/too long|too large/);
+    const answer = await call(channel.port2, null, { answerLargeStrings: ['text'] });
+    expect(parseAppToolResult(answer)?.content[0]?.text).toHaveLength(30_000);
+    channel.port1.close();
+    channel.port2.close();
   });
 });

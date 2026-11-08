@@ -4,7 +4,7 @@ import { TIMEOUTS, type SandboxEvent } from './protocol';
 import { fromInner, INNER_INIT, INNER_SANDBOX, MAX_EVENTS, Runner } from './runner-core';
 
 const ORIGIN = 'https://d123.cloudfront.net';
-const assets = { bootstrap: 'void 0;', pythonWorker: 'void 0;' };
+const assets = { bootstrap: 'void 0;', pythonWorker: 'void 0;', appBridge: '' };
 
 let container: HTMLElement;
 let events: SandboxEvent[];

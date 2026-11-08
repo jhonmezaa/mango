@@ -5,6 +5,7 @@ import {
   approvalSchema,
   conversationIdSchema,
   registrationIdSchema,
+  messageAppsSchema,
   remoteSourcesSchema,
   toolStatusSchema,
 } from './schemas';
@@ -24,6 +25,8 @@ const doneEvent = z.object({
   cost_usd: z.string(),
   /** Remote MCP registrations whose tools answered («Leyó {servicio}»); never content or URLs. */
   remote_sources: remoteSourcesSchema.optional(),
+  /** MCP Apps of the answer (D125): ids and tools, never what the tool said. */
+  apps: messageAppsSchema.optional(),
 });
 const errorEvent = z.object({ code: z.string(), message: z.string() });
 /**

@@ -25,7 +25,12 @@ interface RemoteSpec {
   /** Sign with this payload type instead (a pack envelope). */
   payloadType?: string;
   fileName?: string;
+  /** An MCP App on `wit_work_item` (D125): its HTML, and what the statement carries. */
+  app?: { html: string; shipped?: Record<string, string>; uri?: string; domains?: string[]; calls?: string[] };
 }
+
+const APP_URI = "ui://azure-devops/work-items";
+const sha256 = (text: string) => createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex");
 
 function keyPair() {
   const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
@@ -45,11 +50,24 @@ function signedRemotes(specs: RemoteSpec[] = [{}], key = keyPair()) {
         name: "A remote",
         tools: TOOLS.map((name, i) => {
           const access = spec.access === undefined ? "read" : spec.access[i];
-          return { name, toolset: "core", ...(access === undefined ? {} : { access }) };
+          const ui =
+            spec.app && name === "wit_work_item"
+              ? {
+                  ui: {
+                    resource_uri: spec.app.uri ?? APP_URI,
+                    html: "ui/work-items.html",
+                    html_sha256: sha256(spec.app.html),
+                    csp: { connect_domains: spec.app.domains ?? [], resource_domains: [] },
+                    calls: spec.app.calls ?? ["wit_work_item"],
+                  },
+                }
+              : {};
+          return { name, toolset: "core", ...(access === undefined ? {} : { access }), ...ui };
         }),
       },
       tool_schema: { tools: (spec.served ?? TOOLS).map((name) => ({ name, inputSchema: { type: "object" } })) },
       source_revision: "f".repeat(40),
+      ...(spec.app ? { ui_resources: spec.app.shipped ?? { [spec.app.uri ?? APP_URI]: spec.app.html } } : {}),
     };
     const payload = Buffer.from(JSON.stringify(statement));
     const kind = Buffer.from(spec.payloadType ?? REMOTE_PAYLOAD_TYPE);
@@ -112,6 +130,23 @@ describe("remote MCP profiles of the release (D98 (14))", () => {
     const key = keyPair();
     const twice = signedRemotes([{}, { fileName: "azure-devops-2026.10.28-1.remote.json" }], key);
     expect(() => loadReleaseRemotes(twice.dir, twice.pem)).toThrow(/the signed profile is azure-devops/);
+  });
+
+  it("ships an MCP App only with the HTML its profile pins (D125 (2), TM-UI8)", () => {
+    const html = "<!doctype html><p>app</p>";
+    const signed = signedRemotes([{ app: { html } }]);
+    expect(loadReleaseRemotes(signed.dir, signed.pem)[0]!.apps).toEqual(["wit_work_item"]);
+    const cases: [RemoteSpec["app"], RegExp][] = [
+      [{ html, shipped: { [APP_URI]: "<p>evil</p>" } }, /not the one its profile pins/],
+      [{ html, shipped: {} }, /exactly the HTML of the profile's apps/],
+      [{ html, uri: "ui://other-remote/app" }, /outside ui:\/\/azure-devops\//],
+      [{ html, calls: ["delete_everything"] }, /calls tools outside its profile/],
+      [{ html, domains: ["api.example.com"] }, /not one this release accepts/],
+    ];
+    for (const [app, error] of cases) {
+      const bad = signedRemotes([{ app }]);
+      expect(() => loadReleaseRemotes(bad.dir, bad.pem)).toThrow(error);
+    }
   });
 
   it("copies each profile under its digest and exposes the catalog", () => {

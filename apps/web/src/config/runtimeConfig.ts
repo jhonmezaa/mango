@@ -66,7 +66,7 @@ export const runtimeConfigSchema = z.object({
     .optional(),
   /**
    * The second origin (D123): the only one the SPA frames, where the Canvas runs its previews
-   * (D124 (4)). Optional: without it the preview says it is not available.
+   * (D124 (4)), and MCP Apps (D125). Optional: without it the preview says it is not available.
    */
   sandboxOrigin: originUrl.optional(),
   // Optional: override the issuer (only the local mock uses it; Cognito derives it from the pool).

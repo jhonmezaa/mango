@@ -50,6 +50,8 @@ import { CodeBlock } from './CodeBlock';
 import { ChatTableFile } from './DataTable';
 import { FileCard } from './FileCard';
 import { KnowledgeCitations, KnowledgeSteps } from './KnowledgeCitations';
+import { McpApp } from './McpApp';
+import { useChatFilesScope } from './chatFiles';
 import { ToolGroup } from './ToolGroup';
 
 // The markdown stack is the largest chunk and is only needed once there is an agent answer;
@@ -309,6 +311,7 @@ export const ChatMessage = memo(function ChatMessage({
   );
   const progressLabel = useProgressLabel(message.progress, running);
   const remote = useRemoteSources(message.remoteSources ?? NO_SOURCES);
+  const appsConversation = useChatFilesScope().conversationId;
   const strip = useStripSources(
     message.connectionRequired ?? NO_SOURCES,
     message.remoteSources ?? NO_SOURCES,
@@ -481,6 +484,12 @@ export const ChatMessage = memo(function ChatMessage({
         {message.files?.map((file) => (
           <FileCard key={file.file_id} file={file} />
         ))}
+        {/* Design round 41: the MCP Apps of the answer, after its files (D125). */}
+        {appsConversation
+          ? (message.apps ?? []).map((app) => (
+              <McpApp key={app.appId} conversationId={appsConversation} app={app} />
+            ))
+          : null}
         {message.status === 'error' &&
           (budgetExceeded ? (
             <div role="alert" className="notice notice-amber msg-notice">

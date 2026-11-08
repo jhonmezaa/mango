@@ -1,0 +1,148 @@
+/*
+ * MCP Apps in the chat (D125), from the design round 41 (`caps.css`, `ap-`; `cv-origin` is in canvas.css):
+ * the label of origin and Mango's own buttons are drawn outside the frame (TM-UI10); the frame
+ * has a 2 px border and a white background so it is never taken for Mango's interface.
+ */
+@layer components {
+  .ap-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    overflow: hidden;
+    margin: 12px 0;
+  }
+  .ap-h {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px 6px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .ap-tool {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .ap-frame {
+    border: 2px solid var(--border-strong);
+    border-radius: 6px;
+    margin: 8px;
+    background: #fff;
+    color: #1b1b1b;
+    overflow: auto;
+    font:
+      13px/1.45 'Segoe UI',
+      system-ui,
+      sans-serif;
+    height: 340px;
+    max-height: 340px;
+  }
+  .ap-frame iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #fff;
+  }
+  .ap-frame.is-hidden {
+    display: none;
+  }
+  .ap-card.is-full .ap-frame {
+    max-height: none;
+    height: auto;
+    flex: 1;
+  }
+  .ap-card.is-pip .ap-frame {
+    max-height: none;
+    height: auto;
+    flex: 1;
+    margin: 6px;
+  }
+  .ap-fr-msg {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 14px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .ap-fr-msg.is-err {
+    color: var(--text);
+  }
+  .ap-fr-msg.is-err > svg {
+    color: var(--amber);
+  }
+  .ap-f {
+    padding: 0 10px 8px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+  .ap-f-err {
+    display: inline-flex;
+    gap: 5px;
+    align-items: baseline;
+    color: var(--red);
+  }
+  .ap-f-err .mono {
+    font-size: 11px;
+  }
+  .ap-connect {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    font-size: 13px;
+  }
+  .ap-connect > svg {
+    color: var(--text-muted);
+  }
+  .ap-closed,
+  .ap-away {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0;
+    padding: 8px 10px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 10px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+  .ap-full {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: color-mix(in oklab, var(--bg) 70%, transparent);
+    backdrop-filter: blur(2px);
+    padding: 24px;
+    display: flex;
+  }
+  .ap-card.is-full {
+    flex: 1;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+  .ap-pip {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 150;
+    width: min(420px, calc(100vw - 24px));
+    height: 300px;
+  }
+  .ap-card.is-pip {
+    height: 100%;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  }
+  @media (max-width: 560px) {
+    .ap-full {
+      padding: 0;
+    }
+  }
+}

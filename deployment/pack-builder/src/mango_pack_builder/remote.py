@@ -16,12 +16,14 @@ from pydantic import ValidationError
 
 from mango_pack_builder.kms import Signer
 from mango_packs.remote import (
+    MAX_APP_HTML_BYTES,
     MAX_TOOL_SCHEMA_BYTES,
     PAYLOAD_TYPE,
     RemoteProfile,
     RemoteProfileError,
     RemoteProfileStatement,
     build_envelope,
+    check_app_html,
     check_tool_schema,
     verify_envelope,
 )
@@ -37,6 +39,8 @@ class Remote:
     directory: Path
     profile: RemoteProfile
     tool_schema: dict[str, object]
+    # The HTML of each MCP App of the profile, by its `ui://` resource (D125 (2)).
+    ui_resources: dict[str, str]
 
     @property
     def base_name(self) -> str:
@@ -71,7 +75,25 @@ def load_remote(directory: Path) -> Remote:
     except json.JSONDecodeError as error:
         raise RemoteProfileError(f"{schema_path} is not valid JSON: {error}") from error
     check_tool_schema(profile, schema)
-    return Remote(directory=directory, profile=profile, tool_schema=schema)
+    ui_resources = {
+        app.resource_uri: _app_html(directory, app.html) for app in profile.apps.values()
+    }
+    check_app_html(profile, ui_resources)
+    return Remote(
+        directory=directory, profile=profile, tool_schema=schema, ui_resources=ui_resources
+    )
+
+
+def _app_html(directory: Path, name: str) -> str:
+    """The HTML of an app: a file of the profile's `ui/` folder (its pattern admits no other
+    folder), UTF-8, and never a link that could point out of the profile."""
+    path = directory / name
+    if path.is_symlink():
+        raise RemoteProfileError(f"{path} is a link")
+    try:
+        return _read(path, MAX_APP_HTML_BYTES).decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RemoteProfileError(f"{path} is not UTF-8") from error
 
 
 def statement_for(remote: Remote, revision: str) -> RemoteProfileStatement:
@@ -81,6 +103,7 @@ def statement_for(remote: Remote, revision: str) -> RemoteProfileStatement:
             profile=remote.profile,
             tool_schema=remote.tool_schema,
             source_revision=revision,
+            ui_resources=remote.ui_resources,
         )
     except ValidationError as error:
         raise RemoteProfileError(f"cannot write the statement:\n{error}") from error

@@ -33,6 +33,21 @@ const RELEASE_REMOTES_DIR = resolve(REPO_ROOT, "dist/remotes");
 
 const base64 = z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/);
 const toolName = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
+const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/);
+/** HTML of one MCP App (D125): keep in sync with `MAX_APP_HTML_BYTES` of `mango_packs.remote`. */
+const MAX_APP_HTML_BYTES = 256 * 1024;
+const appResourceUri = z.string().regex(/^ui:\/\/[a-z][a-z0-9-]{1,23}\/[a-z][a-z0-9-]{0,47}$/);
+
+/**
+ * The curated interface of a tool (D125 (2)). Its CSP declares no domain in v1: the app reaches
+ * its data only through `tools/call` (rule 3), and the ceiling of the second origin names none.
+ */
+const toolUiSchema = z.object({
+  resource_uri: appResourceUri,
+  html_sha256: sha256Hex,
+  csp: z.object({ connect_domains: z.array(z.string()).max(0), resource_domains: z.array(z.string()).max(0) }),
+  calls: z.array(toolName).max(20),
+});
 
 const envelopeSchema = z
   .object({
@@ -50,12 +65,52 @@ const statementSchema = z.object({
     version: z.string().regex(/^[0-9]+(\.[0-9]+){1,3}-[1-9][0-9]{0,3}$/),
     // Required: an unclassified tool counts as a write (D84).
     tools: z
-      .array(z.object({ name: toolName, access: z.enum(["read", "write", "destructive"]) }))
+      .array(
+        z.object({
+          name: toolName,
+          access: z.enum(["read", "write", "destructive"]),
+          ui: toolUiSchema.optional(),
+        }),
+      )
       .min(1)
       .max(100),
   }),
   tool_schema: z.object({ tools: z.array(z.object({ name: toolName })).min(1).max(100) }).strict(),
+  ui_resources: z.record(appResourceUri, z.string()).optional(),
 });
+
+/**
+ * Fail unless the statement carries exactly the HTML of each app of its profile, with the hash
+ * the profile pins (D125 (2), TM-UI8): the pipeline checked it before signing, and the release
+ * checks it again before shipping it.
+ */
+function checkAppHtml(
+  name: string,
+  profileId: string,
+  tools: { name: string; ui?: z.infer<typeof toolUiSchema> }[],
+  resources: Record<string, string>,
+): string[] {
+  const apps = tools.flatMap((t) => (t.ui ? [{ tool: t.name, ...t.ui }] : []));
+  const expected = apps.map((a) => a.resource_uri).sort();
+  if (JSON.stringify(expected) !== JSON.stringify(Object.keys(resources).sort())) {
+    throw new Error(`${name}: the statement does not carry exactly the HTML of the profile's apps`);
+  }
+  const names = new Set(tools.map((t) => t.name));
+  for (const app of apps) {
+    if (!app.resource_uri.startsWith(`ui://${profileId}/`)) {
+      throw new Error(`${name}: the app of ${app.tool} is outside ui://${profileId}/`);
+    }
+    if (!app.calls.every((tool) => names.has(tool))) {
+      throw new Error(`${name}: the app of ${app.tool} calls tools outside its profile`);
+    }
+    const html = Buffer.from(resources[app.resource_uri] ?? "", "utf8");
+    if (html.length > MAX_APP_HTML_BYTES) throw new Error(`${name}: the HTML of ${app.resource_uri} is too large`);
+    if (createHash("sha256").update(html).digest("hex") !== app.html_sha256) {
+      throw new Error(`${name}: the HTML of ${app.resource_uri} is not the one its profile pins`);
+    }
+  }
+  return apps.map((a) => a.tool).sort();
+}
 
 export interface ReleaseRemote {
   readonly id: string;
@@ -68,6 +123,8 @@ export interface ReleaseRemote {
   readonly objectKey: string;
   /** Tools of the profile, every one `read`. */
   readonly tools: string[];
+  /** Tools with a curated MCP App whose HTML matched its hash (D125). */
+  readonly apps: string[];
 }
 
 /** What `mango-api` and the remote provisioner receive as `REMOTE_CATALOG`: id -> sha256. */
@@ -110,7 +167,7 @@ export function loadReleaseRemotes(dir: string, publicKeyPem: string): ReleaseRe
       const fields = parsed.error.issues.map((issue) => issue.path.join(".")).join(", ");
       throw new Error(`${name}: the signed statement is not one this release accepts (${fields})`);
     }
-    const { profile, tool_schema: schema } = parsed.data;
+    const { profile, tool_schema: schema, ui_resources: resources } = parsed.data;
     if (name !== `${profile.id}-${profile.version}${ENVELOPE_SUFFIX}`) {
       throw new Error(`${name}: the signed profile is ${profile.id} ${profile.version}`);
     }
@@ -126,6 +183,7 @@ export function loadReleaseRemotes(dir: string, publicKeyPem: string): ReleaseRe
     if (JSON.stringify(tools) !== JSON.stringify(served)) {
       throw new Error(`${name}: the tool schema does not list exactly the profile's tools`);
     }
+    const apps = checkAppHtml(name, profile.id, profile.tools, resources ?? {});
     const statementSha256 = createHash("sha256").update(payload).digest("hex");
     remotes.push({
       id: profile.id,
@@ -134,6 +192,7 @@ export function loadReleaseRemotes(dir: string, publicKeyPem: string): ReleaseRe
       file: name,
       objectKey: `${REMOTE_PREFIX}${profile.id}/${statementSha256}.json`,
       tools,
+      apps,
     });
   }
   return remotes;

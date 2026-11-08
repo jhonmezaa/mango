@@ -91,7 +91,8 @@ export interface SpaRuntimeConfig {
   auth: SpaAuthConfig;
   /**
    * The second origin (D123): `https://<distribution of the sandbox>`, the only one the SPA
-   * frames (its CSP `frame-src` names it). The Canvas runs its previews there (D124 (4)).
+   * frames (its CSP `frame-src` names it). The Canvas runs its previews there (D124 (4)),
+   * and MCP Apps (D125).
    */
   sandboxOrigin?: string;
 }

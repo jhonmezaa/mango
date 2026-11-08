@@ -42,6 +42,7 @@ from mango_api import (
     code_blocks,
     harness,
     knowledge_citations,
+    mcp_apps,
     memory,
     sessions,
 )
@@ -1599,6 +1600,7 @@ class ChatTurns:
                 skills=frozenset(parse_skill_ref(r)[0] for r in agent.definition.skills),
                 on_skill=skill_counter(services),
                 remotes=agent.remote_gateway_tools,
+                apps=mcp_apps.app_tools(services.mcp_apps, agent),
             ):
                 if event.kind != harness.WRITE_CALL:
                     put(event.kind, event.data)
@@ -1631,6 +1633,19 @@ class ChatTurns:
             # Shown to the person only when it is everything the turn cost.
             actual = cost(result.usage, started.price)
             message_id = new_id()
+            # The MCP Apps of the answer (D125): ids and tools only, never what the tool said.
+            apps = (
+                mcp_apps.create_apps(
+                    services.mcp_apps,
+                    user.user_id,
+                    conversation_id,
+                    turn_id,
+                    agent,
+                    result.app_calls,
+                )
+                if result.app_calls and not stopped
+                else []
+            )
             put(
                 "done",
                 {
@@ -1644,6 +1659,7 @@ class ChatTurns:
                     # Registrations only, never content or URLs: the live turn shows «Leyó
                     # {servicio}» and classifies its links as after a reload.
                     "remote_sources": result.remote_sources,
+                    **({"apps": apps} if apps else {}),
                 },
             )
             if not stopped:
@@ -1660,6 +1676,7 @@ class ChatTurns:
                     message_id=message_id,
                     code_runs=cells.stored() if cells is not None else None,
                     textdocs=canvas.stored() if canvas is not None else None,
+                    apps=apps,
                 )
                 answered = True
         except Exception as exc:

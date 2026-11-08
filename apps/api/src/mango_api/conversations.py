@@ -98,6 +98,8 @@ class StoredMessage:
     exports: list[dict[str, Any]] = field(default_factory=list)
     """Files a Canvas export added to the conversation (D124 (3)): id, name, kind and size of
     each, as ``attachments``. A message of its own, without text."""
+    apps: list[dict[str, str]] = field(default_factory=list)
+    """MCP Apps of this answer (D125): app, registration and tool, never what the tool said."""
 
 
 @dataclass(frozen=True)
@@ -419,6 +421,7 @@ class ConversationRepository:
         code_runs: list[dict[str, Any]] | None = None,
         textdocs: list[dict[str, Any]] | None = None,
         exports: list[dict[str, Any]] | None = None,
+        apps: list[dict[str, str]] | None = None,
     ) -> str:
         message_id = message_id or new_id()
         item: dict[str, Any] = {
@@ -451,6 +454,9 @@ class ConversationRepository:
             item["textdocs"] = {"S": json.dumps(textdocs)}
         if exports:
             item["exports"] = {"S": json.dumps(exports, ensure_ascii=False)}
+        # Ids and tools of the MCP Apps of the answer (D125): what they show is in ``APP#``.
+        if apps:
+            item["apps"] = {"S": json.dumps(apps)}
         self._clients(user_id).put_item(TableName=self._table, Item=item)
         return message_id
 
@@ -656,6 +662,7 @@ class ConversationRepository:
                         code_runs=json.loads(i.get("code_runs", {}).get("S", "[]")),
                         textdocs=json.loads(i.get("textdocs", {}).get("S", "[]")),
                         exports=json.loads(i.get("exports", {}).get("S", "[]")),
+                        apps=json.loads(i.get("apps", {}).get("S", "[]")),
                     )
                 )
             if "LastEvaluatedKey" not in resp:

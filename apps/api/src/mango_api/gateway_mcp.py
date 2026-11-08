@@ -313,3 +313,135 @@ class GatewayConnections:
             return ConnectionOutcome.ANSWERED
         refusal("tools/call", answer, message)
         return ConnectionOutcome.FAILED
+
+
+# --- Calls of an MCP App (D125 (4)) ---------------------------------------------------------
+
+
+class AppCallOutcome(StrEnum):
+    ANSWERED = "answered"
+    TOOL_ERROR = "tool_error"
+    """The tool answered with ``isError``: its text goes to the app, as the model would see it."""
+    CONSENT_REQUIRED = "consent_required"
+    FAILED = "failed"
+
+
+APP_SIGNATURE_SECONDS = 60
+MAX_APP_RESULT_BLOCKS = 32
+
+
+@dataclass(frozen=True)
+class AppCallAnswer:
+    outcome: AppCallOutcome
+    texts: tuple[str, ...] = ()
+    """The text blocks of the tool's answer, at most ``max_chars`` in all; nothing else of it."""
+
+
+class GatewayAppCalls:
+    """A ``tools/call`` an MCP App asked for, as the person (rule 5) and as the agent of the
+    conversation: its invocation signature names that agent's published version and only this
+    tool, so the ``REQUEST`` interceptor, Cedar L2 and the signed approved catalog decide it
+    exactly as they decide the model's call (D125 (4)). What the tool answers is only handed
+    back to the app: never logged, never stored."""
+
+    def __init__(
+        self,
+        *,
+        gateway_url: str,
+        invocation_key: bytes,
+        transport: Transport = post,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        if not gateway_url.startswith("https://") or not invocation_key:
+            raise ValueError("app calls need an https Gateway and the invocation key")
+        self._url = gateway_url
+        self._key = invocation_key
+        self._transport = transport
+        self._now = clock
+
+    def call(  # noqa: PLR0911 - each return is one way the call can end
+        self,
+        *,
+        subject: str,
+        access_token: str,
+        token_expires_at: int,
+        agent_id: str,
+        agent_version: int,
+        registration_id: str,
+        tool: str,
+        arguments: dict[str, Any],
+        max_chars: int,
+    ) -> AppCallAnswer:
+        """Call ``tool`` of the remote once. Never raises."""
+        now = int(self._now())
+        expires_at = min(token_expires_at, now + APP_SIGNATURE_SECONDS)
+        if expires_at <= now:
+            return AppCallAnswer(AppCallOutcome.FAILED)
+        target = remote_mcp.target_name(registration_id)
+        try:
+            gateway_tool = remote_mcp.gateway_tool_name(registration_id, tool)
+            signature = invocation.sign(
+                self._key,
+                subject,
+                expires_at,
+                agent_id=agent_id,
+                agent_version=agent_version,
+                tools=[gateway_tool],
+            )
+        except ValueError:
+            logger.exception("app call could not be signed")
+            return AppCallAnswer(AppCallOutcome.FAILED)
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            PROTOCOL_HEADER: remote_mcp.MCP_PROTOCOL_VERSION,
+            invocation.HEADER: signature,
+        }
+        request_id = secrets.token_hex(8)
+        # No `_meta`: the interceptor would drop it anyway (D93 (8)).
+        params: dict[str, Any] = {"name": gateway_tool, "arguments": arguments}
+        try:
+            session = open_session(
+                self._transport,
+                self._url,
+                headers,
+                request_id=request_id,
+                protocol_version=remote_mcp.MCP_PROTOCOL_VERSION,
+                url_elicitation=True,
+            )
+            if session is not None:
+                headers[SESSION_HEADER] = session
+            answer = self._transport(self._url, headers, rpc("tools/call", request_id, params))
+        except NotStartedError:
+            return AppCallAnswer(AppCallOutcome.FAILED)
+        except (OSError, ValueError):
+            logger.exception("gateway app call failed")
+            return AppCallAnswer(AppCallOutcome.FAILED)
+        message = rpc_body(answer.body)
+        if message is not None and _consent_required(message, target):
+            return AppCallAnswer(AppCallOutcome.CONSENT_REQUIRED)
+        result = message.get("result") if message is not None else None
+        if answer.status != HTTP_OK or not isinstance(result, dict):
+            refusal("tools/call", answer, message)
+            return AppCallAnswer(AppCallOutcome.FAILED)
+        texts = _texts(result.get("content"), max_chars)
+        outcome = (
+            AppCallOutcome.TOOL_ERROR if result.get("isError") is True else AppCallOutcome.ANSWERED
+        )
+        return AppCallAnswer(outcome, texts)
+
+
+def _texts(content: object, max_chars: int) -> tuple[str, ...]:
+    """The text blocks of a tool result, cut to ``max_chars`` in all (the profile's bound)."""
+    out: list[str] = []
+    left = max_chars
+    for block in content if isinstance(content, list) else []:
+        if len(out) >= MAX_APP_RESULT_BLOCKS or left <= 0:
+            break
+        if isinstance(block, dict) and block.get("type") == "text":
+            text = block.get("text")
+            if isinstance(text, str):
+                out.append(text[:left])
+                left -= len(out[-1])
+    return tuple(out)

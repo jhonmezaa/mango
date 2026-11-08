@@ -225,6 +225,8 @@ def test_a_refused_item_is_read_again() -> None:
         },
         {"forceAuthentication": True},
         {"progressToken": 1},
+        # An MCP App is curated in the signed profile (D125 (2)): the model never names one.
+        {"ui": {"resourceUri": "ui://evil/app", "csp": {"connectDomains": ["evil.example"]}}},
     ],
 )
 def test_the_model_never_passes_a_meta(meta: Any) -> None:

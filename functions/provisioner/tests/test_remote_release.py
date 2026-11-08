@@ -118,7 +118,7 @@ def test_a_registration_signed_before_d101_converges_with_no_approval(lab: Remot
     assert approved.generation == old["generation"]
     assert approved.revision == old["revision"] + 1
     assert approved.profile_sha256 == lab.digest
-    assert approved.profile_version == "2026.10.27-4"
+    assert approved.profile_version == "2026.10.27-5"
     registration = lab.registration()
     assert registration["status"] == {"S": "active"}
     assert "provision_lock" not in registration
@@ -160,7 +160,7 @@ def test_a_new_toolset_signs_again_with_the_approved_toolsets_only(lab: RemoteLa
     assert approved.headers == old["headers"]
     assert approved.revision == old["revision"] + 1
     assert approved.profile_sha256 == lab.digest
-    assert approved.profile_version == "2026.10.27-4"
+    assert approved.profile_version == "2026.10.27-5"
     # Nothing to converge: the target is the same and nothing was written to the Gateway.
     assert lab.agentcore.writes() == []
     assert {k: v for k, v in _target(lab).items() if k != "polls"} == target_before
@@ -210,7 +210,7 @@ def test_toolset_fields_alone_sign_again_with_no_approval(aws: None) -> None:
     assert approved.generation == before.generation
     assert approved.revision == before.revision + 1
     assert approved.profile_sha256 == new_digest
-    assert approved.profile_version == "2026.10.27-4"
+    assert approved.profile_version == "2026.10.27-5"
     # Nothing written to the Gateway: the target is the same.
     assert lab.agentcore.writes() == []
     assert {k: v for k, v in _target(lab).items() if k != "polls"} == target_before

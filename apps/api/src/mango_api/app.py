@@ -129,7 +129,7 @@ from mango_api.directory import (
 from mango_api.evals import EvalGate, EvalsDeps, evals_router
 from mango_api.evals_runner import EvalRunner, EvalRunnerDeps, EvalsHarnesses
 from mango_api.evals_store import EvalRuns, EvalStore
-from mango_api.gateway_mcp import GatewayConnections
+from mango_api.gateway_mcp import GatewayAppCalls, GatewayConnections
 from mango_api.governance import GovernanceDeps, governance_router
 from mango_api.group_admin import (
     CognitoGroups,
@@ -159,6 +159,7 @@ from mango_api.knowledge_uploads import S3_CONFIG as KNOWLEDGE_S3_CONFIG
 from mango_api.knowledge_uploads import DocumentStorage
 from mango_api.limits import Limits
 from mango_api.mcp import McpDeps, mcp_router
+from mango_api.mcp_apps import McpAppsDeps, McpAppStore, mcp_apps_router
 from mango_api.mcp_catalog import CatalogSource, McpCatalog, RemoteStates
 from mango_api.mcp_store import PackStore
 from mango_api.memory import MemoryDeps
@@ -198,7 +199,7 @@ from mango_api.provisioner import (
     ProvisionerClient,
     RemoteProvisionerClient,
 )
-from mango_api.published import PublishedAgents, usable_by
+from mango_api.published import PublishedAgent, PublishedAgents, usable_by
 from mango_api.rate_limits import RateLimitStore
 from mango_api.remote_mcp import RemoteMcpDeps, remote_mcp_router
 from mango_api.remote_mcp_store import (
@@ -391,6 +392,14 @@ class MessageAttachmentOut(_Strict):
     """After 90 days or with its conversation: «Ya no disponible»."""
 
 
+class MessageAppOut(_Strict):
+    """An MCP App of an answer (D125): ids and its tool, never what the tool answered."""
+
+    app_id: str
+    registration_id: str
+    tool: str
+
+
 class MessageOut(_Strict):
     message_id: str
     role: str
@@ -420,6 +429,8 @@ class MessageOut(_Strict):
     """The Canvas documents this answer wrote (D124): their cards, which open the Canvas."""
     files: list[code_blocks.CodeFileOut] = []
     """The files a Canvas export added (D124 (3)): a message without text, only their cards."""
+    apps: list[MessageAppOut] = []
+    """MCP Apps of this answer (D125): read each one with ``GET …/apps/{app_id}``."""
 
 
 class ConversationDetail(_Strict):
@@ -503,6 +514,8 @@ class Services:
     mcp: McpDeps | None = None
     # Remote MCP registrations (D93, D98); set in production (build_services).
     remote_mcp: RemoteMcpDeps | None = None
+    mcp_apps: McpAppsDeps | None = None
+    """MCP Apps of remote tools (D125); ``None`` while remote MCPs are off."""
     # «Mis conexiones» of remote MCPs (D97, D98); set in production (build_services).
     connections: ConnectionsDeps | None = None
     # Emails of the people an agent is shared with (D33); set in production (build_services).
@@ -1260,7 +1273,43 @@ def build_services(settings: Settings) -> Services:
     )
     services.chat_turns = _chat_turns(services, rls.for_user)
     services.memory = _memory_deps(services, dynamodb)
+    services.mcp_apps = _mcp_apps_deps(services, rls, invocation_key)
     return services
+
+
+def _mcp_apps_deps(
+    services: Services, rls: RlsClientFactory, invocation_key: bytes
+) -> McpAppsDeps | None:
+    """MCP Apps of remote tools (D125): only while remote MCPs are on in the installation."""
+    settings = services.settings
+    remote = services.remote_mcp
+    # Issued always, like every limit of the registry; used only while remote MCPs are on.
+    calls = services.limits.limiter("mcp_apps.calls")
+    if not settings.remote_mcp_enabled or remote is None:
+        return None
+
+    def agent(agent_id: str, user: UserContext) -> PublishedAgent | None:
+        found = services.published.get(agent_id)
+        if found is None or found.retired:
+            return None
+        return usable_by(found, services.authorizer, user)
+
+    def budget_open(user: UserContext, agent_id: str) -> bool:
+        scopes = turns.budget_scopes(services, user, agent_id)
+        return services.budgets.has_headroom(scopes, current_period())
+
+    return McpAppsDeps(
+        store=McpAppStore(rls.for_user, settings.conversations_table),
+        release=remote.release,
+        approved=remote.approved,
+        gateway=GatewayAppCalls(gateway_url=settings.gateway_url, invocation_key=invocation_key)
+        if settings.gateway_url
+        else None,
+        agent=agent,
+        budget_open=budget_open,
+        calls=calls,
+        audit=services.audit,
+    )
 
 
 def _memory_deps(services: Services, dynamodb: Any) -> MemoryDeps:
@@ -1829,6 +1878,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                         )
                         for f in m.exports
                     ],
+                    apps=[MessageAppOut(**a) for a in m.apps],
                 )
                 for m in messages
             ],
@@ -2318,6 +2368,15 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         app.include_router(
             knowledge_sources_router(services.knowledge, current_user, require, knowledge_allowed)
         )
+
+    if services.mcp_apps is not None:
+
+        async def own_for_apps(
+            caller: Caller, conversation_id: str, owner: str, read_only: bool
+        ) -> None:
+            await own_conversation(caller, conversation_id, owner, read_only=read_only)
+
+        app.include_router(mcp_apps_router(services.mcp_apps, current_user, own_for_apps))
 
     if services.chat_files is not None:
 

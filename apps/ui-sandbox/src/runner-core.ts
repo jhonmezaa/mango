@@ -5,15 +5,19 @@ import {
   innerPolicy,
   type InnerPolicy,
 } from './csp';
+import { AppHost, type AppHostPort } from './app-host';
 import {
   parseSandboxEvent,
   SandboxError,
   TIMEOUTS,
+  type AppRequest,
+  type AppStarted,
+  type DisplayMode,
   type RunRequest,
   type RunResult,
   type SandboxEvent,
 } from './protocol';
-import { buildSrcdoc } from './srcdoc';
+import { buildAppSrcdoc, buildSrcdoc } from './srcdoc';
 import { VENDOR_PATHS } from './vendor';
 
 /**
@@ -38,6 +42,8 @@ export interface RunnerAssets {
   readonly bootstrap: string;
   /** Text of the Python worker, which the inner frame starts from a `blob:` URL. */
   readonly pythonWorker: string;
+  /** Text of the bridge of an MCP App's inner frame (D125 (3)). */
+  readonly appBridge: string;
 }
 
 /** What the inner frame starts with, on its port. */
@@ -80,6 +86,7 @@ export class Runner {
   private frame: HTMLIFrameElement | null = null;
   private policy: InnerPolicy | null = null;
   private current: (() => void) | null = null;
+  private app: AppHost | null = null;
 
   constructor(
     private readonly container: HTMLElement,
@@ -194,6 +201,107 @@ export class Runner {
       );
       this.container.replaceChildren(frame);
     });
+  }
+
+  /**
+   * Start the MCP App of `request` in a new inner frame (D125 (3)). Resolves once the app
+   * finished `ui/initialize` and got its input and result, within the handshake time; the app
+   * then lives until it is stopped or replaced. Its requests go to `host`.
+   */
+  startApp(request: AppRequest, host: AppHostPort, signal: AbortSignal): Promise<AppStarted> {
+    let policy: InnerPolicy;
+    try {
+      // The CSP an app declares has no domain in v1 (D125 (7)): the mirror and nothing else.
+      policy = innerPolicy([], this.ceiling);
+    } catch (error) {
+      return Promise.reject(new SandboxError('PolicyError', (error as Error).message));
+    }
+    if (this.policy && comparePolicies(this.policy, policy) === 'looser') {
+      return Promise.reject(new SandboxError('PolicyError', 'CSP is being loosened'));
+    }
+    this.policy = policy;
+    this.stop();
+    const frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', INNER_SANDBOX);
+    frame.setAttribute('referrerpolicy', 'no-referrer');
+    frame.setAttribute('title', 'App');
+    frame.srcdoc = buildAppSrcdoc({
+      html: request.html,
+      csp: innerCsp(this.origin, policy),
+      bridge: this.assets.appBridge,
+    });
+    this.frame = frame;
+
+    return new Promise<AppStarted>((resolve, reject) => {
+      const channel = new MessageChannel();
+      let settled = false;
+      const settle = (done: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal.removeEventListener('abort', onAbort);
+        done();
+      };
+      const app = new AppHost(
+        request,
+        host,
+        (message) => {
+          if (this.frame === frame) channel.port1.postMessage(message);
+        },
+        () => {
+          settle(() => {
+            resolve({ ok: true });
+          });
+        },
+      );
+      // What the app posts to `window.parent`: only from this frame, while it is the current one.
+      const onMessage = (event: MessageEvent<unknown>) => {
+        if (this.frame !== frame || event.source !== frame.contentWindow) return;
+        app.receive(event.data);
+      };
+      const end = () => {
+        window.removeEventListener('message', onMessage);
+        channel.port1.close();
+        if (this.app === app) this.app = null;
+        settle(() => {
+          reject(new SandboxError('AbortError', 'The app was closed.'));
+        });
+      };
+      const onAbort = () => {
+        this.stop();
+      };
+      const timer = setTimeout(() => {
+        settle(() => {
+          reject(new SandboxError('TimeoutError', 'The app took too long to initialize.'));
+        });
+        this.stop();
+      }, TIMEOUTS.handshakeMs);
+      this.current = end;
+      this.app = app;
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+      window.addEventListener('message', onMessage);
+      frame.addEventListener(
+        'load',
+        () => {
+          const target = frame.contentWindow;
+          if (target === null || this.frame !== frame) return;
+          // An opaque origin has no name to target: the frame is ours and gets only its port
+          // (AGENTS.md: agreed exception to JS-MSG-001). Everything else goes by that port.
+          target.postMessage({ type: INNER_INIT }, '*', [channel.port2]);
+        },
+        { once: true },
+      );
+      this.container.replaceChildren(frame);
+    });
+  }
+
+  /** The display mode the host gave the current app (its own buttons). */
+  setAppDisplayMode(mode: DisplayMode): void {
+    this.app?.setDisplayMode(mode);
   }
 
   /** Destroy the inner frame, and with it whatever it runs (its Worker too, TM-UI9). */

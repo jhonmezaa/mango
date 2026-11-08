@@ -268,6 +268,24 @@ export const zAnomalyOutSchema = z.object({
 });
 
 /**
+ * AppTextBlock
+ */
+export const zAppTextBlockSchema = z.object({
+    text: z.string(),
+    type: z.literal('text').optional().default('text')
+});
+
+/**
+ * AppToolResult
+ *
+ * ``CallToolResult`` as an app gets it: the text blocks of the answer and its error mark.
+ */
+export const zAppToolResultSchema = z.object({
+    content: z.array(zAppTextBlockSchema),
+    is_error: z.boolean()
+});
+
+/**
  * ApproveIn
  */
 export const zApproveInSchema = z.object({
@@ -1478,6 +1496,39 @@ export const zDefinitionOutSchema = z.object({
 });
 
 /**
+ * McpAppCallIn
+ */
+export const zMcpAppCallInSchema = z.object({
+    arguments: z.record(z.string(), z.unknown()).optional().default({}),
+    name: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/)
+});
+
+/**
+ * McpAppCallOut
+ */
+export const zMcpAppCallOutSchema = z.object({
+    calls_limit: z.int(),
+    calls_used: z.int(),
+    result: zAppToolResultSchema
+});
+
+/**
+ * McpAppOut
+ */
+export const zMcpAppOutSchema = z.object({
+    app_id: z.string(),
+    calls_limit: z.int(),
+    calls_used: z.int(),
+    html: z.string(),
+    html_sha256: z.string(),
+    registration_id: z.string(),
+    service: z.string(),
+    tool: z.string(),
+    tool_input: z.record(z.string(), z.unknown()),
+    tool_result: zAppToolResultSchema
+});
+
+/**
  * MeCan
  *
  * Hints for the SPA only; the API authorizes every request on its own.
@@ -1587,6 +1638,17 @@ export const zMemoryOutSchema = z.object({
     enabled: z.boolean(),
     records: z.array(zMemoryRecordOutSchema),
     total: z.int()
+});
+
+/**
+ * MessageAppOut
+ *
+ * An MCP App of an answer (D125): ids and its tool, never what the tool answered.
+ */
+export const zMessageAppOutSchema = z.object({
+    app_id: z.string(),
+    registration_id: z.string(),
+    tool: z.string()
 });
 
 /**
@@ -3576,6 +3638,7 @@ export const zToolStatusSchema = z.object({
  */
 export const zMessageOutSchema = z.object({
     approvals: z.array(z.string()).optional().default([]),
+    apps: z.array(zMessageAppOutSchema).optional().default([]),
     attachments: z.array(zMessageAttachmentOutSchema).optional().default([]),
     citations: z.array(zCitationOutSchema).optional().default([]),
     code: z.array(zCodeCellOutSchema).optional().default([]),
@@ -5057,6 +5120,28 @@ export const zGetConversationPath = z.object({
  * Successful Response
  */
 export const zGetConversationResponse = zConversationDetailSchema;
+
+export const zGetMcpAppPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    app_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetMcpAppResponse = zMcpAppOutSchema;
+
+export const zCallMcpAppToolBody = zMcpAppCallInSchema;
+
+export const zCallMcpAppToolPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    app_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zCallMcpAppToolResponse = zMcpAppCallOutSchema;
 
 export const zChatFileStatusPath = z.object({
     conversation_id: z.string().regex(/^[0-9a-f]{32}$/),

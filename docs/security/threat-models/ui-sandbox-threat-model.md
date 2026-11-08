@@ -1,7 +1,8 @@
-# Segundo origen para código no confiable (sandbox de UI, Canvas y MCP Apps): modelo de amenazas (v0.4)
+# Segundo origen para código no confiable (sandbox de UI, Canvas y MCP Apps): modelo de amenazas (v0.5)
 
 > Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (fases 5 y 6: V0 a V3, K1, A1, A2). Decisiones que lo enmarcan: [D123](../../architecture/decisions/D123-segundo-origen-para-codigo-no-confiable.md) (segundo origen y espejo de dependencias en la release, vigente; su punto 8 recoge lo que este modelo fijó), [D124](../../architecture/decisions/D124-canvas.md) (Canvas, vigente) y [D125](../../architecture/decisions/D125-mcp-apps-de-solo-lectura.md) (MCP Apps de solo lectura, vigente; su punto 6 recoge lo que este modelo fijó); reglas 1, 3, 4 y 8 de `AGENTS.md`; D15, D24, D25, D39, D58, D63, D69, D93, D98, D116, D118; la excepción `CKV_AWS_174` de `AGENTS.md`.
 > Amplía `mango-architecture-threat-model.md` (TM-001 inyección indirecta, TM-012 contenido no confiable en la web), [`remote-mcp-threat-model.md`](remote-mcp-threat-model.md) (lo que trae un MCP remoto) y [`code-interpreter-threat-model.md`](code-interpreter-threat-model.md) (el código del servidor; este modelo es el del navegador).
+> **v0.5 (2026-11-08):** A1 y A2 construyeron el `_meta.ui` curado en el perfil firmado y el host de MCP Apps, sin instalar (D125 (7)); ver «Lo que construyeron A1 y A2». Los controles de TM-UI6, UI7 y UI8 (del HTML de una app) marcados **A1/A2** existen ya.
 > **v0.4 (2026-11-08):** resultados de la prueba V0 en AWS (P1, P2, P4, P7; P5 en parte), ver «Resultados de V0» (D123 (11)).
 > **v0.3 (2026-11-08):** V2 y V3 construyeron el espejo de dependencias y el runner, sin instalar (D123 (10)); ver «Lo que construyeron V2 y V3». Los controles de TM-UI3, UI4, UI5, UI8, UI9 y UI12 marcados **V2/V3** existen ya, con tests en `apps/ui-sandbox`, `apps/web/src/sandbox` e `infra/test/ui-sandbox-origin.test.ts`.
 > **v0.2 (2026-11-08):** V1 construyó la infraestructura del segundo origen, sin contenido y sin instalar (D123 (9)); ver «Lo que construyó V1». Los controles de TM-UI1, UI2, UI11 y UI12 marcados **V1** existen ya, con tests en `infra/test/ui-sandbox-origin.test.ts`.
@@ -170,7 +171,7 @@ flowchart LR
 - **TM-UI9 (bloqueo):** Python corre en un Worker `blob:` dentro del iframe interior; a los 50 s el runner destruye el iframe y con él el Worker.
 - **TM-UI12 (coste):** la alarma `Mango-<ns>-UiSandbox-bytes` (más de 10 GiB en una hora) avisa al tema de alertas; `/vendor/` y `/assets/` llevan `Cache-Control: immutable`.
 - **Excepción aceptada por el dueño (2026-11-08):** el runner entrega su puerto al iframe interior con `postMessage(…, '*')`, porque un origen opaco no tiene nombre (JS-MSG-001, en `AGENTS.md`). El mensaje solo lleva su tipo y el puerto, va al iframe recién creado y lo que diga por el puerto no se cree.
-- **Pendiente:** de V0, U-a (canales de salida), Firefox, Safari y Pyodide; el marco y la configuración de Canvas (K1), y el host de MCP Apps (A2).
+- **Pendiente:** de V0, U-a (canales de salida), Firefox, Safari y Pyodide; el marco y la configuración de Canvas (K1), y el host de MCP Apps (A2, construido después: ver «Lo que construyeron A1 y A2»).
 
 ## Resultados de V0 (2026-11-08)
 
@@ -181,6 +182,18 @@ Prueba en la cuenta del cliente, autorizada por el dueño ese día, con dos dist
 - **P5 (parcial, TM-UI4, TM-UI9):** Worker `blob:` en el iframe y en el interior opaco; en el interior, sin `cookie` ni `localStorage`, el `.wasm` del espejo por el CORS de `/vendor/` y `fetch` a la SPA bloqueado por `connect-src 'self'`. Pyodide sin probar en AWS.
 - **P7 (TM-UI11):** la función corre después de la política y su CSP es la que llega; en un error del origen la función no corre y llega la CSP de respaldo.
 - **Sin probar:** U-a (canales de salida del interior: WebRTC, `prefetch`, DNS), Firefox, Safari, Pyodide y el web ACL (TM-UI12).
+
+## Lo que construyeron A1 y A2 (2026-11-08)
+
+Notas de construcción en D125 (7). Sin instalar ni ver en AWS.
+- **TM-UI8 (integridad del HTML de una app):** el `_meta.ui` está curado en el ítem de la tool del perfil firmado, con el hash de su HTML; el HTML viaja dentro de la declaración firmada (`ui_resources`). Lo comprueban el check del perfil antes de firmar (`mango-pack-builder remote check`, que además rechaza un `_meta` del servidor en el esquema), la síntesis de la release (`RemoteRelease`), la verificación de `mango-api` al leer el perfil y la SPA con SubtleCrypto antes de mandarlo al runner. Un HTML distinto no se dibuja. El Gateway sigue sin `resources/read` (D98 (16)).
+- **TM-UI6 (`tools/call` de la app):** solo tools de `calls` de la app (de su propio perfil), y solo si el agente de la conversación las puede usar ahora con la persona (`usable_by`: registro `active`, catálogo firmado, `UseRemoteMcp`). Van por `mango-api` con el token de la persona y una firma de la invocación que nombra solo esa tool (interceptor y Cedar L2 como la del modelo), con el presupuesto que debe tener margen y los topes de 20 por app y turno (escritura condicional) y 30 por persona y minuto (compartido). Argumentos de hasta 16 KiB y profundidad 8. Cada llamada se audita con `origin: app`, la tool y el resultado, sin argumentos ni respuesta, antes de que la respuesta salga (falla cerrada). Tests: `apps/api/tests/test_mcp_apps.py`.
+- **TM-UI7 (métodos):** el host del runner (`apps/ui-sandbox/src/app-host.ts`) atiende solo `ui/initialize`, `ui/notifications/initialized`, `ui/request-display-mode` y `tools/call`, y manda `tool-input`, `tool-result` y `host-context-changed`. `ui/message`, `ui/update-model-context`, `ui/open-link`, las descargas, `resources/read` y cualquier otra petición reciben «no admitido» (`-32601`) y se cuentan (`app-refused`). Probado en Chromium con una app hostil, que además no llega a la SPA ni a la red (`apps/ui-sandbox/e2e/apps.spec.ts`).
+- **TM-UI3/UI5 (cruce):** la app corre en un iframe interior opaco, como las ejecuciones; el runner solo acepta lo que la app manda a `window.parent` desde su propio marco, y le contesta por un puerto que le entrega con el mismo mensaje de la excepción JS-MSG-001: nada con datos viaja con `'*'`, así que la excepción no se amplía. Las respuestas de las tools cruzan el RPC con el límite de 1 MiB solo en `text` y `html`.
+- **TM-UI10 (suplantación):** la etiqueta «app de {MCP}», la tool y los botones de Mango van fuera del marco, que tiene borde de 2 px y fondo blanco (ronda 41). Pantalla completa y ventana flotante no mueven el iframe.
+- **Datos:** la entrada y la respuesta de la llamada que creó la app se guardan en la partición de la persona en `Conversations` (RLS, `APP#`), porque la app las necesita al recargar; el mensaje solo guarda ids.
+
+**Residual de A2:** una app puede pedir pantalla completa sin un gesto de la persona (el host no lo puede saber desde otro origen). Lo acota que la cabecera de Mango con la etiqueta de origen, «Volver a la respuesta» y Esc siguen fuera del marco. Pendiente de aceptación del dueño, como el resto de esta lista.
 
 ## Criticality calibration
 
@@ -216,6 +229,7 @@ Fijados el 2026-11-07 por el agente que escribió el modelo, con la opción reco
 - **TM-UI1:** el aislamiento depende de que la distribución de la SPA nunca sirva el runner; lo protege un test, no una frontera de AWS.
 - **`unsafe-eval` y `unsafe-inline` dentro del sandbox:** necesarios para Babel, esbuild y Pyodide; aceptables solo por el aislamiento de sitio y de origen opaco.
 - **`postMessage(…, '*')` del runner al iframe interior (V3):** excepción a JS-MSG-001 registrada en `AGENTS.md`, aceptada por el dueño el 2026-11-08 (D123 (10) (k)).
+- **Pantalla completa pedida por una app (A2):** sin gesto de la persona; la cabecera de Mango sigue fuera del marco (TM-UI10).
 - **PoC sin dominio propio:** sin subdominio por app; el aislamiento entre apps es solo el del origen opaco (TM-UI5). Las ampliaciones de `CKV_AWS_174` (certificado por defecto) y `CKV_AWS_86`/`AwsSolutions-CFR3` (logs v2) a la segunda distribución están registradas en `AGENTS.md`, aceptadas por el dueño el 2026-11-08 (D123 (9) (f)).
 
 ## Quality check

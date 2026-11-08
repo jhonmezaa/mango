@@ -1351,6 +1351,49 @@
         "title": "AnomalyOut",
         "type": "object"
       },
+      "AppTextBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "text",
+            "default": "text",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "AppTextBlock",
+        "type": "object"
+      },
+      "AppToolResult": {
+        "additionalProperties": false,
+        "description": "``CallToolResult`` as an app gets it: the text blocks of the answer and its error mark.",
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/AppTextBlock"
+            },
+            "title": "Content",
+            "type": "array"
+          },
+          "is_error": {
+            "title": "Is Error",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "content",
+          "is_error"
+        ],
+        "title": "AppToolResult",
+        "type": "object"
+      },
       "ApprovalListOut": {
         "additionalProperties": false,
         "properties": {
@@ -6599,6 +6642,109 @@
         "title": "LimitsOut",
         "type": "object"
       },
+      "McpAppCallIn": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Arguments",
+            "type": "object"
+          },
+          "name": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "McpAppCallIn",
+        "type": "object"
+      },
+      "McpAppCallOut": {
+        "additionalProperties": false,
+        "properties": {
+          "calls_limit": {
+            "title": "Calls Limit",
+            "type": "integer"
+          },
+          "calls_used": {
+            "title": "Calls Used",
+            "type": "integer"
+          },
+          "result": {
+            "$ref": "#/components/schemas/AppToolResult"
+          }
+        },
+        "required": [
+          "result",
+          "calls_used",
+          "calls_limit"
+        ],
+        "title": "McpAppCallOut",
+        "type": "object"
+      },
+      "McpAppOut": {
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "calls_limit": {
+            "title": "Calls Limit",
+            "type": "integer"
+          },
+          "calls_used": {
+            "title": "Calls Used",
+            "type": "integer"
+          },
+          "html": {
+            "title": "Html",
+            "type": "string"
+          },
+          "html_sha256": {
+            "title": "Html Sha256",
+            "type": "string"
+          },
+          "registration_id": {
+            "title": "Registration Id",
+            "type": "string"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "tool_input": {
+            "additionalProperties": true,
+            "title": "Tool Input",
+            "type": "object"
+          },
+          "tool_result": {
+            "$ref": "#/components/schemas/AppToolResult"
+          }
+        },
+        "required": [
+          "app_id",
+          "registration_id",
+          "service",
+          "tool",
+          "html",
+          "html_sha256",
+          "tool_input",
+          "tool_result",
+          "calls_used",
+          "calls_limit"
+        ],
+        "title": "McpAppOut",
+        "type": "object"
+      },
       "MeCan": {
         "additionalProperties": false,
         "description": "Hints for the SPA only; the API authorizes every request on its own.",
@@ -6961,6 +7107,31 @@
         "title": "MemoryRecordOut",
         "type": "object"
       },
+      "MessageAppOut": {
+        "additionalProperties": false,
+        "description": "An MCP App of an answer (D125): ids and its tool, never what the tool answered.",
+        "properties": {
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "registration_id": {
+            "title": "Registration Id",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id",
+          "registration_id",
+          "tool"
+        ],
+        "title": "MessageAppOut",
+        "type": "object"
+      },
       "MessageAttachmentOut": {
         "additionalProperties": false,
         "description": "A file of a question (D116): its name, kind and size, and whether it is still there.",
@@ -7005,6 +7176,14 @@
               "type": "string"
             },
             "title": "Approvals",
+            "type": "array"
+          },
+          "apps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MessageAppOut"
+            },
+            "title": "Apps",
             "type": "array"
           },
           "attachments": {
@@ -19767,6 +19946,117 @@
           }
         },
         "summary": "Get Conversation"
+      }
+    },
+    "/conversations/{conversation_id}/apps/{app_id}": {
+      "get": {
+        "operationId": "get_mcp_app",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpAppOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Mcp App"
+      }
+    },
+    "/conversations/{conversation_id}/apps/{app_id}/calls": {
+      "post": {
+        "description": "A ``tools/call`` of the app (D125 (4)): read only, of its own MCP, through the\nGateway with Cedar and the budget, counted per app and turn and per person.",
+        "operationId": "call_mcp_app_tool",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "App Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpAppCallIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpAppCallOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Call Mcp App Tool"
       }
     },
     "/conversations/{conversation_id}/files/{file_id}": {

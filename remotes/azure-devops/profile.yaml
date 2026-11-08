@@ -5,7 +5,7 @@
 schema_version: 1
 id: azure-devops
 # <date of the captured tool list>-<revision of Mango>
-version: "2026.10.27-4"
+version: "2026.10.27-5"
 name: Azure DevOps
 operator: Microsoft
 data_leaves_aws: true
@@ -52,7 +52,17 @@ probe: {tool: core_list_projects, arguments: {top: 1}}
 tools:
   - {name: core_list_projects, toolset: core, access: read}
   - {name: core_list_project_teams, toolset: core, access: read}
-  - {name: wit_work_item, toolset: wit, access: read}
+  # MCP App (D125): its interface is curated here and signed with the profile, never served by
+  # the server. The app may call only the tools of `calls` (visibility "app"), through Mango.
+  - name: wit_work_item
+    toolset: wit
+    access: read
+    ui:
+      resource_uri: ui://azure-devops/work-items
+      html: ui/work-items.html
+      html_sha256: e36add27a8cbc2f32b5ddf244609705b9dcce8c7b713682275d2b0e27e99e6cb
+      csp: {connect_domains: [], resource_domains: []}
+      calls: [wit_work_item]
   - {name: wit_query, toolset: wit, access: read}
   - {name: wit_backlog, toolset: wit, access: read}
   - {name: search_workitem, toolset: wit, access: read}

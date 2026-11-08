@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Work items</title>
+<!--
+  MCP App of the Azure DevOps tool wit_work_item (D125), curated by Mango and signed with the
+  remote profile: the server never serves it. It speaks the MCP Apps bridge (ui/initialize,
+  tool-input, tool-result, ui/request-display-mode, tools/call) with its host, the runner of
+  the second origin, and asks it for nothing else. Everything it draws is text: what a tool
+  answers is untrusted and is never parsed as HTML.
+-->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:#1b1b1b;font:13px/1.45 'Segoe UI',system-ui,sans-serif}
+  button{font:inherit;background:none;border:0;padding:0;cursor:pointer;color:inherit}
+  .h{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #e3e3e3}
+  .h span{color:#666;font-size:12px}
+  .h button{margin-left:auto;color:#0b5cad;font-size:12px}
+  .l{display:grid}
+  .l button{display:grid;grid-template-columns:70px minmax(0,1fr) 90px 80px;gap:8px;align-items:center;padding:8px 12px;text-align:left;border-bottom:1px solid #f0f0f0}
+  .l button:hover,.l button.on{background:#f2f7fc}
+  .t{font-size:11px;font-weight:600}.t-bug{color:#b4161b}.t-task{color:#8a6d00}.t-story{color:#0b5cad}
+  .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .s,.w{font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .d{padding:8px 12px;font-size:12px;color:#555;background:#fafafa;white-space:pre-wrap;word-break:break-word}
+  .m{padding:18px 14px;color:#555}
+  @media (max-width:560px){.l button{grid-template-columns:56px minmax(0,1fr)}.s,.w{display:none}}
+</style>
+</head>
+<body>
+<div id="app"><div class="m">Esperando el resultado de la tool…</div></div>
+<script>
+(function () {
+  'use strict';
+  var TOOL = 'wit_work_item';
+  var MAX_ITEMS = 200;
+  var nextId = 1;
+  var pending = {};
+  var state = { items: [], project: null, selected: null, detail: '', mode: 'inline', modes: ['inline'] };
+
+  function send(message) { window.parent.postMessage(message, '*'); }
+  function request(method, params) {
+    var id = nextId++;
+    send({ jsonrpc: '2.0', id: id, method: method, params: params });
+    return new Promise(function (resolve, reject) { pending[id] = { resolve: resolve, reject: reject }; });
+  }
+  function notify(method, params) { send({ jsonrpc: '2.0', method: method, params: params || {} }); }
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  // What the tool answered, as JSON inside its text blocks: work items with an id and, when
+  // the call asked for them, their fields. Anything else is left out.
+  function textOf(result) {
+    var parts = [];
+    var content = result && Array.isArray(result.content) ? result.content : [];
+    for (var i = 0; i < content.length; i++) {
+      if (content[i] && content[i].type === 'text' && typeof content[i].text === 'string') parts.push(content[i].text);
+    }
+    return parts.join('\n');
+  }
+  function collect(value, out, depth) {
+    if (out.length >= MAX_ITEMS || depth > 8 || value === null || typeof value !== 'object') return;
+    if (Array.isArray(value)) { for (var i = 0; i < value.length; i++) collect(value[i], out, depth + 1); return; }
+    if (typeof value.id === 'number' && (value.fields || value.url)) {
+      var f = value.fields && typeof value.fields === 'object' ? value.fields : {};
+      var who = f['System.AssignedTo'];
+      out.push({
+        id: value.id,
+        type: str(f['System.WorkItemType']),
+        title: str(f['System.Title']),
+        state: str(f['System.State']),
+        who: who && typeof who === 'object' ? str(who.displayName) : str(who)
+      });
+      return;
+    }
+    for (var key in value) if (Object.prototype.hasOwnProperty.call(value, key)) collect(value[key], out, depth + 1);
+  }
+  function str(value) { return typeof value === 'string' ? value.slice(0, 300) : ''; }
+  function parse(result) {
+    var items = [];
+    try { collect(JSON.parse(textOf(result)), items, 0); } catch (e) { return null; }
+    return items;
+  }
+  function kind(type) {
+    var t = type.toLowerCase();
+    return t === 'bug' ? 't-bug' : (t === 'task' || t === 'tarea') ? 't-task' : (t.indexOf('story') >= 0 || t === 'historia') ? 't-story' : '';
+  }
+
+  function render(message) {
+    var root = document.getElementById('app');
+    root.replaceChildren();
+    if (message) { root.appendChild(el('div', 'm', message)); return; }
+    var head = el('div', 'h');
+    head.appendChild(el('b', null, 'Work items'));
+    head.appendChild(el('span', null, state.items.length === 1 ? '1 elemento' : state.items.length + ' elementos'));
+    if (state.mode === 'inline' && state.modes.indexOf('fullscreen') >= 0) {
+      var big = el('button', null, 'Ver en grande');
+      big.type = 'button';
+      big.addEventListener('click', function () {
+        request('ui/request-display-mode', { mode: 'fullscreen' }).then(function (r) {
+          if (r && typeof r.mode === 'string') { state.mode = r.mode; render(); }
+        }, function () {});
+      });
+      head.appendChild(big);
+    }
+    root.appendChild(head);
+    var list = el('div', 'l');
+    state.items.forEach(function (item) {
+      var row = el('button', state.selected === item.id ? 'on' : '');
+      row.type = 'button';
+      row.appendChild(el('span', 't ' + kind(item.type), item.type || '—'));
+      row.appendChild(el('span', 'n', '#' + item.id + ' ' + (item.title || '')));
+      row.appendChild(el('span', 's', item.state || '—'));
+      row.appendChild(el('span', 'w', item.who || '—'));
+      row.addEventListener('click', function () { open(item.id); });
+      list.appendChild(row);
+    });
+    root.appendChild(list);
+    if (state.selected !== null) root.appendChild(el('div', 'd', state.detail));
+  }
+
+  function open(id) {
+    state.selected = id;
+    state.detail = '#' + id + ' · Pedido a ' + TOOL + '…';
+    render();
+    var args = { action: 'get', id: id };
+    if (state.project) args.project = state.project;
+    request('tools/call', { name: TOOL, arguments: args }).then(function (result) {
+      if (state.selected !== id) return;
+      var found = result && result.isError !== true ? parse(result) : null;
+      var item = found && found.length ? found[0] : null;
+      state.detail = item
+        ? ['#' + item.id + ' · ' + (item.type || '—'), item.title, 'Estado: ' + (item.state || '—'), 'Asignado a: ' + (item.who || '—')].join('\n')
+        : '#' + id + ' · No se pudo leer el work item.';
+      render();
+    }, function (error) {
+      if (state.selected !== id) return;
+      state.detail = '#' + id + ' · ' + (error && typeof error.message === 'string' ? error.message.slice(0, 300) : 'La llamada falló.');
+      render();
+    });
+  }
+
+  window.addEventListener('message', function (event) {
+    if (event.source !== window.parent) return;
+    var m = event.data;
+    if (!m || m.jsonrpc !== '2.0') return;
+    if (m.id !== undefined && pending[m.id] && m.method === undefined) {
+      var p = pending[m.id];
+      delete pending[m.id];
+      if (m.error) p.reject(m.error); else p.resolve(m.result);
+      return;
+    }
+    var params = m.params || {};
+    if (m.method === 'ui/notifications/tool-input') {
+      var a = params.arguments || {};
+      state.project = typeof a.project === 'string' ? a.project : null;
+    } else if (m.method === 'ui/notifications/tool-result') {
+      if (params.isError === true) { render('La tool respondió con un error.'); return; }
+      var items = parse(params);
+      if (items === null) { render('No se pudo leer la respuesta de la tool.'); return; }
+      state.items = items;
+      render(items.length ? null : 'La tool no devolvió work items.');
+    } else if (m.method === 'ui/notifications/host-context-changed') {
+      if (typeof params.displayMode === 'string') { state.mode = params.displayMode; render(state.items.length ? null : undefined); }
+    }
+  });
+
+  request('ui/initialize', {
+    protocolVersion: '2026-01-26',
+    appInfo: { name: 'mango-azure-devops-work-items', version: '1' },
+    appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }
+  }).then(function (init) {
+    var ctx = (init && init.hostContext) || {};
+    if (typeof ctx.displayMode === 'string') state.mode = ctx.displayMode;
+    if (Array.isArray(ctx.availableDisplayModes)) state.modes = ctx.availableDisplayModes;
+    notify('ui/notifications/initialized');
+  }, function () { render('El host no aceptó la app.'); });
+})();
+</script>
+</body>
+</html>

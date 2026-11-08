@@ -66,3 +66,26 @@ export function buildSrcdoc(parts: SrcdocParts): string {
       ].join('');
   }
 }
+
+export interface AppSrcdocParts {
+  /** The app's HTML, as its signed profile carries it (checked against its hash by the host). */
+  readonly html: string;
+  readonly csp: string;
+  /** The text of the app bridge (the runner's own asset). */
+  readonly bridge: string;
+}
+
+/**
+ * The document of an MCP App (D125 (3)): the `<meta>` policy first, then the bridge, then the
+ * app's own HTML. A second `<html>` or `<head>` in the app is merged by the HTML parser into
+ * this document, after the policy and the bridge; a policy of its own can only restrict.
+ */
+export function buildAppSrcdoc(parts: AppSrcdocParts): string {
+  return [
+    '<!doctype html><html><head><meta charset="utf-8">',
+    `<meta http-equiv="Content-Security-Policy" content="${escapeAttribute(parts.csp)}">`,
+    '<meta name="referrer" content="no-referrer">',
+    `<script>${escapeScript(parts.bridge)}</script>`,
+    parts.html.replace(/^\s*<!doctype[^>]*>/i, ''),
+  ].join('');
+}
