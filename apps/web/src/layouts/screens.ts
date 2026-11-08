@@ -13,6 +13,7 @@ import { inboxScreen } from '../pages/inbox/screen';
 import { knowledgeScreen } from '../pages/knowledge/screen';
 import { marketplaceScreen } from '../pages/marketplace/screen';
 import { mcpCatalogScreen } from '../pages/mcpCatalog/screen';
+import { memoryScreen } from '../pages/memory/screen';
 import { observabilityScreen } from '../pages/observability/screen';
 import { orgChartScreen } from '../pages/orgChart/screen';
 import { playgroundScreen } from '../pages/playground/screen';
@@ -59,4 +60,5 @@ export const SCREENS: readonly Screen[] = [
   ticketsScreen,
   evalsScreen,
   costsScreen,
+  memoryScreen,
 ];

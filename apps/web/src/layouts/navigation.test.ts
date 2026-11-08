@@ -16,6 +16,8 @@ const USER: ViewKey[] = [
   // Design 2026-10-16 (D82 (1)): anyone with a usable agent creates tasks.
   'schedules',
   'org',
+  // Design round 41 (D122): everyone sees their own memory.
+  'memory',
 ];
 const OWNER_EXTRA: ViewKey[] = ['governance', 'evals', 'costs'];
 const NOT_CREATOR = { create_agent: false };

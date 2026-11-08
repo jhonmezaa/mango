@@ -13,6 +13,7 @@ const SCALAR_FIELDS = [
   'reports_to',
   'role',
   'model',
+  'memory',
 ] as const;
 const LIMIT_FIELDS = [
   'max_tokens',
@@ -29,6 +30,7 @@ const SET_FIELDS = [
   'skills',
   'groups',
   'users',
+  'capabilities',
 ] as const;
 
 interface PromptLine {
@@ -74,8 +76,11 @@ function promptDiff(before: string, after: string): PromptLine[] | null {
 }
 
 export function diffDefinitions(base: MockAgentDefinition | null, definition: MockAgentDefinition) {
-  const fields: { field: string; before: string | number | null; after: string | number | null }[] =
-    [];
+  const fields: {
+    field: string;
+    before: boolean | string | number | null;
+    after: boolean | string | number | null;
+  }[] = [];
   if (base) {
     for (const field of SCALAR_FIELDS) {
       if (base[field] !== definition[field]) {
@@ -94,9 +99,10 @@ export function diffDefinitions(base: MockAgentDefinition | null, definition: Mo
   }
   const sets: { field: string; added: string[]; removed: string[] }[] = [];
   for (const field of SET_FIELDS) {
-    const before = base ? base[field] : [];
-    const added = definition[field].filter((value) => !before.includes(value)).sort();
-    const removed = before.filter((value) => !definition[field].includes(value)).sort();
+    const before: readonly string[] = base ? base[field] : [];
+    const after: readonly string[] = definition[field];
+    const added = after.filter((value) => !before.includes(value)).sort();
+    const removed = before.filter((value) => !after.includes(value)).sort();
     if (added.length > 0 || removed.length > 0) sets.push({ field, added, removed });
   }
   const prompt = promptDiff(base ? base.system_prompt : '', definition.system_prompt);

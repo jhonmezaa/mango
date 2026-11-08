@@ -77,6 +77,7 @@ const DEFINITION: Version['definition'] = {
   knowledge_bases: [],
   skills: [],
   capabilities: [],
+  memory: false,
 };
 
 /** A change to a published agent: every kind of difference the backend reports. */
@@ -758,7 +759,7 @@ describe('AgentReviewPage (design agent-review.jsx)', () => {
           { field: 'color', before: 1, after: 4 },
           { field: 'limits.max_tokens_per_call', before: null, after: 2048 },
           { field: 'limits.temperature', before: 0.2, after: 0.3 },
-          { field: 'memory', before: null, after: 'session' },
+          { field: 'retention', before: null, after: 'session' },
         ],
         sets: [
           { field: 'allowed_models', added: ['mock.model-v2'], removed: ['mock.model-v0'] },
@@ -792,7 +793,7 @@ describe('AgentReviewPage (design agent-review.jsx)', () => {
     const other = within(panel).getByRole('heading', { name: 'otros cambios · 1' })
       .parentElement as HTMLElement;
     expect(other).toHaveTextContent('Campos sin sección propia. Revísalos antes de aprobar.');
-    expect(other).toHaveTextContent('memory');
+    expect(other).toHaveTextContent('retention');
     expect(other).toHaveTextContent('— → session');
   });
 

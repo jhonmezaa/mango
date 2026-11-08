@@ -146,6 +146,7 @@ def test_creator_without_finops_role_gets_in_and_can_create_agents(env: Env) -> 
         "is_admin": False,
         "groups": ["hr", "mango-agent-creator"],
         "can": {"create_agent": True},
+        "memory_enabled": False,
     }
 
 

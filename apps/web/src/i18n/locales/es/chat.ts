@@ -288,6 +288,15 @@ export const chat = {
     error: 'No se pudo cargar qué puede usar {{name}}',
     errorBody: 'Inténtalo de nuevo en unos segundos.',
     retry: 'Reintentar',
+    // Design round 41 (memory.jsx `MemoryPopRow`, D122).
+    memory: 'Memoria',
+    memoryNone: 'Esta versión no recuerda nada entre conversaciones.',
+    memoryOff:
+      'Esta versión tiene memoria, pero está apagada en esta instalación: no recuerda nada.',
+    memoryOn:
+      'Recuerda lo que hablas con {{name}} entre conversaciones. Solo tú lo ves; lo borras en ',
+    memoryLink: 'Memoria',
+    memoryEnd: '.',
   },
   actions: {
     copy: 'Copiar',

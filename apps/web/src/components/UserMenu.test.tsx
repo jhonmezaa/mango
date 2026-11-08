@@ -192,6 +192,7 @@ describe('UserMenu', () => {
       'Idioma, próximamente',
       expect.stringContaining('Cambiar tema'),
       'Primeros pasos, próximamente',
+      expect.stringContaining('Memoria'),
       expect.stringContaining('Ajustes'),
       expect.stringContaining('Cerrar sesión'),
     ]);
@@ -200,11 +201,11 @@ describe('UserMenu', () => {
     await user.keyboard('{ArrowDown}');
     expect(items[1]).toHaveFocus();
     await user.keyboard('{ArrowUp}{ArrowUp}');
-    expect(items[5]).toHaveFocus();
+    expect(items[6]).toHaveFocus();
     await user.keyboard('{Home}');
     expect(items[0]).toHaveFocus();
     await user.keyboard('{End}');
-    expect(items[5]).toHaveFocus();
+    expect(items[6]).toHaveFocus();
 
     await user.keyboard('{Escape}');
     expect(menu).not.toBeInTheDocument();
@@ -264,5 +265,14 @@ describe('UserMenu', () => {
     renderMenu(authValue(), false);
     await user.click(screen.getByRole('button', { name: accountName }));
     expect(screen.queryByRole('menuitem', { name: 'Ajustes' })).toBeNull();
+  });
+
+  it('opens Memoria from the menu for everyone (design round 41, D122)', async () => {
+    const user = userEvent.setup();
+    renderMenu(authValue(), false);
+    await user.click(screen.getByRole('button', { name: accountName }));
+    await user.click(screen.getByRole('menuitem', { name: 'Memoria' }));
+    expect(screen.getByTestId('path')).toHaveTextContent('/memory');
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });

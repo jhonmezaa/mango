@@ -762,4 +762,8 @@
     flex: 1 1 240px;
     max-width: 360px;
   }
+  /* Design round 41 (D122): the note of «Memoria» while the installation's memory is off. */
+  .ab-memory-off {
+    margin-top: 8px;
+  }
 }

@@ -21,6 +21,14 @@ export function formatRelative(value: string, now: number = Date.now()): string 
   return dateTime.format(date);
 }
 
+const day = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** «8 nov 2026» (design round 41 memory.jsx `fmtDate`). Unparseable input is returned as is. */
+export function formatDate(value: string): string {
+  const date = parse(value);
+  return date ? day.format(date) : value;
+}
+
 export function formatDateTime(value: string): string {
   const date = parse(value);
   return date ? dateTime.format(date) : value;

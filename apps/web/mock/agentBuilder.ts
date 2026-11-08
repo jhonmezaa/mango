@@ -297,6 +297,7 @@ function parseDefinition(value: unknown): MockAgentDefinition | null {
     knowledge_bases: sortedUnique(data.knowledge_bases),
     skills: sortedUnique(data.skills),
     capabilities: sortedUnique(data.capabilities),
+    memory: data.memory,
   };
 }
 

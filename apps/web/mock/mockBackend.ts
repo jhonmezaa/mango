@@ -42,6 +42,7 @@ import { handleKnowledge, handleMockS3 } from './knowledge.ts';
 import { originOf, sendError, sendJson, type ApiHandler } from './http.ts';
 import { handleMarketplace } from './marketplace.ts';
 import { handleMcpCatalog } from './mcpCatalog.ts';
+import { handleMemory, memoryEnabled } from './memory.ts';
 import { handleObservability } from './observability.ts';
 import { handleRemoteMcp } from './remoteMcp.ts';
 import { handleOrgChart } from './orgChart.ts';
@@ -65,6 +66,7 @@ const API_HANDLERS: readonly ApiHandler[] = [
   handleTasks,
   handleEvals,
   handleInbox,
+  handleMemory,
   handleGovernance,
   handleHome,
   handleCosts,
@@ -118,6 +120,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
       is_admin: true,
       groups: MOCK_GROUPS,
       can: { create_agent: true },
+      memory_enabled: memoryEnabled(),
     });
     return;
   }

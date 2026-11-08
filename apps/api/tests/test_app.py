@@ -588,6 +588,7 @@ def test_me_returns_only_public_fields(h: Harness) -> None:
         "is_admin": False,
         "groups": [],
         "can": {"create_agent": False},
+        "memory_enabled": False,
     }
 
 

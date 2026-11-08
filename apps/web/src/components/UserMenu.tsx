@@ -14,6 +14,7 @@ import {
   ExternalIcon,
   GlobeIcon,
   LockIcon,
+  MemoryIcon,
   MoonIcon,
   MoreHorizontalIcon,
   SettingsIcon,
@@ -221,6 +222,21 @@ export function UserMenu({
             <span className="flex-1">{t('nav.tour')}</span>
             <SoonTag />
           </div>
+          {/* Design round 41 (shell.jsx): «Memoria», for everyone, above «Ajustes» (D122). */}
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            className="menu-item"
+            onClick={() => {
+              setOpen(false);
+              onNavigate?.();
+              void navigate('/memory');
+            }}
+          >
+            <MemoryIcon size={14} />
+            <span className="flex-1">{t('nav.memory')}</span>
+          </button>
           {canView(me, 'settings') && (
             <button
               type="button"

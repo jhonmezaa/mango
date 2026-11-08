@@ -26,6 +26,7 @@ describe('SCREENS', () => {
       ['tickets', 'tickets/*'],
       ['evals', 'evals/*'],
       ['costs', 'costs/*'],
+      ['memory', 'memory/*'],
     ]);
   });
 

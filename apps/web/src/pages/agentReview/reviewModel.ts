@@ -172,7 +172,7 @@ export const AGENT_ICONS: Readonly<Record<string, ComponentType<IconProps> | und
 
 // --- Diff, as the backend computed it --------------------------------------------------------
 
-export type FieldValue = string | number | null;
+export type FieldValue = boolean | string | number | null;
 
 export function fieldChange(
   diff: Diff,
@@ -202,6 +202,8 @@ const SHOWN_FIELDS = new Set([
   'limits.timeout_seconds',
   'limits.max_tokens_per_call',
   'limits.temperature',
+  // «capacidades» (design round 41 `RvCaps`).
+  'memory',
 ]);
 const SHOWN_SETS = new Set([
   'allowed_models',
@@ -220,8 +222,16 @@ const SHOWN_SETS = new Set([
 export function otherChanges(diff: Diff): { fields: Diff['fields']; sets: Diff['sets'] } {
   return {
     fields: diff.fields.filter((change) => !SHOWN_FIELDS.has(change.field)),
-    sets: diff.sets.filter((change) => !SHOWN_SETS.has(change.field)),
+    sets: diff.sets.filter((change) => !SHOWN_SETS.has(change.field) && !shownCapabilities(change)),
   };
+}
+
+/** «capacidades» shows `code_interpreter` only: any other capability goes to «otros cambios». */
+function shownCapabilities(change: Diff['sets'][number]): boolean {
+  return (
+    change.field === 'capabilities' &&
+    [...change.added, ...change.removed].every((value) => value === 'code_interpreter')
+  );
 }
 
 // --- Reference data: names and labels only ---------------------------------------------------

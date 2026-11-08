@@ -156,7 +156,7 @@ describe('reviewModel', () => {
       prompt: null,
       fields: [
         { field: 'name', before: 'A', after: 'B' },
-        { field: 'memory', before: null, after: 'long' },
+        { field: 'retention', before: null, after: 'long' },
       ],
       sets: [
         { field: 'tools', added: ['x.y'], removed: [] },
@@ -166,7 +166,7 @@ describe('reviewModel', () => {
     };
     // Skills have a section of their own since D92.
     expect(otherChanges(diff)).toEqual({
-      fields: [{ field: 'memory', before: null, after: 'long' }],
+      fields: [{ field: 'retention', before: null, after: 'long' }],
       sets: [{ field: 'memories', added: ['m'], removed: [] }],
     });
   });

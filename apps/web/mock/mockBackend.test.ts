@@ -14,6 +14,8 @@ import {
   zGetBudgetsResponse,
   zGetBusinessUnitsResponse,
   zGetCostsResponse,
+  zGetMemoryResponse,
+  zDeleteMemoryResponse,
   zGetConversationResponse,
   zGetObservabilityResponse,
   zGetRequestsResponse,
@@ -313,6 +315,8 @@ describe('mock agents', () => {
       cleanup: null,
       // FinOps runs code in the mock, so its chat takes attachments (D116).
       capabilities: ['code_interpreter'],
+      // FinOps remembers in the mock: «Memoria» of «Qué puede usar» (D122).
+      memory: true,
       // Only the detail carries the skills of the version (D95); FinOps has none.
       skills: [],
     });
@@ -666,5 +670,24 @@ describe('mock chat turns in v1 (D120, D121)', () => {
     );
     expect(again.cancelled).toBe(false);
     expect((await post('/chat/turns/nope/cancel', {})).status).toBe(404);
+  });
+});
+
+describe('mock memory (D122)', () => {
+  it("answers only the caller's records, in the generated contract, and deletes them", async () => {
+    const memory = zGetMemoryResponse.parse(await json('/memory'));
+    expect(memory.enabled).toBe(true);
+    expect(memory.total).toBe(memory.records.length);
+    expect(memory.records.map((r) => r.text)).not.toContain('De otra persona.');
+    const first = memory.records[0];
+    if (!first) throw new Error('no records');
+    expect((await api('/memory/not-a-record', { method: 'DELETE' })).status).toBe(422);
+    const other = `mem-${'99'.padStart(36, '0')}`;
+    expect((await api(`/memory/${other}`, { method: 'DELETE' })).status).toBe(404);
+    expect((await api(`/memory/${first.record_id}`, { method: 'DELETE' })).status).toBe(204);
+    expect((await api(`/memory/${first.record_id}`, { method: 'DELETE' })).status).toBe(404);
+    const all = await api('/memory', { method: 'DELETE' });
+    expect(zDeleteMemoryResponse.parse(await all.json()).records).toBe(memory.total - 1);
+    expect(zGetMemoryResponse.parse(await json('/memory')).records).toEqual([]);
   });
 });

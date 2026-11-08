@@ -16,6 +16,7 @@ export const baseMe: Me = {
   is_admin: false,
   groups: ['finops-central'],
   can: { create_agent: false },
+  memory_enabled: false,
 };
 
 export const testConfig: RuntimeConfig = {
@@ -60,6 +61,7 @@ export function agentFixture(overrides: Partial<Agent> = {}): Agent {
     version: 1,
     lock_version: null,
     capabilities: [],
+    memory: false,
     name: 'FinOps',
     description: 'Consulta el gasto de AWS de tu organización.',
     category: 'FinOps',

@@ -16,6 +16,7 @@ import { inbox } from './es/inbox';
 import { knowledge } from './es/knowledge';
 import { marketplace } from './es/marketplace';
 import { mcpCatalog } from './es/mcpCatalog';
+import { memory } from './es/memory';
 import { ops } from './es/ops';
 import { observability } from './es/observability';
 import { orgChart } from './es/orgChart';
@@ -77,4 +78,5 @@ export const es = {
   tickets,
   evals,
   costs,
+  memory,
 } as const;

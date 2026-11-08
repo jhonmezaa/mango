@@ -539,6 +539,10 @@ export type AgentOut = {
      */
     lock_version: number | null;
     /**
+     * Memory
+     */
+    memory?: boolean;
+    /**
      * Model
      */
     model: string;
@@ -2352,6 +2356,10 @@ export type DefinitionOut = {
     knowledge_bases: Array<string>;
     limits: LimitsOut;
     /**
+     * Memory
+     */
+    memory: boolean;
+    /**
      * Model
      */
     model: string | null;
@@ -2728,11 +2736,11 @@ export type FieldChange = {
     /**
      * After
      */
-    after: string | number | number | null;
+    after: boolean | string | number | number | null;
     /**
      * Before
      */
-    before: string | number | number | null;
+    before: boolean | string | number | number | null;
     /**
      * Field
      */
@@ -3597,6 +3605,10 @@ export type MeResponse = {
      */
     is_admin: boolean;
     /**
+     * Memory Enabled
+     */
+    memory_enabled: boolean;
+    /**
      * Name
      */
     name: string | null;
@@ -3728,6 +3740,10 @@ export type MemoryOut = {
      * Records
      */
     records: Array<MemoryRecordOut>;
+    /**
+     * Total
+     */
+    total: number;
 };
 
 /**

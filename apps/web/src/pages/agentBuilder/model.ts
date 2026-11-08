@@ -27,6 +27,7 @@ export const SECTION_IDS = [
   'tools',
   'kbs',
   'code',
+  'memory',
   'skills',
   'limits',
   'access',
@@ -184,6 +185,7 @@ export function blankDefinition(context: BuilderContext): Definition {
     knowledge_bases: [],
     skills: [],
     capabilities: [],
+    memory: false,
   };
 }
 
@@ -244,6 +246,8 @@ export function toInput(
     skills: sortedUnique(definition.skills),
     // «Puede ejecutar código» (D114 (6), design round 40).
     capabilities: sortedUnique(definition.capabilities),
+    // «Recuerda entre conversaciones» (D122, design round 41).
+    memory: definition.memory,
   };
 }
 
@@ -335,6 +339,7 @@ const FIELD_SECTION: Record<string, SectionId> = {
   approval_tools: 'tools',
   knowledge_bases: 'kbs',
   capabilities: 'code',
+  memory: 'memory',
   skills: 'skills',
   groups: 'access',
   users: 'access',

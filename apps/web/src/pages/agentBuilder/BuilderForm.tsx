@@ -15,6 +15,7 @@ import { formatRelative } from '../../lib/format';
 import { BuilderAside } from './BuilderAside';
 import { problemText } from './problemText';
 import { CodeSection } from './CodeSection';
+import { MemorySection } from './MemorySection';
 import { KnowledgeSection } from './KnowledgeSection';
 import { SkillsSection } from './SkillsSection';
 import { BuilderBarMenu } from './BuilderBarMenu';
@@ -583,6 +584,11 @@ export function BuilderForm({ data }: { data: BuilderData }) {
                 onChange={change}
               />
               <CodeSection capabilities={snap.capabilities} onChange={change} />
+              <MemorySection
+                memory={snap.memory}
+                memoryEnabled={me.memory_enabled}
+                onChange={change}
+              />
               <SkillsSection
                 selected={snap.skills}
                 skills={context.skills}

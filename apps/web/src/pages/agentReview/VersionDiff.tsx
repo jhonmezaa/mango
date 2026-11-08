@@ -9,6 +9,7 @@ import { usePeople } from '../../directory/usePeople';
 import { formatRelative } from '../../lib/format';
 import { parseSkillRef, remoteServiceIndex, skillIssues } from '../agentBuilder/model';
 import type { Skill } from '../skills/model';
+import { CapsSection } from './CapsSection';
 import {
   ROOT_SUPERVISOR,
   fieldChange,
@@ -616,6 +617,8 @@ export function VersionDiff({
           )}
         </Section>
       )}
+
+      <CapsSection version={version} memoryEnabled={me.memory_enabled} />
 
       {(!isNew || definition.skills.length > 0) && (
         <Section

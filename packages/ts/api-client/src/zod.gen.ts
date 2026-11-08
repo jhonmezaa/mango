@@ -210,6 +210,7 @@ export const zAgentOutSchema = z.object({
     id: z.string(),
     is_mine: z.boolean().optional().default(false),
     lock_version: z.int().nullable(),
+    memory: z.boolean().optional().default(false),
     model: z.string(),
     name: z.string(),
     published_at: z.string().nullable(),
@@ -1116,11 +1117,13 @@ export const zEvalRunsOutSchema = z.object({
  */
 export const zFieldChangeSchema = z.object({
     after: z.union([
+        z.boolean(),
         z.string(),
         z.int(),
         z.number()
     ]).nullable(),
     before: z.union([
+        z.boolean(),
         z.string(),
         z.int(),
         z.number()
@@ -1463,6 +1466,7 @@ export const zDefinitionOutSchema = z.object({
     icon: z.string(),
     knowledge_bases: z.array(z.string()),
     limits: zLimitsOutSchema,
+    memory: z.boolean(),
     model: z.string().nullable(),
     name: z.string(),
     reports_to: z.string().nullable(),
@@ -1491,6 +1495,7 @@ export const zMeResponseSchema = z.object({
     email: z.string().nullable(),
     groups: z.array(z.string()),
     is_admin: z.boolean(),
+    memory_enabled: z.boolean(),
     name: z.string().nullable(),
     role: z.string().nullable(),
     user_id: z.string()
@@ -1580,7 +1585,8 @@ export const zMemoryRecordOutSchema = z.object({
 export const zMemoryOutSchema = z.object({
     complete: z.boolean(),
     enabled: z.boolean(),
-    records: z.array(zMemoryRecordOutSchema)
+    records: z.array(zMemoryRecordOutSchema),
+    total: z.int()
 });
 
 /**

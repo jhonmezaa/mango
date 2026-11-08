@@ -102,6 +102,9 @@ class MemoryOut(_Strict):
     records: list[MemoryRecordOut]
     complete: bool
     """``False`` when there were more than ``MAX_RECORDS``: delete all to clear the rest."""
+    total: int
+    """How many records the person has (``records`` are the ``MAX_RECORDS`` most recent).
+    Read up to ``MAX_PAGES`` pages per namespace, as the list."""
 
 
 class MemoryDeletedOut(_Strict):
@@ -317,9 +320,8 @@ def _actors(deps: MemoryDeps, sub: str) -> list[str]:
 def list_memory(deps: MemoryDeps, caller: Caller) -> MemoryOut:
     user = caller.user
     if deps.store is None:
-        return MemoryOut(enabled=False, records=[], complete=True)
-    records: list[MemoryRecordOut] = []
-    complete = True
+        return MemoryOut(enabled=False, records=[], complete=True, total=0)
+    found: list[MemoryRecordOut] = []
     for actor in _actors(deps, user.user_id):
         for kind in Kind:
             for raw in deps.store.records(memory.namespace(kind, actor)):
@@ -327,13 +329,14 @@ def list_memory(deps: MemoryDeps, caller: Caller) -> MemoryOut:
                 # The namespace asked was the caller's; the record must say so too.
                 if out is None or _owner(raw) != memory.parse_actor(actor):
                     continue
-                if len(records) >= MAX_RECORDS:
-                    complete = False
-                    break
-                records.append(out)
-    records.sort(key=lambda r: r.created_at, reverse=True)
+                found.append(out)
+    # The most recent ones, and how many there are (design round 41: «… de {n}»).
+    found.sort(key=lambda r: r.created_at, reverse=True)
+    records = found[:MAX_RECORDS]
     deps.audit.emit("memory.list", user.user_id, {"records": len(records)}, user)
-    return MemoryOut(enabled=True, records=records, complete=complete)
+    return MemoryOut(
+        enabled=True, records=records, complete=len(found) <= MAX_RECORDS, total=len(found)
+    )
 
 
 def forget_record(deps: MemoryDeps, caller: Caller, record_id: str) -> None:

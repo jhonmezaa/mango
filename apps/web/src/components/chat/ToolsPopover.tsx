@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 
 import type { Agent } from '../../agents/agents';
 import { useSession } from '../../auth/useSession';
@@ -27,11 +28,14 @@ function toolsByServer(tools: readonly string[]): [string, number][] {
  * asked for when the popover first opens: the API answers only to who may use the agent and
  * never sends their instructions. Names and descriptions are written by their authors and are
  * rendered as text. The design's MCP latency and health have no backend and are not shown.
+ * Round 41 adds «Memoria» (D122): whether the version remembers, and whether the installation
+ * has memory on.
  */
 /** Rendered with `key={agent.id}`. */
 export function ToolsPopover({ agent }: { agent: Agent }) {
   const { t } = useTranslation();
-  const { api } = useSession();
+  const { api, me } = useSession();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   // Mounted per agent (`key`): nothing read for another agent is shown here.
   const [read, setRead] = useState<SkillsState | null>(null);
@@ -135,6 +139,31 @@ export function ToolsPopover({ agent }: { agent: Agent }) {
                     <div className="tp-mcp-meta">{t('chat.toolsPop.mcpTools', { count })}</div>
                   </div>
                 ))}
+              </div>
+              <div className="tp-sec is-mem">
+                <div className="tp-sec-t">{t('chat.toolsPop.memory')}</div>
+                <div className="tp-mem">
+                  {!agent.memory ? (
+                    t('chat.toolsPop.memoryNone')
+                  ) : !me.memory_enabled ? (
+                    t('chat.toolsPop.memoryOff')
+                  ) : (
+                    <>
+                      {t('chat.toolsPop.memoryOn', { name: agent.name })}
+                      <button
+                        type="button"
+                        className="sr-link"
+                        onClick={() => {
+                          setOpen(false);
+                          void navigate('/memory');
+                        }}
+                      >
+                        {t('chat.toolsPop.memoryLink')}
+                      </button>
+                      {t('chat.toolsPop.memoryEnd')}
+                    </>
+                  )}
+                </div>
               </div>
             </>
           ) : state?.kind === 'error' ? (

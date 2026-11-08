@@ -41,8 +41,10 @@ export interface MockAgentDefinition {
   /** Knowledge base ids (D88 (15)); the Builder has no picker for them yet. */
   knowledge_bases: string[];
   skills: string[];
-  /** `code_interpreter` (D114 (6)); the Builder has no checkbox for it yet (W1). */
+  /** `code_interpreter` (D114 (6)): «Puede ejecutar código» of the Builder. */
   capabilities: 'code_interpreter'[];
+  /** Remembers its people across conversations (D122): «Memoria» of the Builder. */
+  memory: boolean;
 }
 
 export interface MockAgentVersion {
@@ -156,6 +158,7 @@ export function agentOut(agent: MockAgent, version: MockAgentVersion) {
     is_mine: agent.created_by === MOCK_USER,
     cleanup: cleanupOf(agent),
     capabilities: CODE_AGENTS.has(agent.agent_id) ? ['code_interpreter' as const] : [],
+    memory: definition.memory,
   };
 }
 
@@ -201,6 +204,7 @@ function definition(
     knowledge_bases: [],
     skills: [],
     capabilities: [],
+    memory: false,
     ...overrides,
   };
 }
@@ -318,6 +322,8 @@ function seedAgents(): void {
           temperature: 0.2,
         },
         groups: ['bu-finanzas', 'bu-retail', 'finops-central'],
+        // Design round 41: the agent whose memories the «Memoria» screen of the mock shows.
+        memory: true,
       }),
     },
   ]);

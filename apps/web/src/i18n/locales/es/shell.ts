@@ -51,6 +51,7 @@ export const nav = {
   costs: 'Costos',
   org: 'Org Chart',
   settings: 'Ajustes',
+  memory: 'Memoria',
   agentBuilder: 'Nuevo agente',
   groups: {
     gov: 'Gobernanza',

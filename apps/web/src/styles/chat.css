@@ -459,6 +459,16 @@
   .tp-sec.is-mcp .tp-sec-t {
     margin-bottom: 8px;
   }
+  /* Design round 41 `MemoryPopRow`. */
+  .tp-sec.is-mem {
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .tp-mem {
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
   .tp-note {
     margin-bottom: 8px;
     font-size: 11.5px;

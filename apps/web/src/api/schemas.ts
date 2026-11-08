@@ -26,6 +26,8 @@ export const meSchema = z.object({
   groups: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).max(100),
   /** UX hints only: the API authorizes every request on its own (REACT-AUTHZ-001). */
   can: z.object({ create_agent: z.boolean() }),
+  /** The installation's memory is on (D122): what the Builder, the review and the chat say. */
+  memory_enabled: z.boolean().default(false),
 });
 export type Me = z.infer<typeof meSchema>;
 

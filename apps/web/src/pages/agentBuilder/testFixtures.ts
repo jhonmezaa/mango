@@ -212,6 +212,7 @@ export function definition(overrides: Partial<Definition> = {}): Definition {
     knowledge_bases: [],
     skills: [],
     capabilities: [],
+    memory: false,
     ...overrides,
   };
 }

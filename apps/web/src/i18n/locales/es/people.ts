@@ -236,8 +236,9 @@ export const people = {
       enableReasonLabel: 'Motivo para rehabilitar',
       self: 'No puedes deshabilitar tu propia cuenta.',
       disablePending: 'Deshabilitación pendiente de aprobación',
+      // Design round 41 (D122, TM-ME5): the disable also purges what the agents remember.
       disableBody:
-        'Cierra sus sesiones y no puede volver a entrar. No se borra: su historial queda en Auditoría.',
+        'Cierra sus sesiones y no puede volver a entrar. Su historial queda en Auditoría. Se borra lo que los agentes recuerdan de esta persona (ahora y otra vez al día siguiente), sin que veas su contenido; si la rehabilitas antes, el segundo borrado no se hace.',
       disableAdmin: ' Es administrador: lo aprueba otro.',
       disableOpen: 'Deshabilitar acceso…',
       disableLast: 'Nombra otro administrador antes',

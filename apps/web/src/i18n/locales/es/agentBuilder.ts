@@ -38,6 +38,7 @@ export const agentBuilder = {
     tools: 'Tools',
     kbs: 'Knowledge bases',
     code: 'Ejecutar código',
+    memory: 'Memoria',
     skills: 'Skills',
     limits: 'Límites',
     access: 'Acceso',
@@ -91,6 +92,13 @@ export const agentBuilder = {
     desc: 'Python en un entorno aislado de la instalación, sin internet y sin instalar paquetes. Es parte de la versión: se aprueba como el resto.',
     label: 'Puede ejecutar código',
     sub: 'Analiza datos y genera gráficas, tablas y archivos (CSV, Excel, Word, PowerPoint, PDF, imágenes). Trae pandas, matplotlib, openpyxl, python-docx, python-pptx, ReportLab y otros. Cada celda tiene un tope de 300 s. Sin esto, el agente no puede leer archivos adjuntos en el chat.',
+  },
+  // Design round 41 (D122): the version remembers each person across conversations.
+  memory: {
+    desc: 'Recuerda a cada persona entre conversaciones. Es parte de la versión: se aprueba como el resto.',
+    label: 'Recuerda entre conversaciones',
+    sub: 'El servicio de AWS guarda preferencias, hechos y resúmenes de lo que cada persona habla con este agente. Lo de una persona solo lo ve ella, y lo borra en Memoria: ni otros agentes, ni quien creó el agente, ni los administradores. Solo en el chat: las tareas programadas, las evals y el Playground no lo usan.',
+    off: 'La memoria está apagada en esta instalación: la casilla se guarda en la versión, pero el agente no recordará nada hasta que se encienda.',
   },
   kbs: {
     desc: 'Documentos que el agente consulta para responder. Es parte de la versión. Cada persona recibe solo lo de las knowledge bases en cuyos grupos está: la búsqueda se hace con su identidad.',

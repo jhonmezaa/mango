@@ -65,6 +65,7 @@ describe('client.call (generated operations)', () => {
       unavailable_tools: [],
       is_mine: false,
       capabilities: [],
+      memory: false,
     };
     const { client, fetchMock } = setup(jsonResponse(agent));
     await expect(client.call('getAgent', { path: { agent_id: 'finops' } })).resolves.toEqual(agent);

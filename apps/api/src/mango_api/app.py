@@ -341,6 +341,9 @@ class MeResponse(_Strict):
     is_admin: bool
     groups: list[str]
     can: MeCan
+    memory_enabled: bool
+    """Whether the installation's memory is on (D122): what the Builder, the review and the
+    chat say about it. Only a hint for the SPA."""
 
 
 class ConversationSummary(_Strict):
@@ -1652,6 +1655,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             is_admin=u.is_admin,
             groups=sorted(u.groups),
             can=MeCan(create_agent=can_create),
+            memory_enabled=settings.memory_enabled,
         )
 
     @app.get("/api/conversations", response_model=ConversationList)

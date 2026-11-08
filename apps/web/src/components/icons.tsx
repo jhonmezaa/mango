@@ -414,3 +414,13 @@ export const ListIcon = createIcon(
   'List',
   <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
 );
+
+/** Design round 41 (memory.jsx `Memory`): the agents' memory (D122). */
+export const MemoryIcon = createIcon(
+  'Memory',
+  <>
+    <path d="M12 4a4 4 0 0 0-4 4v.2A3.5 3.5 0 0 0 6 14.5 3.5 3.5 0 0 0 9.5 18H12V4z" />
+    <path d="M12 4a4 4 0 0 1 4 4v.2a3.5 3.5 0 0 1 2 6.3A3.5 3.5 0 0 1 14.5 18H12" />
+    <path d="M12 9h-2M12 13h2" />
+  </>,
+);

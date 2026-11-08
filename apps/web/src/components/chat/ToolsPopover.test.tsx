@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiClient } from '../../api/client';
-import { agentFixture, sessionValue } from '../../test/fixtures';
+import type { Agent } from '../../agents/agents';
+import { agentFixture, baseMe, sessionValue } from '../../test/fixtures';
 import { TestProviders } from '../../test/TestProviders';
 import { ToolsPopover } from './ToolsPopover';
 
@@ -20,14 +21,19 @@ const SKILLS = [
   },
 ];
 
-function setup(answers: unknown[]) {
+function setup(answers: unknown[], agent: Agent = AGENT, memoryEnabled = false) {
   const call = vi.fn<(operation: string, input?: unknown) => Promise<unknown>>(() => {
     const answer = answers.shift();
     return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
   });
   render(
-    <TestProviders session={sessionValue({ api: { call } as unknown as ApiClient })}>
-      <ToolsPopover agent={AGENT} />
+    <TestProviders
+      session={sessionValue({
+        api: { call } as unknown as ApiClient,
+        me: { ...baseMe, memory_enabled: memoryEnabled },
+      })}
+    >
+      <ToolsPopover agent={agent} />
     </TestProviders>,
   );
   return { call, user: userEvent.setup() };
@@ -85,5 +91,35 @@ describe('ToolsPopover', () => {
     await user.click(screen.getByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByText('Revisión <i>de costos</i>')).toBeInTheDocument();
     expect(call).toHaveBeenCalledTimes(3);
+  });
+
+  it('says whether the version remembers and whether the installation has memory on', async () => {
+    const { user } = setup([{ ...AGENT, skills: [] }]);
+    await user.click(trigger());
+    expect(
+      await screen.findByText('Esta versión no recuerda nada entre conversaciones.'),
+    ).toBeInTheDocument();
+  });
+
+  it('says a version with memory remembers nothing while the installation has it off', async () => {
+    const remembers = { ...AGENT, memory: true };
+    const { user } = setup([{ ...remembers, skills: [] }], remembers);
+    await user.click(trigger());
+    expect(
+      await screen.findByText(
+        'Esta versión tiene memoria, pero está apagada en esta instalación: no recuerda nada.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('links to Memoria when the version remembers', async () => {
+    const remembers = { ...AGENT, memory: true };
+    const { user } = setup([{ ...remembers, skills: [] }], remembers, true);
+    await user.click(trigger());
+    expect(
+      await screen.findByText(/Recuerda lo que hablas con FinOps <b> entre conversaciones/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Memoria' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

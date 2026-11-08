@@ -14,6 +14,7 @@ import {
   EyeIcon,
   InboxIcon,
   LockIcon,
+  MemoryIcon,
   MoneyIcon,
   OrgIcon,
   PlayIcon,
@@ -56,7 +57,8 @@ export type ViewKey =
   | 'evals'
   | 'costs'
   | 'org'
-  | 'settings';
+  | 'settings'
+  | 'memory';
 
 export type GroupId = 'gov' | 'build' | 'ops';
 
@@ -167,6 +169,7 @@ export const VIEW_ICONS: Record<ViewKey, ComponentType<IconProps>> = {
   costs: ZapIcon,
   org: OrgIcon,
   settings: SettingsIcon,
+  memory: MemoryIcon,
 };
 
 /** Chat keeps its existing URLs (`/` and `/c/:id`); every other view is `/<key>`. */
@@ -202,6 +205,8 @@ export function isAvailable(view: ViewKey): boolean {
  * the accounts the API lets create agents (`can.create_agent`, the same Cedar decision).
  */
 export function canView(me: Pick<Me, 'is_admin' | 'role' | 'can'>, view: ViewKey): boolean {
+  // Design round 41 (store.js `canView('memory')`): everyone sees their own memory (D122).
+  if (view === 'memory') return true;
   if (me.is_admin) return true;
   if (me.can.create_agent && CREATOR_VIEWS.has(view)) return true;
   return (me.role === 'finops-central' ? OWNER_VIEWS : USER_VIEWS).has(view);

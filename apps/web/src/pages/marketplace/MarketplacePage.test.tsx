@@ -16,6 +16,7 @@ function agent(overrides: Partial<Agent> & { id: string; name: string }): Agent 
     version: 2,
     lock_version: null,
     capabilities: [],
+    memory: false,
     description: '',
     category: 'Finanzas',
     icon: 'Money',

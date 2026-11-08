@@ -66,7 +66,8 @@ describe('createApiClient', () => {
       can: { create_agent: true },
     };
     const { client } = setup(() => Promise.resolve(jsonResponse(me)));
-    await expect(client.getMe()).resolves.toEqual(me);
+    // A mango-api from before memory_enabled: the memory is off (D122).
+    await expect(client.getMe()).resolves.toEqual({ ...me, memory_enabled: false });
   });
 
   it.each([

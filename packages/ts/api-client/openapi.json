@@ -1035,6 +1035,11 @@
             ],
             "title": "Lock Version"
           },
+          "memory": {
+            "default": false,
+            "title": "Memory",
+            "type": "boolean"
+          },
           "model": {
             "title": "Model",
             "type": "string"
@@ -4200,6 +4205,10 @@
           "limits": {
             "$ref": "#/components/schemas/LimitsOut"
           },
+          "memory": {
+            "title": "Memory",
+            "type": "boolean"
+          },
           "model": {
             "anyOf": [
               {
@@ -4274,7 +4283,8 @@
           "users",
           "knowledge_bases",
           "skills",
-          "capabilities"
+          "capabilities",
+          "memory"
         ],
         "title": "DefinitionOut",
         "type": "object"
@@ -4892,6 +4902,9 @@
           "after": {
             "anyOf": [
               {
+                "type": "boolean"
+              },
+              {
                 "type": "string"
               },
               {
@@ -4908,6 +4921,9 @@
           },
           "before": {
             "anyOf": [
+              {
+                "type": "boolean"
+              },
               {
                 "type": "string"
               },
@@ -6637,6 +6653,10 @@
             "title": "Is Admin",
             "type": "boolean"
           },
+          "memory_enabled": {
+            "title": "Memory Enabled",
+            "type": "boolean"
+          },
           "name": {
             "anyOf": [
               {
@@ -6672,7 +6692,8 @@
           "business_unit",
           "is_admin",
           "groups",
-          "can"
+          "can",
+          "memory_enabled"
         ],
         "title": "MeResponse",
         "type": "object"
@@ -6881,12 +6902,17 @@
             },
             "title": "Records",
             "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           }
         },
         "required": [
           "enabled",
           "records",
-          "complete"
+          "complete",
+          "total"
         ],
         "title": "MemoryOut",
         "type": "object"

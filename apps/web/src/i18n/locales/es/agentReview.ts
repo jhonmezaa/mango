@@ -191,6 +191,24 @@ export const agentReview = {
     gapOne: 'usa el agente y no está en sus grupos: les responde sin su contenido.',
     gapMany: 'usan el agente y no están en sus grupos: les responde sin su contenido.',
   },
+  // Design round 41 `RvCaps` (TM-ME6): «Ejecutar código» and «Memoria» in the diff.
+  caps: {
+    title: 'capacidades',
+    titleChanged_one: 'capacidades · {{count}} cambio',
+    titleChanged_other: 'capacidades · {{count}} cambios',
+    titleSame: 'capacidades · sin cambios',
+    code: { label: 'Ejecutar código', sub: 'Python aislado; lee adjuntos y genera archivos' },
+    memory: { label: 'Memoria', sub: 'Recuerda a cada persona entre conversaciones' },
+    on: 'Encendida',
+    off: 'Apagada',
+    turnsOn: 'Se enciende',
+    turnsOff: 'Se apaga',
+    same: 'Ejecutar código: {{code}} · Memoria: {{memory}}.',
+    yes: 'sí',
+    no: 'no',
+    memoryOff:
+      'La memoria está apagada en esta instalación: aunque se apruebe, el agente no recordará nada hasta que se encienda.',
+  },
   // Design `RvSkills` (D92).
   skills: {
     titleNew: 'skills · {{count}}',

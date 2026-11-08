@@ -59,6 +59,9 @@ export interface CreateTurnRequest {
 /** Highest `after` the API accepts (`MAX_STREAM_OFFSET`). */
 export const MAX_STREAM_AFTER = 1_000_000;
 
+/** `mango_api.memory.RecordId`: the id of a record of the agents' memory. */
+const MEMORY_RECORD_ID = /^mem-[a-zA-Z0-9_-]{36,46}$/;
+
 export interface StreamChatRequest {
   conversationId: string | null;
   /** Agent of a new conversation; an existing one keeps the agent of its first turn. */
@@ -223,6 +226,19 @@ export function createApiClient(options: ApiClientOptions) {
      */
     call,
     getMe: () => getJson('/me', meSchema),
+    /**
+     * Forgets one record of the caller's memory (D122): 204, not in the generated client. The id
+     * is checked against the API's pattern before it reaches a URL.
+     */
+    deleteMemoryRecord: async (recordId: string) => {
+      if (!MEMORY_RECORD_ID.test(recordId)) {
+        throw new ApiError(422, 'invalid_request', 'Invalid id');
+      }
+      await authorizedFetch(`/memory/${encodeURIComponent(recordId)}`, {
+        method: 'DELETE',
+        headers: { Accept: 'application/json' },
+      });
+    },
     listConversations: async () => (await getJson('/conversations', conversationListSchema)).items,
     getConversation: async (conversationId: string) =>
       getJson(conversationPath(conversationId), conversationSchema),

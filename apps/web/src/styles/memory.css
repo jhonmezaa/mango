@@ -1,0 +1,122 @@
+/*
+ * Memoria (D122, design round 41 caps.css `mm-`). `mc-alert`, `mk-meta`, `mk-sel`, `mk-danger`,
+ * `mk-empty`, `tk-quick` and `sr-link` are already in the app; the `mm-` helpers at the end hold
+ * the inline styles of the design's component.
+ */
+@layer components {
+  .mm-wrap {
+    max-width: 820px;
+    display: grid;
+    gap: 14px;
+  }
+  .mm-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .mm-bar .mm-count {
+    margin-left: auto;
+  }
+  .mm-list {
+    overflow: hidden;
+  }
+  .mm-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 14px 16px;
+  }
+  .mm-row + .mm-row {
+    border-top: 1px solid var(--border);
+  }
+  .mm-row.is-ask {
+    background: var(--row-hover);
+  }
+  .mm-row-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .mm-text {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+  }
+  .mm-trunc {
+    margin-top: 4px;
+  }
+  .mm-ask {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .mm-ask .mk-meta {
+    flex: 1;
+  }
+  .mm-empty {
+    border: 1px dashed var(--border-strong);
+    border-radius: 12px;
+    padding: 40px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+  }
+  .mm-empty-ic {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--row-hover);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mm-empty-t {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-strong);
+    margin: 0;
+  }
+  .mm-empty p {
+    margin: 0;
+    max-width: 440px;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
+  .mm-foot {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .mm-foot svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .mm-skel {
+    display: grid;
+    gap: 8px;
+    flex: 1;
+  }
+  .mm-modal-body {
+    margin: 0 0 16px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+}

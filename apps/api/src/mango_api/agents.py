@@ -35,7 +35,7 @@ from typing import Annotated, Any, Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, Path, Query, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from mango_api.agent_rules import (
     MAX_DRAFTS,
@@ -121,7 +121,18 @@ _HISTORY_STATUSES = (
     VersionStatus.PUBLISHED,
     VersionStatus.RETIRED,
 )
-_SCALAR_FIELDS = ("name", "description", "category", "icon", "color", "reports_to", "role", "model")
+_SCALAR_FIELDS = (
+    "name",
+    "description",
+    "category",
+    "icon",
+    "color",
+    "reports_to",
+    "role",
+    "model",
+    # The reviewer sees it turned on or off (D122, TM-ME6).
+    "memory",
+)
 _LIMIT_FIELDS = (
     "max_tokens",
     "max_iterations",
@@ -159,26 +170,13 @@ class EmptyIn(_Strict):
     pass
 
 
-def _without_memory(definition: AgentDefinition) -> AgentDefinition:
-    """No version turns memory on yet (D122, TM-ME6): the installation's memory is off until
-    M0, and neither the Builder nor the review shows the field (M3), so a reviewer could
-    approve it without seeing it. The day both exist, this check goes."""
-    if definition.memory:
-        raise ValueError("memory is not available yet")
-    return definition
-
-
 class CreateAgentIn(_Strict):
     definition: AgentDefinition
-
-    _no_memory = field_validator("definition")(_without_memory)
 
 
 class SaveDraftIn(_Strict):
     revision: Revision
     definition: AgentDefinition
-
-    _no_memory = field_validator("definition")(_without_memory)
 
 
 class SubmitIn(_Strict):
@@ -230,6 +228,8 @@ class DefinitionOut(_Strict):
     """``<id>@<version>`` of the approved skill versions the agent uses (D92)."""
     capabilities: list[Capability]
     """What the version may do besides its tools: ``code_interpreter`` runs code (D114 (6))."""
+    memory: bool
+    """Whether the version remembers its people across conversations (D122, TM-ME6)."""
 
 
 class KnowledgeBaseRefOut(_Strict):
@@ -264,8 +264,8 @@ class ViolationOut(_Strict):
 
 class FieldChange(_Strict):
     field: str
-    before: str | int | float | None
-    after: str | int | float | None
+    before: bool | str | int | float | None
+    after: bool | str | int | float | None
 
 
 class SetChange(_Strict):
@@ -385,6 +385,10 @@ class AgentOut(_Strict):
     """What the version may do besides its tools (D114 (6)): ``code_interpreter`` runs code and
     reads the chat's attachments, so the composer offers «Adjuntar» (D116 (12)). Only a hint for
     the UI: the turn checks the files itself."""
+    memory: bool = False
+    """Whether the version remembers its people across conversations (D122): the «Memoria» row
+    of «Qué puede usar». Only a hint for the UI; it has no effect while the installation's
+    memory is off."""
 
 
 class AgentList(_Strict):
@@ -700,6 +704,7 @@ def _definition_out(definition: AgentDefinition) -> DefinitionOut:
         knowledge_bases=list(definition.knowledge_bases),
         skills=list(definition.skills),
         capabilities=list(definition.capabilities),
+        memory=definition.memory,
     )
 
 
@@ -957,6 +962,7 @@ def _agent_out(
         cleanup=cleanup,
         skills=skills,
         capabilities=list(d.capabilities),
+        memory=d.memory,
     )
 
 

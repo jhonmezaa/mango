@@ -313,6 +313,23 @@ def test_a_person_sees_only_their_own_memories(deps: mem.MemoryDeps, fake: FakeM
     assert "secreto" not in str(deps.audit.details)  # type: ignore[attr-defined]
 
 
+def test_the_list_shows_the_most_recent_and_says_how_many_there_are(
+    deps: mem.MemoryDeps, fake: FakeMemory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Design round 41: «Se muestran tus 300 recuerdos más recientes de {n}»."""
+    monkeypatch.setattr(mem, "MAX_RECORDS", 3)
+    ana = _remember(deps, ANA, AGENT)
+    for day in (1, 5, 2, 4, 3):
+        rid = fake.add_record(ana, Kind.FACTS, f"día {day}")
+        fake.records[rid]["createdAt"] = f"2026-11-0{day}T00:00:00+00:00"
+    out = mem.list_memory(deps, _caller(ANA))
+    assert [r.text for r in out.records] == ["día 5", "día 4", "día 3"]
+    assert (out.complete, out.total) == (False, 5)
+    monkeypatch.setattr(mem, "MAX_RECORDS", 5)
+    out = mem.list_memory(deps, _caller(ANA))
+    assert (len(out.records), out.complete, out.total) == (5, True, 5)
+
+
 def test_an_administrator_has_no_memory_but_their_own(
     deps: mem.MemoryDeps, fake: FakeMemory
 ) -> None:
@@ -395,7 +412,7 @@ def test_memory_off_answers_nothing_without_calling_aws(fake: FakeMemory) -> Non
         store=None, index=FakeIndex(), audit=FakeAudit(), limiter=RateLimiter(100, 60)
     )  # type: ignore[arg-type]
     assert mem.list_memory(off, _caller(ANA)) == mem.MemoryOut(
-        enabled=False, records=[], complete=True
+        enabled=False, records=[], complete=True, total=0
     )
     assert mem.forget_all(off, _caller(ANA)) == mem.MemoryDeletedOut(records=0, events=0)
     assert mem.forget_conversation(off, ANA, CONV) == 0
@@ -445,7 +462,7 @@ def test_the_routes_answer_that_nothing_is_remembered_while_memory_is_off() -> N
     assert not _settings().memory_enabled
     got = client.get("/api/memory", headers=_auth())
     assert got.status_code == 200, got.text
-    assert got.json() == {"enabled": False, "records": [], "complete": True}
+    assert got.json() == {"enabled": False, "records": [], "complete": True, "total": 0}
     assert got.headers["cache-control"] == "no-store"
     assert client.delete("/api/memory", headers=_auth()).json() == {"records": 0, "events": 0}
     assert client.delete(f"/api/memory/mem-{'0' * 36}", headers=_auth()).status_code == 404
@@ -601,15 +618,26 @@ def test_a_purge_is_only_scheduled_for_a_user_id(settings_table: Any, deps: mem.
         sweeper.schedule("a:b")
 
 
-def test_no_version_turns_memory_on_while_the_review_cannot_show_it() -> None:
-    """TM-ME6: memory is turned on in a version, through its approval; until the Builder and
-    the review show the field (M3), a version with ``memory`` is refused."""
-    from pydantic import ValidationError  # noqa: PLC0415
+def test_a_version_turns_memory_on_and_the_review_shows_it() -> None:
+    """TM-ME6: memory is turned on in a version, through its approval. Now that the Builder and
+    the review show it (M3), a version may set it; it counts in the approved hash and in the
+    diff the reviewer reads, and the installation's memory still decides (D122 (2))."""
+    from mango_api.agents import (  # noqa: PLC0415
+        CreateAgentIn,
+        SaveDraftIn,
+        _definition_out,
+        diff_definitions,
+    )
+    from mango_core.agents import content_hash, dumps_definition  # noqa: PLC0415
 
-    from mango_api.agents import CreateAgentIn, SaveDraftIn  # noqa: PLC0415
-
-    with pytest.raises(ValidationError):
-        CreateAgentIn.model_validate({"definition": {"name": "A", "memory": True}})
-    with pytest.raises(ValidationError):
-        SaveDraftIn.model_validate({"revision": 1, "definition": {"name": "A", "memory": True}})
-    assert not CreateAgentIn.model_validate({"definition": {"name": "A"}}).definition.memory
+    on = CreateAgentIn.model_validate({"definition": {"name": "A", "memory": True}}).definition
+    off = CreateAgentIn.model_validate({"definition": {"name": "A"}}).definition
+    assert on.memory and not off.memory
+    assert SaveDraftIn.model_validate(
+        {"revision": 1, "definition": {"name": "A", "memory": True}}
+    ).definition.memory
+    assert content_hash(dumps_definition(on)) != content_hash(dumps_definition(off))
+    diff = diff_definitions(off, on)
+    assert [(f.field, f.before, f.after) for f in diff.fields] == [("memory", False, True)]
+    assert diff.changes == 1
+    assert _definition_out(on).memory and not _definition_out(off).memory
