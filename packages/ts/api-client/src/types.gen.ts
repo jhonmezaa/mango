@@ -3314,6 +3314,10 @@ export type MessageOut = {
      */
     role: string;
     /**
+     * Stopped
+     */
+    stopped?: boolean;
+    /**
      * Tools
      */
     tools: Array<ToolStatus>;

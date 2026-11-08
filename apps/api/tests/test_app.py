@@ -305,6 +305,8 @@ class FakeConversations:
     """Agent of each conversation, as stored by its first turn."""
     citations: list[list[dict[str, Any]]] = field(default_factory=list)
     """The citations of each message stored, in order (D88 (44))."""
+    options: list[dict[str, Any]] = field(default_factory=list)
+    """The keyword arguments of each message stored, in order."""
 
     def session_state(self, user: str, cid: str) -> SessionState | None:
         if (user, cid) in self.sessions:
@@ -358,6 +360,7 @@ class FakeConversations:
     ) -> str:
         self.stored.append((user, role, content))
         self.citations.append(kwargs.get("citations") or [])
+        self.options.append(kwargs)
         return "m" * 32
 
     def messages(self, _u: str, _cid: str) -> list[StoredMessage]:

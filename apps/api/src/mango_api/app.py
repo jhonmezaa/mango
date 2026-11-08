@@ -351,6 +351,8 @@ class MessageOut(_Strict):
     this answer (D98 (20)): the chat shows its card, also after a reload. Never a URL."""
     remote_sources: list[str] = []
     """Remote MCP registrations whose tools answered (design «Leyó {servicio}»)."""
+    stopped: bool = False
+    """What was written of an answer until it was stopped (D121 (7)): «Respuesta detenida»."""
 
 
 class ConversationDetail(_Strict):
@@ -1495,6 +1497,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     citations=[CitationOut(**c) for c in m.citations],
                     connection_required=m.connection_required,
                     remote_sources=m.remote_sources,
+                    stopped=m.stopped,
                 )
                 for m in messages
             ],

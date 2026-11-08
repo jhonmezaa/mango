@@ -73,6 +73,9 @@ class StoredMessage:
     """Remote MCP registrations that asked the person to connect their account (D98 (20))."""
     remote_sources: list[str] = field(default_factory=list)
     """Remote MCP registrations whose tools answered («Leyó {servicio}»)."""
+    stopped: bool = False
+    """An answer cut by its owner's «Detener» or given up stalled: what was written of it
+    until then (D121 (7))."""
 
 
 @dataclass(frozen=True)
@@ -376,8 +379,10 @@ class ConversationRepository:
         citations: list[dict[str, Any]] | None = None,
         connection_required: list[str] | None = None,
         remote_sources: list[str] | None = None,
+        message_id: str | None = None,
+        stopped: bool = False,
     ) -> str:
-        message_id = new_id()
+        message_id = message_id or new_id()
         item: dict[str, Any] = {
             "PK": self._pk(user_id),
             "SK": {"S": f"MSG#{conversation_id}#{_sort_suffix()}"},
@@ -396,6 +401,8 @@ class ConversationRepository:
             item["connection_required"] = {"S": json.dumps(connection_required)}
         if remote_sources:
             item["remote_sources"] = {"S": json.dumps(remote_sources)}
+        if stopped:
+            item["stopped"] = {"BOOL": True}
         self._clients(user_id).put_item(TableName=self._table, Item=item)
         return message_id
 
@@ -457,6 +464,7 @@ class ConversationRepository:
                             i.get("connection_required", {}).get("S", "[]")
                         ),
                         remote_sources=json.loads(i.get("remote_sources", {}).get("S", "[]")),
+                        stopped=i.get("stopped", {}).get("BOOL", False),
                     )
                 )
             if "LastEvaluatedKey" not in resp:

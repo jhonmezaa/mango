@@ -6105,6 +6105,11 @@
             "title": "Role",
             "type": "string"
           },
+          "stopped": {
+            "default": false,
+            "title": "Stopped",
+            "type": "boolean"
+          },
           "tools": {
             "items": {
               "$ref": "#/components/schemas/ToolStatus"

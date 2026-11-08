@@ -52,7 +52,7 @@ from mango_api.budget import (
     BudgetUnavailableError,
     current_period,
 )
-from mango_api.conversations import ConversationRecord, ConversationRepository
+from mango_api.conversations import ConversationRecord, ConversationRepository, new_id
 from mango_api.model_catalog import ModelCatalogUnavailableError
 from mango_api.pricing import Usage, cost, estimate_max_cost, knowledge_cost, turn_price
 from mango_api.published import AgentUnavailableError, PublishedAgent, usable_by
@@ -866,11 +866,56 @@ class ChatTurns:
             for _ in range(END_ATTEMPTS):
                 seq = self._log.last_seq(user_id, turn_id) + 1
                 if self._log.append(user_id, turn_id, seq, "error", error):
+                    self._keep_written(user_id, turn_id, seq)
                     return True
             logger.warning("the end of interrupted chat turn %s was not recorded", turn_id)
         except Exception:
             logger.exception("the end of an interrupted chat turn was not recorded")
         return True
+
+    def _keep_written(self, user_id: str, turn_id: str, end: int) -> None:
+        """Store what the person saw of a stopped answer (D121 (7)): the text, tools and
+        requests of the events before its end, marked ``stopped``; nothing the worker
+        receives after it. Not when the turn never reached its stream (nothing to keep) nor
+        when it was answered first (its ``done`` is before the end: the worker stores it)."""
+        try:
+            status = self._log.status(user_id, turn_id)
+            written: list[TurnEvent] = []
+            after = 0
+            while after < end - 1:
+                page = [e for e in self._log.events(user_id, turn_id, after) if e.seq < end]
+                if not page:
+                    break
+                written.extend(page)
+                after = page[-1].seq
+            if status is None or not written or any(e.kind == "done" for e in written):
+                return
+            text = "".join(str(e.data.get("text", "")) for e in written if e.kind == "delta")
+            tools = [
+                {"name": str(e.data.get("name", "tool")), "status": str(e.data.get("status", ""))}
+                for e in written
+                if e.kind == "tool"
+            ]
+            self._services.conversations.add_message(
+                user_id,
+                status.conversation_id,
+                "assistant",
+                text,
+                tools,
+                approvals=[
+                    str(e.data["approval_id"])
+                    for e in written
+                    if e.kind == "approval" and e.data.get("approval_id")
+                ],
+                connection_required=[
+                    str(e.data.get("registration_id", ""))
+                    for e in written
+                    if e.kind == "remote_connection_required"
+                ],
+                stopped=True,
+            )
+        except Exception:
+            logger.exception("what was written of stopped chat turn %s was not kept", turn_id)
 
     def cancel(self, user_id: str, turn_id: str) -> tuple[TurnStatus, bool] | None:
         """The owner's «Detener» (D121 (7)): a turn still queued or running ends
@@ -1261,17 +1306,6 @@ class ChatTurns:
                 stopped = True
                 logger.info("chat turn %s was stopped: its stream is not written", turn_id)
 
-        def still_running() -> bool:
-            nonlocal stopped
-            if not stopped:
-                try:
-                    status = log.status(user.user_id, turn_id)
-                except Exception:
-                    logger.exception("the state of chat turn %s could not be read", turn_id)
-                    status = None
-                stopped = status is not None and status.state != TurnState.RUNNING
-            return not stopped
-
         put("conversation", {"conversation_id": conversation_id})
         result = harness.InvocationResult()
         write_tools = frozenset(name for name, _ in agent.write_tools)
@@ -1314,12 +1348,31 @@ class ChatTurns:
                     approval_ids.append(approval.approval_id)
                     put("approval", approval.model_dump(mode="json"))
             # The stream was read to its end even when it was stopped, so that the turn is
-            # settled with what it really cost ("charged in full"); but its answer, which the
-            # person stopped, is not stored, and its session is never continued.
-            if still_running():
-                # Shown to the person only when it is everything the turn cost.
-                actual = cost(result.usage, started.price)
-                message_id = repo.add_message(
+            # settled with what it really cost ("charged in full"). Its end is the decision:
+            # ``done`` takes the number after the last event with a conditional write. When
+            # «Detener» took it first, what the person saw is kept by whoever stopped it
+            # (``interrupt``) and this answer is not stored; once ``done`` is written, a later
+            # «Detener» finds the turn answered and keeps nothing.
+            # Shown to the person only when it is everything the turn cost.
+            actual = cost(result.usage, started.price)
+            message_id = new_id()
+            put(
+                "done",
+                {
+                    "message_id": message_id,
+                    "stop_reason": result.stop_reason,
+                    "usage": {
+                        "input_tokens": result.usage.input_tokens,
+                        "output_tokens": result.usage.output_tokens,
+                    },
+                    "cost_usd": str(actual.quantize(Decimal("0.0001"))),
+                    # Registrations only, never content or URLs: the live turn shows «Leyó
+                    # {servicio}» and classifies its links as after a reload.
+                    "remote_sources": result.remote_sources,
+                },
+            )
+            if not stopped:
+                repo.add_message(
                     user.user_id,
                     conversation_id,
                     "assistant",
@@ -1329,23 +1382,9 @@ class ChatTurns:
                     citations=knowledge_citations.citations(result.searches),
                     connection_required=result.connection_required,
                     remote_sources=result.remote_sources,
+                    message_id=message_id,
                 )
-                put(
-                    "done",
-                    {
-                        "message_id": message_id,
-                        "stop_reason": result.stop_reason,
-                        "usage": {
-                            "input_tokens": result.usage.input_tokens,
-                            "output_tokens": result.usage.output_tokens,
-                        },
-                        "cost_usd": str(actual.quantize(Decimal("0.0001"))),
-                        # Registrations only, never content or URLs: the live turn shows «Leyó
-                        # {servicio}» and classifies its links as after a reload.
-                        "remote_sources": result.remote_sources,
-                    },
-                )
-                answered = not stopped
+                answered = True
         except Exception:
             if result.harness_missing:
                 # Not a failure of this turn: the agent cannot answer anybody until it is

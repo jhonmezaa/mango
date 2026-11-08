@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -104,8 +105,15 @@ def log(monkeypatch: pytest.MonkeyPatch) -> MemoryTurnLog:
 
 def _normalized(body: str) -> list[list[Any]]:
     out = []
-    for kind, data in _events(body):
-        out.append([kind, {"conversation_id": "<cid>"} if kind == "conversation" else data])
+    for kind, raw in _events(body):
+        data = raw
+        if kind == "conversation":
+            data = {"conversation_id": "<cid>"}
+        elif kind == "done":
+            # Random, generated before the message is stored (its id goes in ``done`` first).
+            assert re.fullmatch(r"[0-9a-f]{32}", raw["message_id"])
+            data = {**raw, "message_id": "m" * 32}
+        out.append([kind, data])
     return out
 
 
@@ -141,7 +149,7 @@ def test_the_events_are_numbered_from_one_in_the_turns_record(
     turn_id = _message(queue)["turn_id"]
     events = log.events("user-1", turn_id, 0)
     assert [e.seq for e in events] == list(range(1, len(BEFORE_D121) + 1))
-    assert [[e.kind, e.data] for e in events][1:] == _normalized(response.text)[1:]
+    assert [[e.kind, e.data] for e in events] == [[k, d] for k, d in _events(response.text)]
     status = log.status("user-1", turn_id)
     assert status is not None
     assert status.state == TurnState.DONE

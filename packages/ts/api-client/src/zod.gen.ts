@@ -3182,6 +3182,7 @@ export const zMessageOutSchema = z.object({
     message_id: z.string(),
     remote_sources: z.array(z.string()).optional().default([]),
     role: z.string(),
+    stopped: z.boolean().optional().default(false),
     tools: z.array(zToolStatusSchema)
 });
 

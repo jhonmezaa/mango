@@ -9,6 +9,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import boto3
@@ -19,9 +20,10 @@ from moto import mock_aws
 from mango_api import app as app_module
 from mango_api import chat_stream
 from mango_api import turns as turns_module
+from mango_api.conversations import ConversationRepository
 from mango_api.turns_store import DynamoTurnLog, MemoryTurnLog, TurnEvent, TurnState, TurnStatus
 
-from .test_app import Harness, _auth
+from .test_app import FakeConversations, Harness, _auth
 from .test_chat_turns import BEFORE_D121, CONVERSATION, QueueDouble
 from .v1_patches import Applier, DeltaError, feed, parse
 
@@ -101,7 +103,10 @@ def test_the_v1_stream_reproduces_the_turn_of_the_record() -> None:
     assert answer["metadata"]["turn_id"] == turn_id
     # D57: the last phase of the turn, data without text of the model.
     assert answer["metadata"]["phase"] == {"phase": "writing"}
-    assert answer["metadata"]["result"] == dict(BEFORE_D121[-1][1])
+    result_of_turn = answer["metadata"]["result"]
+    # The id of the stored answer is the one ``done`` carries.
+    assert result_of_turn["message_id"] == h.conversations.options[-1]["message_id"]
+    assert {**result_of_turn, "message_id": "m" * 32} == dict(BEFORE_D121[-1][1])
     call, result = docs.channels[1], docs.channels[2]
     assert call["recipient"] == "get_cost_and_usage"
     assert (call["author"]["role"], call["content_type"], call["status"]) == (
@@ -405,9 +410,11 @@ def test_the_owner_stops_a_turn_charged_in_full_and_the_next_one_is_a_new_sessio
     _until(lambda: bool(h.budgets.settled))
     assert h.budgets.held == []
     assert h.budgets.settled[0][1] > 0
-    # Its answer, which the person stopped, is not stored; nothing after «Detener» is written.
+    # What the person saw is kept, marked stopped; nothing the worker received after
+    # «Detener» is written nor stored.
     _until(lambda: not any(t.name == "chat-turn" for t in threading.enumerate()))
-    assert [role for _u, role, _c in h.conversations.stored] == ["user"]
+    assert h.conversations.stored == [("user-1", "user", "hola"), ("user-1", "assistant", "Hola ")]
+    assert h.conversations.options[-1]["stopped"] is True
     kinds = [e.kind for e in log.events("user-1", turn_id, 0)]
     assert kinds[-1] == "error"
     assert "done" not in kinds
@@ -473,6 +480,8 @@ def test_a_turn_stopped_while_queued_never_runs(
     docs = _documents(_stream(client, turn_id).text)
     assert docs.channels[0]["status"] == "interrupted"
     assert docs.channels[0]["content"]["text"] == ""
+    # It never reached its stream: nothing to keep.
+    assert h.conversations.stored == []
 
 
 # --- The reader's polling and keep-alive ------------------------------------------------
@@ -536,3 +545,96 @@ def test_the_record_knows_its_last_event_and_its_conversation(table: Any) -> Non
     # Nothing of another person's partition.
     assert log.last_seq("user-2", turn) == 0
     assert log.status("user-2", turn) is None
+
+
+# --- What is kept of a stopped answer (D121 (7)) ----------------------------------------
+
+
+def _turns_on(log: MemoryTurnLog) -> tuple[turns_module.ChatTurns, FakeConversations]:
+    conversations = FakeConversations()
+    services = SimpleNamespace(conversations=conversations)
+    return turns_module.ChatTurns(services, log, None, worker="w"), conversations  # type: ignore[arg-type]
+
+
+def _running(log: MemoryTurnLog, *events: tuple[str, dict[str, Any]]) -> str:
+    turn = "e" * 32
+    log.create("user-1", CONVERSATION, turn, deadline=10**10)
+    assert log.claim("user-1", turn, worker="w", deadline=10**10)
+    for seq, (kind, data) in enumerate(events, start=1):
+        assert log.append("user-1", turn, seq, kind, data)
+    return turn
+
+
+def test_stopping_keeps_exactly_what_was_written_before_its_end() -> None:
+    log = MemoryTurnLog()
+    chat_turns, conversations = _turns_on(log)
+    turn = _running(
+        log,
+        ("conversation", {"conversation_id": CONVERSATION}),
+        ("delta", {"text": "Hola "}),
+        ("tool", {"name": "get_cost_and_usage", "status": "started"}),
+        ("approval", {"approval_id": "a" * 32}),
+        ("remote_connection_required", {"registration_id": "r" * 26}),
+        ("delta", {"text": "mun"}),
+    )
+    assert chat_turns.cancel("user-1", turn) is not None
+    # The worker's next event finds its number taken: never stored.
+    assert not log.append("user-1", turn, 7, "delta", {"text": "do"})
+    assert conversations.stored == [("user-1", "assistant", "Hola mun")]
+    kept = conversations.options[0]
+    assert kept["stopped"] is True
+    assert kept["approvals"] == ["a" * 32]
+    assert kept["connection_required"] == ["r" * 26]
+    assert conversations.citations == [[]]
+    # Stopping again keeps nothing more.
+    assert chat_turns.cancel("user-1", turn) is not None
+    assert len(conversations.stored) == 1
+
+
+def test_a_turn_answered_before_its_stop_keeps_only_the_answer() -> None:
+    """The other side of the race: ``done`` took its number first, so the worker stores the
+    whole answer and «Detener», which comes after it, keeps nothing."""
+    log = MemoryTurnLog()
+    chat_turns, conversations = _turns_on(log)
+    turn = _running(
+        log,
+        ("conversation", {"conversation_id": CONVERSATION}),
+        ("delta", {"text": "Hola"}),
+        ("done", {"message_id": "m" * 32}),
+    )
+    outcome = chat_turns.cancel("user-1", turn)
+    assert outcome is not None
+    assert [e.kind for e in log.events("user-1", turn, 0)][-1] == "error"
+    assert conversations.stored == []
+    # Readers stop at ``done``: the person saw the answer.
+    applier = Applier()
+    applier.encoding("v1")
+    translator = chat_stream.Translator(turn, CONVERSATION)
+    for event in log.events("user-1", turn, 0):
+        for delta in translator.feed(event):
+            applier.delta(delta.full())
+    assert applier.channels[0]["status"] == "finished"
+
+
+def test_a_turn_given_up_stalled_keeps_what_was_written(monkeypatch: pytest.MonkeyPatch) -> None:
+    log = MemoryTurnLog()
+    chat_turns, conversations = _turns_on(log)
+    turn = _running(
+        log,
+        ("conversation", {"conversation_id": CONVERSATION}),
+        ("delta", {"text": "Hola"}),
+    )
+    assert chat_turns.interrupt("user-1", turn)
+    assert conversations.stored == [("user-1", "assistant", "Hola")]
+    assert conversations.options[0]["stopped"] is True
+
+
+def test_a_stopped_answer_is_stored_and_read_back_as_stopped(table: Any) -> None:
+    repo = ConversationRepository(lambda _u: table, "conv")
+    repo.add_message(
+        "user-1", CONVERSATION, "assistant", "Hola", [], message_id="f" * 32, stopped=True
+    )
+    repo.add_message("user-1", CONVERSATION, "assistant", "Listo", [])
+    first, second = repo.messages("user-1", CONVERSATION)
+    assert (first.message_id, first.content, first.stopped) == ("f" * 32, "Hola", True)
+    assert second.stopped is False
