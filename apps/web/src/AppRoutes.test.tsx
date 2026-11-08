@@ -1,7 +1,8 @@
 import { act, render, screen } from '@testing-library/react';
 import { useLocation } from 'react-router';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ApiClient } from './api/client';
 import { AppRoutes } from './App';
 import { SoonView } from './components/SoonView';
 import { baseMe, sessionValue } from './test/fixtures';
@@ -11,9 +12,18 @@ function CurrentPath() {
   return <output data-testid="path">{useLocation().pathname}</output>;
 }
 
+// What the chat asks for when a route opens a conversation; nothing here answers.
+const api = {
+  call: () => Promise.reject(new Error('no API in this test')),
+  getConversation: () => Promise.reject(new Error('no API in this test')),
+} as unknown as ApiClient;
+
 async function renderAt(path: string, isAdmin = true) {
   render(
-    <TestProviders session={sessionValue({ me: { ...baseMe, is_admin: isAdmin } })} path={path}>
+    <TestProviders
+      session={sessionValue({ api, me: { ...baseMe, is_admin: isAdmin } })}
+      path={path}
+    >
       <AppRoutes />
       <CurrentPath />
     </TestProviders>,
@@ -23,6 +33,13 @@ async function renderAt(path: string, isAdmin = true) {
     await Promise.resolve();
   });
 }
+
+// The chat routes mount ChatPage, which warms the markdown chunk with an import nobody awaits.
+// Loaded here first, that import finds the module ready instead of loading it after this file
+// ended and Vitest tore the environment down (EnvironmentTeardownError).
+beforeAll(async () => {
+  await import('./components/ChatMarkdown');
+});
 
 beforeEach(() => {
   vi.stubGlobal('matchMedia', (query: string) => ({

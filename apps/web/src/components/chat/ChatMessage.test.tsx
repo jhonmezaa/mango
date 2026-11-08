@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { DisplayMessage } from '../../hooks/chatState';
 import { ChatMessage } from './ChatMessage';
@@ -12,6 +12,13 @@ const STOPPED =
   'Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.';
 
 type Props = ComponentProps<typeof ChatMessage>;
+
+// ChatMessage renders its text through a lazy ChatMarkdown that most of these tests never wait
+// for. Loaded here first, no part of it is still loading when the file ends and Vitest tears the
+// environment down (EnvironmentTeardownError).
+beforeAll(async () => {
+  await import('../ChatMarkdown');
+});
 
 function renderMessage(message: DisplayMessage, props: Partial<Props> = {}) {
   const onSend = props.onSend ?? vi.fn();
