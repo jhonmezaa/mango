@@ -108,12 +108,13 @@ describe("code connector (D114)", () => {
     expect(fn.Properties.Environment.Variables.SESSION_KEY_ARN).toEqual({ "Fn::GetAtt": [dataKeyId, "Arn"] });
   });
 
-  it("writes the cells' files under owner/ of the chat files bucket, never a tag nor a read", () => {
+  it("writes the cells' files and reads the attached ones under owner/, never a tag", () => {
     const write = bySid("WriteCellFiles");
     expect(write.Action).toBe("s3:PutObject");
     expect(JSON.stringify(write.Resource)).toContain("/owner/*");
+    expect(bySid("ReadAttachedFiles").Resource).toEqual(write.Resource);
     const s3 = statements.flatMap(actions).filter((a) => a.startsWith("s3:"));
-    expect(s3).toEqual(["s3:PutObject"]);
+    expect(s3.sort()).toEqual(["s3:GetObject", "s3:PutObject"]);
     expect(bySid("ChatFilesKey").Condition).toEqual({
       StringEquals: { "kms:ViaService": `s3.${cfg.region}.amazonaws.com` },
     });

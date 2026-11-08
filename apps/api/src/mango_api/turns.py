@@ -1336,8 +1336,9 @@ class ChatTurns:
         text = message.message
         history.append(harness.ChatTurn("user", f"{note}\n\n{text}" if note else text))
         # The files of the question, read again (TM-CF9): still ready, of this conversation
-        # and person. Extension point of C2: the session of the code sandbox receives them
-        # with ``writeFiles`` once its connector exists; until then they are only recorded.
+        # and person. The code connector (C2, D114 (13)) writes the ready files of the
+        # conversation into its sandbox session with ``writeFiles`` before a cell, reading
+        # their records itself: the signature names the conversation, never the files.
         attached = chat_files.turn_attachments(
             services.chat_files, user.user_id, conversation_id, message.attachments
         )

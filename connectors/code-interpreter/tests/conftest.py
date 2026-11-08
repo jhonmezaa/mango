@@ -86,6 +86,12 @@ class FakeAgentCore:
             return {"stream": [self._execute(session, args["code"])]}
         if name == "readFiles":
             return {"stream": [self._read(session, args["paths"])]}
+        if name == "writeFiles":
+            for item in args["content"]:
+                real = Path(self._map(session, item["path"]))
+                real.parent.mkdir(parents=True, exist_ok=True)
+                real.write_bytes(item["blob"])
+            return {"stream": [{"result": {"content": []}}]}
         if name == "listFiles":
             return {"stream": [self._list(session, args["directoryPath"])]}
         raise AssertionError(name)

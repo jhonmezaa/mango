@@ -50,11 +50,13 @@ from mango_code_interpreter import outputs, programs
 from mango_code_interpreter.audit import AuditWriter
 from mango_code_interpreter.sandbox import Sandbox, SandboxError
 from mango_code_interpreter.sessions import (
+    GeneratedFile,
     RlsClients,
     Session,
     SessionBusyError,
     SessionStore,
 )
+from mango_core import chat_files
 from mango_core.code_sandbox import CELL_SECONDS, CELLS_PER_TURN, SESSION_SECONDS
 from mango_core.harness_tools import CODE_RUN_TOOL, CODE_TOOLS
 from mango_core.identity import AccessTokenVerifier, IdentityError, UserContext, user_from_claims
@@ -173,6 +175,9 @@ class Deps:
     store_for: Callable[[str], SessionStore]
     """The session store of one person (``sub``), with their row-level security credentials."""
     put_file: Callable[[str, bytes, str], None]
+    get_file: Callable[[str], bytes | None]
+    """The bytes of an object of the chat files bucket; ``None`` if it cannot be read (the
+    bucket refuses any object its scan did not clear, D116 (10))."""
     runs: SharedRateLimiter
     sessions: SharedRateLimiter
     audit: AuditWriter
@@ -209,6 +214,13 @@ def _deps() -> Deps:
         # Never a tag: the scan's tag is the scanner's word (D116 (10)).
         s3.put_object(Bucket=settings.files_bucket, Key=key, Body=data, ContentType=mime)
 
+    def get_file(key: str) -> bytes | None:
+        try:
+            body: bytes = s3.get_object(Bucket=settings.files_bucket, Key=key)["Body"].read()
+        except (ClientError, BotoCoreError):
+            return None
+        return body
+
     return Deps(
         settings=settings,
         verify=verifier.verify,
@@ -221,6 +233,7 @@ def _deps() -> Deps:
             rls.for_user(sub), settings.conversations_table, kms, settings.session_key_arn, sub
         ),
         put_file=put_file,
+        get_file=get_file,
         runs=SharedRateLimiter(limits, RUNS_LIMIT, RUNS_PER_MINUTE, 60),
         sessions=SharedRateLimiter(limits, SESSIONS_LIMIT, SESSIONS_PER_HOUR, 3600),
         audit=AuditWriter(
@@ -372,6 +385,53 @@ def _session(deps: Deps, store: SessionStore, call: _Call, now: int) -> Session:
     return session
 
 
+# --- Attached files (D116 (4), U1) -----------------------------------------------------------
+
+_UNSAFE_NAME = re.compile(r"[\x00-\x1f\x7f/\\]+")
+
+
+def _attached_name(name: str, file_id: str, taken: set[str]) -> str:
+    """Where an attached file goes in ``/mnt/data``: its name, made safe, once each."""
+    clean = _UNSAFE_NAME.sub("-", unicodedata.normalize("NFC", name)).strip(" .-")[:120]
+    clean = clean or file_id
+    if clean in taken:
+        stem, dot, ext = clean.rpartition(".")
+        clean = f"{stem}-{file_id[-6:]}.{ext}" if dot and stem else f"{clean}-{file_id[-6:]}"
+    taken.add(clean)
+    return clean
+
+
+def _hydrate(deps: Deps, store: SessionStore, session: Session, call: _Call) -> list[str]:
+    """Write into the session the files the person attached to the conversation that it does
+    not have yet: only those whose record says ``ready`` (their scan cleared them), read from
+    the bucket, which refuses any other (D116 (10)). Returns what the model is told."""
+    conversation = call.signed.conversation_id
+    now = int(deps.clock())
+    pending = [
+        f for f in store.ready_uploads(conversation, now) if f.file_id not in session.hydrated
+    ]
+    if not pending:
+        return []
+    taken: set[str] = set()
+    written: list[str] = []
+    notes: list[str] = []
+    for f in pending:
+        name = _attached_name(f.name, f.file_id, taken)
+        data = (
+            deps.get_file(chat_files.owner_key(call.user.user_id, conversation, f.file_id))
+            if f.size <= chat_files.MAX_FILE_BYTES
+            else None
+        )
+        if data is None:
+            notes.append(f"- {name} (attached, could not be loaded)")
+            continue
+        deps.sandbox.write_file(session.session_id, posixpath.join(session.layout.data, name), data)
+        written.append(f.file_id)
+        notes.append(f"- {_logical(name)} (attached by the user)")
+    store.mark_hydrated(conversation, session, written)
+    return notes
+
+
 # --- run_python ----------------------------------------------------------------------------
 
 
@@ -395,9 +455,12 @@ def _model_text(  # noqa: PLR0917 - the parts of one answer
     *,
     new_session: bool,
     run_id: str,
+    attached: list[str] | None = None,
 ) -> str:
     """What the model reads: text only, capped, marked untrusted (TM-CI6)."""
     parts = [NOTICE, f"status: {status}", f"run_id: {run_id}"]
+    if attached:
+        parts.append("files the user attached, now in /mnt/data:\n" + "\n".join(attached))
     if new_session:
         parts.append(
             "note: this cell ran in a new session; variables and files of earlier cells are gone"
@@ -421,7 +484,7 @@ def _model_text(  # noqa: PLR0917 - the parts of one answer
 
 
 def _files(
-    deps: Deps, session: Session, report: dict[str, Any] | None, call: _Call, run_id: str
+    deps: Deps, session: Session, report: dict[str, Any] | None, call: _Call
 ) -> tuple[list[outputs.Exported], list[str]]:
     if report is None:
         return [], []
@@ -455,7 +518,6 @@ def _files(
                 data,
                 user_id=call.user.user_id,
                 conversation_id=call.signed.conversation_id,
-                run_id=run_id,
             )
         )
     return exported, refused
@@ -490,7 +552,9 @@ def _run(call: _Call, deps: Deps) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 -
     exported: list[outputs.Exported] = []
     refused: list[str] = []
     trusted = True
+    attached: list[str] = []
     try:
+        attached = _hydrate(deps, store, session, call)
         store.begin_cell(
             turn_id=turn,
             run_id=run_id,
@@ -515,7 +579,15 @@ def _run(call: _Call, deps: Deps) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 -
                 status = str(report.get("status") or "error")
                 raw_error = report.get("error")
                 error = raw_error if isinstance(raw_error, dict) else None
-                exported, refused = _files(deps, session, report, call, run_id)
+                exported, refused = _files(deps, session, report, call)
+                store.record_generated(
+                    conversation,
+                    [
+                        GeneratedFile(f.file_id, f.name, f.extension, f.size, f.sha256)
+                        for f in exported
+                    ],
+                    int(deps.clock()),
+                )
         except SandboxError as exc:
             if exc.kind != "timeout":
                 raise
@@ -557,6 +629,7 @@ def _run(call: _Call, deps: Deps) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 -
         "bytes": sum(f.size for f in exported),
         "types": sorted({outputs.extension_of(f.name) for f in exported}),
         "refused": len(refused),
+        "attached": len(attached),
     }
     try:
         store.end_cell(
@@ -592,6 +665,7 @@ def _run(call: _Call, deps: Deps) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 -
             refused,
             new_session=session.new,
             run_id=run_id,
+            attached=attached,
         )
     }
 

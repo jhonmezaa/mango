@@ -84,8 +84,8 @@ export interface CodeConnectorProps {
  *   the conversation as encryption context (TM-CI1). A key of its own would be data in a nested
  *   stack (D99 (2)) or one more resource of Core; whoever else may decrypt with the data key
  *   (mango-api) has no permission on the Code Interpreter, so an id is of no use to it.
- * - Writes the cells' files under `owner/` of the chat files bucket, never a tag (D116 (10));
- *   reads none of them.
+ * - Writes the cells' files under `owner/` of the chat files bucket, never a tag (D116 (10)), and
+ *   reads from there the files a person attached, which the bucket opens only once scanned.
  * - Its own limits in RateLimits, and `code.execute` to the audit trail.
  */
 export class CodeConnector extends Construct {
@@ -136,9 +136,16 @@ export class CodeConnector extends Construct {
           actions: ["s3:PutObject"],
           resources: [props.chatFiles.bucket.arnForObjects(`${CODE_FILES_PREFIX}*`)],
         }),
+        // The files a person attached, into their session (D116 (4)): the bucket refuses any
+        // object its scan did not clear (TBAC, D116 (10)).
+        new iam.PolicyStatement({
+          sid: "ReadAttachedFiles",
+          actions: ["s3:GetObject"],
+          resources: [props.chatFiles.bucket.arnForObjects(`${CODE_FILES_PREFIX}*`)],
+        }),
         new iam.PolicyStatement({
           sid: "ChatFilesKey",
-          actions: ["kms:GenerateDataKey"],
+          actions: ["kms:GenerateDataKey", "kms:Decrypt"],
           resources: [props.chatFiles.key.keyArn],
           conditions: { StringEquals: { "kms:ViaService": `s3.${region}.amazonaws.com` } },
         }),

@@ -118,6 +118,14 @@ class Sandbox:
     def list_files(self, session_id: str, directory: str) -> Result:
         return self._invoke(self._client, session_id, "listFiles", {"directoryPath": directory})
 
+    def write_file(self, session_id: str, path: str, data: bytes) -> None:
+        """One file into the session (``writeFiles``, up to 100 MB a call)."""
+        result = self._invoke(
+            self._client, session_id, "writeFiles", {"content": [{"path": path, "blob": data}]}
+        )
+        if result.is_error:
+            raise SandboxError("unavailable")
+
     def read_files(self, session_id: str, paths: Iterable[str]) -> Result:
         return self._invoke(self._client, session_id, "readFiles", {"paths": list(paths)})
 

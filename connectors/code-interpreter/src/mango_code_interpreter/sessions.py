@@ -39,6 +39,26 @@ _CREDENTIAL_SECONDS = 600
 _MAX_CLIENTS = 200
 
 
+FILE_PREFIX = "CFILE#"
+"""Records of the files of the chat (``mango_api.chat_files_store.file_sk``)."""
+
+
+@dataclass(frozen=True)
+class UploadedFile:
+    file_id: str
+    name: str
+    size: int
+
+
+@dataclass(frozen=True)
+class GeneratedFile:
+    file_id: str
+    name: str
+    kind: str
+    size: int
+    sha256: str
+
+
 class SessionBusyError(Exception):
     """Another cell of this conversation is running."""
 
@@ -58,6 +78,8 @@ class Session:
     created_at: int
     layout: Layout
     new: bool
+    hydrated: frozenset[str] = frozenset()
+    """Ids of the attached files already written into the session."""
 
     @property
     def hash(self) -> str:
@@ -193,6 +215,7 @@ class SessionStore:
             created_at=int(item["created_at"]["N"]),
             layout=_layout(item),
             new=False,
+            hydrated=frozenset(item.get("hydrated", {}).get("SS", [])),
         )
 
     def save_new(
@@ -281,6 +304,83 @@ class SessionStore:
             EncryptionContext=_context(self._user, conversation_id),
         )["Plaintext"]
         return plain.decode()
+
+    def mark_hydrated(self, conversation_id: str, session: Session, file_ids: list[str]) -> None:
+        """The attached files written into the session: not written again into it."""
+        if not file_ids:
+            return
+        self._db.update_item(
+            TableName=self._table,
+            Key={"PK": self._pk, "SK": _s(session_sk(conversation_id))},
+            UpdateExpression="ADD hydrated :ids",
+            ConditionExpression="created_at = :created",
+            ExpressionAttributeValues={
+                ":ids": {"SS": sorted(set(file_ids))},
+                ":created": _n(session.created_at),
+            },
+        )
+
+    # --- Files of the chat (U1's records, ``mango_api.chat_files_store``) -----------------
+
+    def ready_uploads(self, conversation_id: str, now: int) -> list[UploadedFile]:
+        """What the person attached to the conversation and its scan cleared (D116 (2)):
+        ``ready``, not deleted, not expired. Read here again: the model never names them."""
+        out: list[UploadedFile] = []
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
+            "ExpressionAttributeValues": {
+                ":pk": self._pk,
+                ":prefix": _s(f"{FILE_PREFIX}{conversation_id}#"),
+            },
+            "ConsistentRead": True,
+        }
+        while True:
+            page = self._db.query(**kwargs)
+            for item in page.get("Items", []):
+                if (
+                    item.get("origin", {}).get("S") == "upload"
+                    and item.get("status", {}).get("S") == "ready"
+                    and not item.get("deleted", {}).get("BOOL", False)
+                    and int(item.get("expires_at", {}).get("N", "0")) > now
+                ):
+                    out.append(
+                        UploadedFile(
+                            file_id=item["file_id"]["S"],
+                            name=item["name"]["S"],
+                            size=int(item["size"]["N"]),
+                        )
+                    )
+            start = page.get("LastEvaluatedKey")
+            if not start:
+                return out
+            kwargs["ExclusiveStartKey"] = start
+
+    def record_generated(self, conversation_id: str, files: list[GeneratedFile], now: int) -> None:
+        """A record per file a cell handed out, as mango-api records an attached one, waiting
+        for the scan of its object (``verifying``): the chat delivers it once it is clean."""
+        expires = now + RUN_RETENTION_SECONDS
+        for f in files:
+            self._db.put_item(
+                TableName=self._table,
+                Item={
+                    "PK": self._pk,
+                    "SK": _s(f"{FILE_PREFIX}{conversation_id}#{f.file_id}"),
+                    "file_id": _s(f.file_id),
+                    "conversation_id": _s(conversation_id),
+                    "origin": _s("generated"),
+                    "name": _s(f.name),
+                    "kind": _s(f.kind),
+                    "size": _n(f.size),
+                    "status": _s("verifying"),
+                    "status_at": _n(now),
+                    "created_at": _n(now),
+                    "expires_at": _n(expires),
+                    "sha256": _s(f.sha256),
+                    "ttl": _n(expires + 86400),
+                },
+                ConditionExpression="attribute_not_exists(PK)",
+            )
 
     # --- Cells ----------------------------------------------------------------------------
 

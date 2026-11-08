@@ -12,47 +12,32 @@ import hashlib
 import io
 import json
 import posixpath
-import secrets
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, cast
 
+from mango_core import chat_files, knowledge
+
 Kind = Literal["file", "figure", "chart", "table"]
 _KINDS: frozenset[str] = frozenset({"file", "figure", "chart", "table"})
 
-TYPES: dict[str, str] = {
-    "png": "image/png",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "gif": "image/gif",
-    "webp": "image/webp",
-    "pdf": "application/pdf",
-    "csv": "text/csv",
-    "tsv": "text/tab-separated-values",
-    "txt": "text/plain",
-    "md": "text/markdown",
-    "json": "application/json",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "parquet": "application/vnd.apache.parquet",
-}
-"""Extensions a cell may hand out, with the type the server decides (never the sandbox's)."""
+TYPES: dict[str, str] = {ext: kind.content_type for ext, kind in chat_files.TYPES.items()}
+"""Extensions a cell may hand out, with the type the server decides (never the sandbox's): the
+closed list of the chat files (``mango_core.chat_files.TYPES``), so a generated file is one the
+chat can show and download like an attached one."""
 MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_CELL_BYTES = 100 * 1024 * 1024
 """What one ``readFiles`` call may bring back (AWS: 100 MB a call)."""
 MAX_FILES = 20
 """Files one cell hands out (D116 (1)); the rest stay in the sandbox."""
-_TEXT = frozenset({"csv", "tsv", "txt", "md", "json"})
+_TEXT = frozenset({"csv", "txt", "json"})
 _ZIP = frozenset({"xlsx", "docx", "pptx"})
 _MAGIC: dict[str, tuple[bytes, ...]] = {
     "png": (b"\x89PNG\r\n\x1a\n",),
     "jpg": (b"\xff\xd8\xff",),
     "jpeg": (b"\xff\xd8\xff",),
-    "gif": (b"GIF87a", b"GIF89a"),
     "pdf": (b"%PDF-",),
-    "parquet": (b"PAR1",),
 }
 _MACROS = ("vbaproject.bin", "vbadata.xml")
 
@@ -77,6 +62,7 @@ class Exported:
     size: int
     sha256: str
     key: str
+    extension: str
 
 
 def extension_of(name: str) -> str:
@@ -119,13 +105,11 @@ def candidates(
     return allowed, refused
 
 
-def acceptable(extension: str, data: bytes) -> bool:  # noqa: PLR0911 - one check per type
+def acceptable(extension: str, data: bytes) -> bool:
     """The bytes are what the extension says (TM-CI4)."""
     magic = _MAGIC.get(extension)
     if magic is not None:
         return data.startswith(magic)
-    if extension == "webp":
-        return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
     if extension in _ZIP:
         return _office(data)
     if extension in _TEXT:
@@ -153,9 +137,10 @@ def _office(data: bytes) -> bool:
     return "[content_types].xml" in names and not any(n.endswith(_MACROS) for n in names)
 
 
-def object_key(user_id: str, conversation_id: str, run_id: str, file_id: str) -> str:
-    """Where a generated file lives in the chat files bucket: ids only (TM-CF8)."""
-    return f"owner/{user_id}/conv/{conversation_id}/{run_id}/{file_id}"
+def object_key(user_id: str, conversation_id: str, file_id: str) -> str:
+    """Where a generated file lives in the chat files bucket, as an attached one: ids only
+    (TM-CF8, ``mango_core.chat_files.owner_key``)."""
+    return chat_files.owner_key(user_id, conversation_id, file_id)
 
 
 def export(
@@ -165,13 +150,12 @@ def export(
     *,
     user_id: str,
     conversation_id: str,
-    run_id: str,
 ) -> Exported:
     mime = (
         "application/json" if candidate.kind in ("chart", "table") else TYPES[candidate.extension]
     )
-    file_id = secrets.token_hex(16)
-    key = object_key(user_id, conversation_id, run_id, file_id)
+    file_id = knowledge.new_id()
+    key = object_key(user_id, conversation_id, file_id)
     put(key, data, mime)
     return Exported(
         file_id=file_id,
@@ -181,4 +165,5 @@ def export(
         size=len(data),
         sha256=hashlib.sha256(data).hexdigest(),
         key=key,
+        extension=candidate.extension,
     )

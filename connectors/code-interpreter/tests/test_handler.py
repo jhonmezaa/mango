@@ -27,6 +27,7 @@ from mango_code_interpreter.handler import (
 )
 from mango_code_interpreter.sandbox import Sandbox
 from mango_code_interpreter.sessions import RlsClients, SessionStore
+from mango_core import chat_files
 from mango_core.code_sandbox import Prices, cell_use, cost, run_sk, session_sk, turn_prefix
 from mango_core.identity import IdentityError
 from mango_core.rate_limits import RateLimitStore, SharedRateLimiter
@@ -127,12 +128,20 @@ def world(agentcore: Any) -> Iterator[World]:
         def put(key_: str, data: bytes, mime: str) -> None:
             s3.put_object(Bucket="chat-files", Key=key_, Body=data, ContentType=mime)
 
+        def get(key_: str) -> bytes | None:
+            try:
+                body: bytes = s3.get_object(Bucket="chat-files", Key=key_)["Body"].read()
+            except s3.exceptions.NoSuchKey:
+                return None
+            return body
+
         deps = Deps(
             settings=settings,
             verify=_verify,
             sandbox=Sandbox(agentcore, agentcore, agentcore.interpreter_id),
             store_for=lambda sub: SessionStore(dynamodb, "conversations", kms, key, sub),
             put_file=put,
+            get_file=get,
             runs=SharedRateLimiter(limits, code.RUNS_LIMIT, code.RUNS_PER_MINUTE, 60),
             sessions=SharedRateLimiter(limits, code.SESSIONS_LIMIT, code.SESSIONS_PER_HOUR, 3600),
             audit=AuditWriter(firehose, "audit", dynamodb, "audit-index"),
@@ -364,7 +373,8 @@ def test_open_figures_are_saved_and_copied_to_the_chat_files(world: World) -> No
     files = json.loads(world.runs("user-ana")[0]["files"]["S"])
     assert [f["kind"] for f in files] == ["figure", "figure"]
     for f in files:
-        assert f["key"] == f"owner/user-ana/conv/{CONV}/{f['key'].split('/')[4]}/{f['file_id']}"
+        assert f["key"] == chat_files.owner_key("user-ana", CONV, f["file_id"])
+        assert chat_files.parse_key(f["key"]) is not None
         body = world.s3.get_object(Bucket="chat-files", Key=f["key"])
         assert body["ContentType"] == "image/png"
         assert body["Body"].read().startswith(b"\x89PNG")
@@ -402,6 +412,7 @@ def test_tables_charts_and_data_files_go_out_by_id(world: World) -> None:
         ("run.sh", "rm -rf /"),
         ("libro.xlsm", "PK"),
         ("tool.exe", "MZ"),
+        ("data.parquet", "PAR1"),
     ],
 )
 def test_types_outside_the_closed_list_never_go_out(world: World, name: str, content: str) -> None:
@@ -606,3 +617,71 @@ def test_the_size_caps_hold_on_the_real_bytes_not_on_the_report(
     monkeypatch.setattr(outputs, "MAX_FILE_BYTES", 1024)
     text = _text(_run(world, source))
     assert "big.txt (too large)" in text
+
+
+# --- Files of the chat (U1, D116) -------------------------------------------------------------
+
+
+def _attach(world: World, file_id: str, name: str, data: bytes, **item: dict[str, Any]) -> None:
+    world.s3.put_object(
+        Bucket="chat-files", Key=chat_files.owner_key("user-ana", CONV, file_id), Body=data
+    )
+    world.dynamodb.put_item(
+        TableName="conversations",
+        Item={
+            "PK": {"S": "USER#user-ana"},
+            "SK": {"S": f"CFILE#{CONV}#{file_id}"},
+            "file_id": {"S": file_id},
+            "conversation_id": {"S": CONV},
+            "origin": {"S": "upload"},
+            "name": {"S": name},
+            "kind": {"S": "csv"},
+            "size": {"N": str(len(data))},
+            "status": {"S": "ready"},
+            "status_at": {"N": "1"},
+            "created_at": {"N": "1"},
+            "expires_at": {"N": str(int(world.clock[0]) + 3600)},
+            **item,
+        },
+    )
+
+
+READY = "01JABCDEFGHJKMNPQRSTVWXYZ0"
+SCANNING = "01JABCDEFGHJKMNPQRSTVWXYZ1"
+
+
+def test_the_attached_files_that_are_ready_reach_the_session_once(world: World) -> None:
+    _attach(world, READY, "ventas.csv", b"x,y\n1,2\n")
+    _attach(world, SCANNING, "otro.csv", b"a\n", status={"S": "scanning"})
+    text = _text(_run(world, "print(open('ventas.csv').read())"))
+    assert "sandbox:/mnt/data/ventas.csv (attached by the user)" in text
+    assert "x,y\n1,2" in text
+    assert "otro.csv" not in text
+    # Written once per session: the next cell does not write it again.
+    _run(world, "1")
+    writes = [c for c in world.agentcore.calls if c[0] == "writeFiles"]
+    assert len(writes) == 1
+
+
+def test_an_attached_name_cannot_leave_the_folder(world: World) -> None:
+    _attach(world, READY, "../../etc/x.csv", b"a\n")
+    text = _text(_run(world, "import os\nprint(sorted(os.listdir('.')))"))
+    assert "..-..-etc-x.csv" in text or "etc-x.csv" in text
+    [(_, write)] = [c for c in world.agentcore.calls if c[0] == "writeFiles"]
+    assert ".." not in write["arguments"]["content"][0]["path"].replace("mnt/data", "")
+
+
+def test_the_generated_files_are_recorded_as_the_chat_records_an_attached_one(
+    world: World,
+) -> None:
+    _run(world, "open('resumen.csv', 'w').write('a\\n1\\n')")
+    [f] = json.loads(world.runs("user-ana")[0]["files"]["S"])
+    record = world.item("user-ana", f"CFILE#{CONV}#{f['file_id']}")
+    assert record is not None
+    assert {k: record[k] for k in ("origin", "status", "kind", "name")} == {
+        "origin": {"S": "generated"},
+        "status": {"S": "verifying"},
+        "kind": {"S": "csv"},
+        "name": {"S": "resumen.csv"},
+    }
+    assert record["sha256"]["S"] == f["sha256"]
