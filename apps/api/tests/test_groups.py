@@ -17,6 +17,7 @@ from mango_api.authz import Authorizer
 from mango_api.groups import GroupRegistry
 from mango_core.identity import IdentityError, user_from_claims
 
+from .chat_client import post_chat
 from .test_admin import RecordingAudit, _table
 from .test_app import (
     HOST,
@@ -173,7 +174,7 @@ def test_user_without_a_mango_group_still_has_no_access(env: Env, token: str) ->
         ("GET", "/api/me", None),
         ("GET", "/api/groups", None),
         ("GET", "/api/conversations", None),
-        ("POST", "/api/chat", {"message": "hola"}),
+        ("POST", "/api/chat/turns", {"message": "hola"}),
     ):
         response = env.client.request(method, path, headers=_h(token), json=body)
         assert response.status_code == 403
@@ -184,7 +185,7 @@ def test_user_without_a_mango_group_still_has_no_access(env: Env, token: str) ->
 
 def test_a_group_alone_does_not_open_the_finops_agent(env: Env) -> None:
     for token in ("creator", "member", "admin-only"):
-        chat = env.client.post("/api/chat", headers=_h(token), json={"message": "hola"})
+        chat = post_chat(env.client, headers=_h(token), json={"message": "hola"})
         assert chat.status_code == 403
         assert chat.json()["error"]["code"] == "forbidden"
     assert env.agentcore.requests == []

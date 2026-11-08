@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 
 from mango_core import invocation
 
+from .chat_client import post_chat
 from .release_seed import publish_version, seed_release_agent
 from .test_agents_api import (
     COST_TOOL,
@@ -29,7 +30,7 @@ KEY = b"k" * 32
 
 
 def _chat(env: Env, token: str, **body: Any) -> Any:  # noqa: F811
-    return env.client.post("/api/chat", headers=_h(token), json={"message": "hola", **body})
+    return post_chat(env.client, headers=_h(token), json={"message": "hola", **body})
 
 
 def _decisions(env: Env, user: str) -> list[dict[str, Any]]:  # noqa: F811
@@ -61,7 +62,7 @@ def test_a_user_of_the_agents_group_chats_with_it(env: Env) -> None:  # noqa: F8
     assert signed is not None
     assert (signed.agent_id, signed.agent_version) == (agent_id, 1)
     assert signed.tools == {"finops___get_cost_and_usage"}
-    decision = _decisions(env, "member-1")[-1]
+    decision = [d for d in _decisions(env, "member-1") if d["action"] == "UseAgent"][-1]
     assert (decision["action"], decision["resource"], decision["allowed"]) == (
         "UseAgent",
         f"Mango::Agent::{agent_id}",

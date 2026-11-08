@@ -28,6 +28,7 @@ from mango_core.remote_mcp import (
     registration_key,
 )
 
+from .chat_client import post_chat
 from .test_agents_api import (
     CONNECTORS,
     COST_TOOL,
@@ -162,9 +163,7 @@ def remotes(env: Env, monkeypatch: pytest.MonkeyPatch) -> Iterator[Remotes]:  # 
 
 
 def _chat(env: Env, token: str, agent_id: str) -> Any:  # noqa: F811
-    return env.client.post(
-        "/api/chat", headers=_h(token), json={"message": "hola", "agent_id": agent_id}
-    )
+    return post_chat(env.client, headers=_h(token), json={"message": "hola", "agent_id": agent_id})
 
 
 def _signed_tools(env: Env, user: str) -> set[str]:  # noqa: F811

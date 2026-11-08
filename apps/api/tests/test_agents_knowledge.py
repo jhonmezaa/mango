@@ -18,6 +18,7 @@ from mango_core.agents_table import agent_pk, version_sk
 from mango_core.knowledge import Status
 
 from . import test_agents_api
+from .chat_client import post_chat
 from .test_agents_api import (
     Env,
     _approve,
@@ -284,7 +285,7 @@ def test_a_turn_signs_the_knowledge_bases_and_pays_for_its_searches(priced: Env)
     kb_id = _kb(kbs, "hr")
     agent = _published(priced, name="Con KB", groups=["hr"], knowledge_bases=[kb_id])
     chat = {"message": "hola", "agent_id": agent["agent_id"]}
-    assert priced.client.post("/api/chat", headers=_h("member"), json=chat).status_code == 200
+    assert post_chat(priced.client, headers=_h("member"), json=chat).status_code == 200
     request = priced.agentcore.requests[-1]
     assert "@mango/knowledge___retrieve" in request["allowedTools"]
     headers = request["tools"][0]["config"]["remoteMcp"]["headers"]
@@ -295,9 +296,7 @@ def test_a_turn_signs_the_knowledge_bases_and_pays_for_its_searches(priced: Env)
     # One search per iteration at most, each as the longest query: 8 x 250 tokens.
     without = _published(priced, name="Sin KB", groups=["hr"])
     chat_without = {"message": "hola", "agent_id": without["agent_id"]}
-    assert (
-        priced.client.post("/api/chat", headers=_h("member"), json=chat_without).status_code == 200
-    )
+    assert post_chat(priced.client, headers=_h("member"), json=chat_without).status_code == 200
     reserved_with, reserved_without = priced.budgets.reserved[-2:]
     assert (
         reserved_with - reserved_without
@@ -311,7 +310,7 @@ def test_a_turn_signs_the_knowledge_bases_and_pays_for_its_searches(priced: Env)
         return {"stream": _searching(list(original(**kwargs)["stream"]))}
 
     priced.agentcore.invoke_harness = harness  # type: ignore[method-assign]
-    assert priced.client.post("/api/chat", headers=_h("member"), json=chat).status_code == 200
+    assert post_chat(priced.client, headers=_h("member"), json=chat).status_code == 200
     (_, plain), (_, searched) = priced.budgets.settled[0], priced.budgets.settled[-1]
     assert searched - plain == knowledge_cost(1, EMBEDDING_PRICE) == Decimal("0.000005")
 
@@ -319,7 +318,7 @@ def test_a_turn_signs_the_knowledge_bases_and_pays_for_its_searches(priced: Env)
 def test_a_version_without_knowledge_bases_is_signed_as_before(env: Env) -> None:  # noqa: F811
     agent = _published(env, name="Sin KB", groups=["hr"])
     chat = {"message": "hola", "agent_id": agent["agent_id"]}
-    assert env.client.post("/api/chat", headers=_h("member"), json=chat).status_code == 200
+    assert post_chat(env.client, headers=_h("member"), json=chat).status_code == 200
     request = env.agentcore.requests[-1]
     assert request["allowedTools"] == ["@mango/finops___get_cost_and_usage"]
     headers = request["tools"][0]["config"]["remoteMcp"]["headers"]

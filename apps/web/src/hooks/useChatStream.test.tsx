@@ -1,10 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ChatEvent } from '../api/chatEvents';
-import type { ApiClient, StreamChatRequest } from '../api/client';
+import type { ScriptEvent } from '../test/turnEvents';
+import type { ApiClient } from '../api/client';
 import { ApiError } from '../api/errors';
-import { turnsApi } from '../test/turnsApi';
+import { turnsApi, type TurnScriptRequest } from '../test/turnsApi';
 import type { DisplayMessage } from './chatState';
 import { useChatStream } from './useChatStream';
 
@@ -12,14 +12,14 @@ const TARGET = { agentId: 'finops', model: null };
 const CONVERSATION = 'c1';
 
 /** A script whose turn waits for `finish`, after the events given. */
-function pendingScript(events: ChatEvent[]) {
+function pendingScript(events: ScriptEvent[]) {
   const noop = (): void => undefined;
-  const control: { emit: (event: ChatEvent) => void; finish: () => void } = {
+  const control: { emit: (event: ScriptEvent) => void; finish: () => void } = {
     emit: noop,
     finish: noop,
   };
-  const streamChat = vi.fn(
-    ({ onEvent }: StreamChatRequest) =>
+  const turnScript = vi.fn(
+    ({ onEvent }: TurnScriptRequest) =>
       new Promise<void>((resolve) => {
         onEvent({ type: 'conversation', conversation_id: CONVERSATION });
         events.forEach(onEvent);
@@ -37,7 +37,7 @@ function pendingScript(events: ChatEvent[]) {
         };
       }),
   );
-  return { streamChat, control };
+  return { turnScript, control };
 }
 
 function setup(api: ApiClient) {
@@ -57,8 +57,8 @@ const last = (messages: DisplayMessage[]) => messages.at(-1);
 
 describe('useChatStream (v1)', () => {
   it('creates the turn, reads it and ends with its answer', async () => {
-    const { streamChat, control } = pendingScript([{ type: 'delta', text: 'Gastaron USD 10' }]);
-    const api = turnsApi({ streamChat }) as unknown as ApiClient;
+    const { turnScript, control } = pendingScript([{ type: 'delta', text: 'Gastaron USD 10' }]);
+    const api = turnsApi({ turnScript }) as unknown as ApiClient;
     const { hook, callbacks } = setup(api);
     await act(() => hook.result.current.send('Hola', TARGET));
     expect(callbacks.onConversationStarted).toHaveBeenCalledWith(CONVERSATION);
@@ -78,8 +78,8 @@ describe('useChatStream (v1)', () => {
   });
 
   it('reads a turn in flight again when its conversation opens again (round 40)', async () => {
-    const { streamChat, control } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
-    const api = turnsApi({ streamChat }) as unknown as ApiClient;
+    const { turnScript, control } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
+    const api = turnsApi({ turnScript }) as unknown as ApiClient;
     const { hook } = setup(api);
     await act(() => hook.result.current.send('Hola', TARGET));
     // The person leaves the conversation: the turn goes on in Mango.
@@ -125,8 +125,8 @@ describe('useChatStream (v1)', () => {
   });
 
   it('reads nothing when the conversation has no turn in flight, nor while it loads', async () => {
-    const { streamChat, control } = pendingScript([]);
-    const api = turnsApi({ streamChat });
+    const { turnScript, control } = pendingScript([]);
+    const api = turnsApi({ turnScript });
     const asked = vi.spyOn(api, 'conversationTurn');
     const { hook } = setup(api as unknown as ApiClient);
     await act(() => hook.result.current.send('Hola', TARGET));
@@ -155,8 +155,8 @@ describe('useChatStream (v1)', () => {
   });
 
   it('follows the turn of another tab live, its question marked (round 40)', async () => {
-    const { streamChat, control } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
-    const api = turnsApi({ streamChat }) as unknown as ApiClient;
+    const { turnScript, control } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
+    const api = turnsApi({ turnScript }) as unknown as ApiClient;
     const { hook } = setup(api);
     // «The other tab»: a turn of the conversation in flight.
     await act(() => api.createTurn({ conversationId: CONVERSATION, message: 'EC2' }));
@@ -183,8 +183,8 @@ describe('useChatStream (v1)', () => {
   });
 
   it('does not follow a turn found for a conversation left meanwhile', async () => {
-    const { streamChat } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
-    const api = turnsApi({ streamChat });
+    const { turnScript } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
+    const api = turnsApi({ turnScript });
     let answer: (turn: { turn_id: string; state: 'running' }) => void = () => undefined;
     api.conversationTurn = () =>
       new Promise((resolve) => {
@@ -206,12 +206,12 @@ describe('useChatStream (v1)', () => {
   });
 
   it('gives the message back when another tab has a turn in flight (round 40)', async () => {
-    const streamChat = vi.fn(({ onEvent }: StreamChatRequest) => {
+    const turnScript = vi.fn(({ onEvent }: TurnScriptRequest) => {
       onEvent({ type: 'conversation', conversation_id: CONVERSATION });
       onEvent({ type: 'error', code: 'conversation_busy', message: 'busy' });
       return Promise.resolve();
     });
-    const api = turnsApi({ streamChat }) as unknown as ApiClient;
+    const api = turnsApi({ turnScript }) as unknown as ApiClient;
     const { hook, callbacks } = setup(api);
     await act(() => hook.result.current.send('¿Y RDS?', TARGET));
     await waitFor(() => {
@@ -222,13 +222,13 @@ describe('useChatStream (v1)', () => {
   });
 
   it('says the turn was interrupted when Mango lost it after writing (round 40)', async () => {
-    const streamChat = vi.fn(({ onEvent }: StreamChatRequest) => {
+    const turnScript = vi.fn(({ onEvent }: TurnScriptRequest) => {
       onEvent({ type: 'conversation', conversation_id: CONVERSATION });
       onEvent({ type: 'delta', text: 'Gastaron' });
       onEvent({ type: 'error', code: 'turn_interrupted', message: 'the answer was interrupted' });
       return Promise.resolve();
     });
-    const api = turnsApi({ streamChat }) as unknown as ApiClient;
+    const api = turnsApi({ turnScript }) as unknown as ApiClient;
     const { hook } = setup(api);
     await act(() => hook.result.current.send('Hola', TARGET));
     await waitFor(() => {
@@ -238,13 +238,13 @@ describe('useChatStream (v1)', () => {
   });
 
   it('keeps a failure of the agent after it wrote as an error, with «Reintentar» (R3b)', async () => {
-    const streamChat = vi.fn(({ onEvent }: StreamChatRequest) => {
+    const turnScript = vi.fn(({ onEvent }: TurnScriptRequest) => {
       onEvent({ type: 'conversation', conversation_id: CONVERSATION });
       onEvent({ type: 'delta', text: 'Gastaron' });
       onEvent({ type: 'error', code: 'upstream_error', message: 'the agent failed' });
       return Promise.resolve();
     });
-    const { hook } = setup(turnsApi({ streamChat }) as unknown as ApiClient);
+    const { hook } = setup(turnsApi({ turnScript }) as unknown as ApiClient);
     await act(() => hook.result.current.send('Hola', TARGET));
     await waitFor(() => {
       expect(last(hook.result.current.state.messages)).toMatchObject({
@@ -256,12 +256,12 @@ describe('useChatStream (v1)', () => {
   });
 
   it('keeps an error that wrote nothing as an error', async () => {
-    const streamChat = vi.fn(({ onEvent }: StreamChatRequest) => {
+    const turnScript = vi.fn(({ onEvent }: TurnScriptRequest) => {
       onEvent({ type: 'conversation', conversation_id: CONVERSATION });
       onEvent({ type: 'error', code: 'upstream_error', message: 'the agent failed' });
       return Promise.resolve();
     });
-    const { hook } = setup(turnsApi({ streamChat }) as unknown as ApiClient);
+    const { hook } = setup(turnsApi({ turnScript }) as unknown as ApiClient);
     await act(() => hook.result.current.send('Hola', TARGET));
     await waitFor(() => {
       expect(last(hook.result.current.state.messages)).toMatchObject({
@@ -272,8 +272,8 @@ describe('useChatStream (v1)', () => {
   });
 
   it('«Cancelar» stops reading, tells the API and keeps what was written', async () => {
-    const { streamChat } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
-    const api = turnsApi({ streamChat });
+    const { turnScript } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
+    const api = turnsApi({ turnScript });
     const cancelTurn = vi.spyOn(api, 'cancelTurn');
     const { hook, callbacks } = setup(api as unknown as ApiClient);
     await act(() => hook.result.current.send('Hola', TARGET));
@@ -293,8 +293,8 @@ describe('useChatStream (v1)', () => {
   });
 
   it('reconnects after a cut and says so, without repeating the text', async () => {
-    const { streamChat, control } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
-    const api = turnsApi({ streamChat });
+    const { turnScript, control } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
+    const api = turnsApi({ turnScript });
     const open = api.openTurnStream.bind(api);
     let connections = 0;
     api.openTurnStream = vi.fn(async (turnId: string, after: number, signal: AbortSignal) => {
@@ -331,8 +331,8 @@ describe('useChatStream (v1)', () => {
   });
 
   it('gives up on an answer it cannot retry and reads again with «Volver a conectar»', async () => {
-    const { streamChat, control } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
-    const api = turnsApi({ streamChat });
+    const { turnScript, control } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
+    const api = turnsApi({ turnScript });
     const open = api.openTurnStream.bind(api);
     let refuse = true;
     api.openTurnStream = vi.fn((turnId: string, after: number, signal: AbortSignal) =>
@@ -361,8 +361,8 @@ describe('useChatStream (v1)', () => {
   });
 
   it('ends the session with the turn notice when it ends while reconnecting (round 40)', async () => {
-    const { streamChat } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
-    const api = turnsApi({ streamChat });
+    const { turnScript } = pendingScript([{ type: 'delta', text: 'Gastaron' }]);
+    const api = turnsApi({ turnScript });
     const open = api.openTurnStream.bind(api);
     let connections = 0;
     api.openTurnStream = vi.fn(async (turnId: string, after: number, signal: AbortSignal) => {

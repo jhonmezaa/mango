@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
-import { citationSchema, remoteConnectionEvent } from '../api/chatEvents';
 import type { Channels, Json } from '../api/deltas';
 import {
   approvalSchema,
+  citationSchema,
+  remoteConnectionSchema,
   remoteSourcesSchema,
   type ChatApproval,
   type ToolStatus,
@@ -62,7 +63,7 @@ const answerSchema = messageSchema.extend({
     phase: phaseSchema.nullable().optional(),
     knowledge: z.array(knowledgeSchema).max(50).optional(),
     approvals: z.array(z.unknown()).max(50).optional(),
-    connection_required: z.array(remoteConnectionEvent.shape.registration_id).max(20).optional(),
+    connection_required: z.array(remoteConnectionSchema.shape.registration_id).max(20).optional(),
     result: resultSchema.optional(),
     error: errorSchema.optional(),
   }),

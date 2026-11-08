@@ -18386,46 +18386,9 @@
         "summary": "Reject Approval"
       }
     },
-    "/chat": {
-      "post": {
-        "description": "The stream of D57, answered while the turn runs (retired in R5, D120 (7)).",
-        "operationId": "chat",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Chat"
-      }
-    },
     "/chat/turns": {
       "post": {
-        "description": "The same turn as ``POST /api/chat``, without its stream: the client reads it with\n``GET /api/chat/turns/{turn_id}/stream`` (D120, D121 (2)).",
+        "description": "Queue a chat turn: the client reads it with ``GET /api/chat/turns/{turn_id}/stream``\n(D120, D121 (2)).",
         "operationId": "create_turn",
         "requestBody": {
           "content": {

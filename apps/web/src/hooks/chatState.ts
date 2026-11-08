@@ -1,6 +1,21 @@
-import type { ChatEvent } from '../api/chatEvents';
 import type { ChatApproval, Message, ToolCall, ToolStatus } from '../api/schemas';
 import type { TurnView } from './turnView';
+
+/**
+ * A change of a turn read in `v1` (D120), as the reducer folds it: what `eventsOfChange` finds
+ * between two views. The text and the end of the turn come from the view itself.
+ */
+export type TurnEvent =
+  | { type: 'tool'; name: string; status: ToolStatus }
+  | { type: 'status'; phase: string; tool?: string | undefined }
+  | { type: 'approval'; approval: ChatApproval }
+  | {
+      type: 'knowledge';
+      knowledge_bases: string[];
+      count: number;
+      sources: { knowledge_base: string; document: string; page?: number | undefined }[];
+    }
+  | { type: 'remote_connection_required'; registration_id: string };
 
 /**
  * `interrupted`: Mango lost the turn halfway (design round 40): the text it wrote stays, with
@@ -240,13 +255,6 @@ export function errorKeyForCode(code: string, status?: number): ErrorKey {
 export type ChatAction =
   | { type: 'reset'; conversationId: string | null; messages: DisplayMessage[] }
   | { type: 'send'; userId: string; assistantId: string; text: string; sentAt?: string }
-  | {
-      type: 'event';
-      assistantId: string;
-      event: ChatEvent;
-      /** Client clock (ms) when the event arrived; used to time tool calls. */
-      receivedAt?: number;
-    }
   /** The conversation of a turn just created (`POST /api/chat/turns`). */
   | { type: 'conversation'; conversationId: string }
   /** The `v1` documents of a turn changed (D120): `view` after, `previous` before. */
@@ -357,8 +365,8 @@ const CANCELLED_CODE = 'cancelled';
  * steps, the timing of the tools and the knowledge searches are built from them). The text and
  * the end of the turn are set from the view itself.
  */
-export function eventsOfChange(previous: TurnView, view: TurnView): ChatEvent[] {
-  const events: ChatEvent[] = [];
+export function eventsOfChange(previous: TurnView, view: TurnView): TurnEvent[] {
+  const events: TurnEvent[] = [];
   view.tools.forEach((tool, index) => {
     const before = previous.tools[index];
     if (!before) {
@@ -424,18 +432,64 @@ function endOfTurn(message: DisplayMessage, view: TurnView): DisplayMessage {
   };
 }
 
-function eventReducer(
+/** One change of a turn on its answer: tools and their timing, steps, searches, requests. */
+function applyEvent(
   state: ChatState,
   assistantId: string,
-  event: ChatEvent,
+  event: TurnEvent,
   receivedAt?: number,
 ): ChatState {
-  return chatReducer(state, {
-    type: 'event',
-    assistantId,
-    event,
-    ...(receivedAt === undefined ? {} : { receivedAt }),
-  });
+  switch (event.type) {
+    case 'tool':
+      return updateMessage(state, assistantId, (message) => ({
+        ...message,
+        tools: upsertTool(message.tools, { name: event.name, status: event.status }, receivedAt),
+        steps: stepsOnTool(message.steps ?? [], { name: event.name, status: event.status }),
+      }));
+    case 'approval':
+      return updateMessage(state, assistantId, (message) => ({
+        ...message,
+        approvals: [...(message.approvals ?? []), event.approval],
+      }));
+    case 'remote_connection_required':
+      return updateMessage(state, assistantId, (message) =>
+        message.connectionRequired?.includes(event.registration_id)
+          ? message
+          : {
+              ...message,
+              connectionRequired: [...(message.connectionRequired ?? []), event.registration_id],
+              // Wall clock: the card counts down the 10 minutes of the pending consent.
+              connectionAt: message.connectionAt ?? Date.now(),
+            },
+      );
+    case 'status': {
+      // A phase this client does not know yet is shown as plain "thinking".
+      const progress: TurnProgress = isProgressPhase(event.phase)
+        ? { phase: event.phase, ...(event.tool ? { tool: event.tool } : {}) }
+        : { phase: 'thinking' };
+      return updateMessage(state, assistantId, (message) => ({
+        ...message,
+        progress,
+        steps: stepsOnPhase(message.steps ?? [], progress.phase),
+      }));
+    }
+    case 'knowledge':
+      return updateMessage(state, assistantId, (message) => ({
+        ...message,
+        searches: [
+          ...(message.searches ?? []),
+          { knowledgeBases: event.knowledge_bases, count: event.count },
+        ],
+        citations: addCitations(
+          message.citations ?? [],
+          event.sources.map((source) => ({
+            knowledgeBase: source.knowledge_base,
+            document: source.document,
+            page: source.page ?? null,
+          })),
+        ),
+      }));
+  }
 }
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
@@ -446,7 +500,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const { assistantId, previous, view } = action;
       let next = state;
       for (const event of eventsOfChange(previous, view)) {
-        next = eventReducer(next, assistantId, event, action.receivedAt);
+        next = applyEvent(next, assistantId, event, action.receivedAt);
       }
       return updateMessage(next, assistantId, (message) =>
         endOfTurn(
@@ -513,99 +567,6 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           },
         ],
       };
-    case 'event': {
-      const { event, assistantId } = action;
-      switch (event.type) {
-        case 'conversation':
-          return { ...state, conversationId: event.conversation_id };
-        case 'tool':
-          return updateMessage(state, assistantId, (message) => ({
-            ...message,
-            tools: upsertTool(
-              message.tools,
-              { name: event.name, status: event.status },
-              action.receivedAt,
-            ),
-            steps: stepsOnTool(message.steps ?? [], { name: event.name, status: event.status }),
-          }));
-        case 'approval':
-          return updateMessage(state, assistantId, (message) => ({
-            ...message,
-            approvals: [...(message.approvals ?? []), event.approval],
-          }));
-        case 'remote_connection_required':
-          return updateMessage(state, assistantId, (message) =>
-            message.connectionRequired?.includes(event.registration_id)
-              ? message
-              : {
-                  ...message,
-                  connectionRequired: [
-                    ...(message.connectionRequired ?? []),
-                    event.registration_id,
-                  ],
-                  // Wall clock: the card counts down the 10 minutes of the pending consent.
-                  connectionAt: message.connectionAt ?? Date.now(),
-                },
-          );
-        case 'status': {
-          // A phase this client does not know yet is shown as plain "thinking".
-          const progress: TurnProgress = isProgressPhase(event.phase)
-            ? { phase: event.phase, ...(event.tool ? { tool: event.tool } : {}) }
-            : { phase: 'thinking' };
-          return updateMessage(state, assistantId, (message) => ({
-            ...message,
-            progress,
-            steps: stepsOnPhase(message.steps ?? [], progress.phase),
-          }));
-        }
-        case 'delta':
-          return updateMessage(state, assistantId, (message) => ({
-            ...message,
-            content: message.content + event.text,
-          }));
-        case 'knowledge':
-          return updateMessage(state, assistantId, (message) => ({
-            ...message,
-            searches: [
-              ...(message.searches ?? []),
-              { knowledgeBases: event.knowledge_bases, count: event.count },
-            ],
-            citations: addCitations(
-              message.citations ?? [],
-              event.sources.map((source) => ({
-                knowledgeBase: source.knowledge_base,
-                document: source.document,
-                page: source.page ?? null,
-              })),
-            ),
-          }));
-        case 'done':
-          return updateMessage(state, assistantId, (message) => ({
-            ...message,
-            status: 'done',
-            tools: settleTools(message.tools),
-            steps: [],
-            ...(event.stop_reason === GUARDRAIL_STOP ? { guardrail: true } : {}),
-            ...(event.stop_reason === CAP_STOP ? { truncated: truncationOf(message) } : {}),
-            // The same registrations a reload reads from the stored message.
-            ...(event.remote_sources?.length ? { remoteSources: event.remote_sources } : {}),
-            usage: {
-              inputTokens: event.usage.input_tokens,
-              outputTokens: event.usage.output_tokens,
-              costUsd: event.cost_usd,
-            },
-          }));
-        case 'error':
-          return updateMessage(state, assistantId, (message) => ({
-            ...message,
-            status: 'error',
-            tools: settleTools(message.tools),
-            steps: [],
-            errorKey: errorKeyForCode(event.code),
-          }));
-      }
-      return state;
-    }
     case 'approval': {
       const { approval } = action;
       const shown = (message: DisplayMessage) =>

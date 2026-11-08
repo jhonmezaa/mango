@@ -4647,8 +4647,6 @@ export const zRejectApprovalPath = z.object({
  */
 export const zRejectApprovalResponse = zApprovalOutSchema;
 
-export const zChatBody = zChatRequestSchema;
-
 export const zCreateTurnBody = zChatRequestSchema;
 
 /**

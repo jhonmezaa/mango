@@ -1,6 +1,6 @@
 import { CANCELLED, framesOf, type TurnEnd, type TurnEventRecord } from '../../mock/turnTranslator';
-import type { ChatEvent } from '../api/chatEvents';
-import type { ApiClient, StreamChatRequest } from '../api/client';
+import type { ApiClient } from '../api/client';
+import { recordOf, type ScriptEvent } from './turnEvents';
 
 /** A turn of a chat test: the events of D57 as the worker stores them. */
 export interface TestTurn {
@@ -11,13 +11,18 @@ export interface TestTurn {
   readers: Set<() => void>;
 }
 
-type Script = (request: StreamChatRequest) => Promise<void>;
-
-function recordOf(event: ChatEvent): TurnEventRecord {
-  const { type, ...data } = event;
-  if (type === 'approval') return { kind: type, data: { ...event.approval } };
-  return { kind: type, data: data };
+/** What a test's turn is asked: the body of `POST /api/chat/turns`, and where to say it. */
+export interface TurnScriptRequest {
+  conversationId: string | null;
+  agentId: string | null;
+  model: string | null;
+  message: string;
+  signal: AbortSignal;
+  onEvent: (event: ScriptEvent) => void;
 }
+
+/** A test's turn: it says what happened with the events of D57, as the worker records them. */
+export type TurnScript = (request: TurnScriptRequest) => Promise<void>;
 
 const ended = (turn: TestTurn) =>
   turn.end !== null || turn.events.some((e) => e.kind === 'done' || e.kind === 'error');
@@ -62,12 +67,11 @@ function streamOf(turn: TestTurn, after: number, signal: AbortSignal): Response 
 }
 
 /**
- * The chat API of the tests in `v1` (D120, D121), driven by a script written like the old
- * `streamChat`: it calls `onEvent` with the events of D57 and the turn is read in deltas from
- * them, as the API translates its record. A script that rejects at once is a refused
+ * The chat API of the tests in `v1` (D120, D121), driven by a script: it calls `onEvent` with
+ * the events of D57 and the turn is read in deltas from them, as the API translates its record. A script that rejects at once is a refused
  * `POST /api/chat/turns`; one that ends without `done` or `error` ends the turn in error.
  */
-export function turnsApi<T extends { streamChat: Script }>(
+export function turnsApi<T extends { turnScript: TurnScript }>(
   base: T,
 ): T &
   Pick<ApiClient, 'createTurn' | 'openTurnStream' | 'cancelTurn' | 'conversationTurn'> & {
@@ -93,7 +97,7 @@ export function turnsApi<T extends { streamChat: Script }>(
       let refused: { error: unknown } | null = null;
       let created = false;
       const running = base
-        .streamChat({
+        .turnScript({
           conversationId: request.conversationId,
           agentId: request.agentId ?? null,
           model: request.model ?? null,

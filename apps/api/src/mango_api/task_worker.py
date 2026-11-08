@@ -13,7 +13,7 @@ read again from the Tasks table, and every check of a chat turn is made again:
    finds it busy is skipped (``overlap``). An event run waits for the previous one (D81): a
    delayed message resumes it, so no worker waits, and the resumed run reads the task and its
    owner again and makes every check again. After ``WAIT_SECONDS`` it is skipped (``overlap``).
-4. The turn (``TaskTurn``, the same path as ``POST /api/chat``): ``UseAgent`` with the groups
+4. The turn (``TaskTurn``, the same path as a chat turn): ``UseAgent`` with the groups
    the owner has now (denied: skipped, paused), the agent published, the budget reserved (D73).
 5. The result is stored in the run; the hold is released; everything is audited without
    content. A run that completed or failed leaves a notice in its owner's Bandeja (D83).

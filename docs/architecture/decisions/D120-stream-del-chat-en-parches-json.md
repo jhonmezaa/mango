@@ -1,9 +1,9 @@
 # D120 · El stream del chat pasa a parches JSON (`v1`) sobre mensajes con `recipient` y `channel`, numerados y reanudables
 
 - **Estado:** vigente
-- **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Migrar a parches JSON»; el cómo, puntos 2 a 8, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión; cómo lo lee la web, notas de la construcción R4, lo que el servidor le añade, notas de la construcción R3b del 2026-11-08, y cómo lo usa la web, notas de la construcción R5a del 2026-11-08, elegidos por la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07)
+- **Fecha:** 2026-11-07 (el punto 1, elegido por el dueño ese día, por menú: «Migrar a parches JSON»; el cómo, puntos 2 a 8, propuesto por un agente y aceptado cuando el dueño apruebe integrar el cambio que registra esta decisión; cómo lo lee la web, notas de la construcción R4, lo que el servidor le añade, notas de la construcción R3b del 2026-11-08, cómo lo usa la web, notas de la construcción R5a del 2026-11-08, y la retirada del formato antiguo, notas R5b del mismo día, elegidos por la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07)
 - **Precisa / reemplaza a:** reemplaza el formato de eventos de [D57](D057-progreso-del-turno-en-vivo.md) (la fase del turno, calculada por `mango-api` y sin texto del modelo, se conserva como dato del mensaje); precisa [D39](D039-sesion-del-runtime-y-latencia.md) (el texto sigue llegando en los bloques que revisa el guardrail: cada bloque es un parche)
-- **Precisada por:** — (notas de la construcción R3, R4, R3b y R5a al final de este archivo)
+- **Precisada por:** — (notas de la construcción R3, R4, R3b, R5a y R5b al final de este archivo)
 
 ## Decisión
 
@@ -70,4 +70,13 @@ La web usa lo que R3b añadió al servidor y cierra la fase 1 en la web. La reti
 - **Otra pestaña:** tras `conversation_busy`, el mensaje vuelve al cuadro de texto con su aviso. La web lee otra vez el historial (la pregunta de la otra pestaña ya está guardada si su turno corre) y sigue ese turno en vivo, con su pregunta marcada «Desde otra pestaña».
 - **Límite conocido:** un turno de la otra pestaña que todavía está en cola no tiene la pregunta guardada (se guarda al empezar, R3b). Su respuesta se ve en vivo, pero sin la pregunta encima hasta que se abra otra vez la conversación.
 - **Mock de desarrollo:** responde `GET /api/conversations/{id}/turn`, guarda `stop_code` en lo que se detiene o se pierde, y la demo «otra pestaña» arranca el turno de esa pestaña con la pregunta del diseño.
+
+## Notas de la construcción (R5b, 2026-11-08; elegidas por la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07)
+
+La retirada del formato antiguo (punto 7) va en su propio PR, apilado sobre el de R5a. Se integra solo una semana después de instalar R4, R3b y R5a sin regresiones.
+
+- **Servidor:** sin `POST /api/chat` ni lo que solo usaba esa ruta: el SSE de D57 (`ChatTurns.opening`, `ChatTurns.stream`, `sse`), `raise_rejection` y la traducción de `turn_interrupted` a `upstream_error`. `POST /api/chat/turns` es la única entrada del turno. Las tareas no cambian: ya pasaban por el trabajador.
+- **Web y mock:** sin `streamChat`, sin `chatEvents.ts` y sin la ruta del mock. Los esquemas que compartía con el stream `v1` y el Playground (fuente de una búsqueda, conexión requerida) pasan a `schemas.ts`. El reducer del chat solo pliega los cambios que encuentra entre dos vistas `v1`.
+- **Tests:** los de la API que probaban el turno por la ruta vieja (presupuesto, autorización, tools, aprobaciones, auditoría) lo prueban ahora por `POST /api/chat/turns` y su stream, con un ayudante que lee el stream `v1` y devuelve los eventos de D57 del registro (`apps/api/tests/chat_client.py`). En la web, un *driver* de pruebas lleva los eventos por el traductor del mock y el aplicador a la vista del chat (`src/test/turnEvents.ts`). Las lecturas del stream deciden `OwnConversation` de solo lectura: los tests que contaban decisiones las separan.
+- **Cliente generado:** regenerado sin la ruta.
 
