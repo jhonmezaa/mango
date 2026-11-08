@@ -114,6 +114,11 @@ export const TURN_WORKER_ENVIRONMENT = [
   "TASKS_TABLE",
   "TASKS_CLIENT_ID",
   "TASK_REPORT_FUNCTION",
+  // The agents' memory (D122 (8)): the worker recalls before the harness and writes what the
+  // person said. Only whether it is on, the memory and the least score; never its key.
+  "AGENT_MEMORY_ENABLED",
+  "AGENT_MEMORY_ARN",
+  "AGENT_MEMORY_MIN_SCORE",
 ] as const;
 /** The environment variable both services read the queue from. */
 export const CHAT_TURNS_QUEUE_ENV = "MANGO_CHAT_TURNS_QUEUE_URL";
@@ -330,6 +335,8 @@ export interface TurnResources {
   readonly configKey: kms.IKey;
   /** Signed pack statements and remote MCP profiles of the release: the catalog of the agent. */
   readonly grantCatalog: (grantee: iam.IGrantable) => void;
+  /** The agents' memory (D122 (8)): recall and the events of what the person said, only while it is on. */
+  readonly grantMemory: (role: iam.IRole) => void;
 }
 
 /**
@@ -475,6 +482,7 @@ export function grantChatTurn(role: iam.Role, turn: TurnResources): void {
     }),
   );
   turn.grantCatalog(role);
+  turn.grantMemory(role);
   const keys = `arn:${partition}:kms:${region}:${account}:key/*`;
   add(
     new iam.PolicyStatement({

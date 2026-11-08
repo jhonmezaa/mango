@@ -301,8 +301,14 @@ def build_request(
     today: str | None = None,
     inline_tools: tuple[dict[str, Any], ...] = (),
     test_skills: tuple[dict[str, Any], ...] = (),
+    recalled: str = "",
 ) -> dict[str, Any]:
-    """``inline_tools``: ``inline_function`` tools of this invocation only, built by mango-api
+    """``recalled``: what the turn worker recalled of the person (D122 (8)), a block of untrusted
+    data built by ``mango_core.memory.recalled_context``. It goes before the person's text, in
+    the last message only, as the harness itself puts what it recalls: never in the system
+    prompt, and never in the history Mango stores.
+
+    ``inline_tools``: ``inline_function`` tools of this invocation only, built by mango-api
     (the internal tool of a report, D87 (3)). Their calls come back to mango-api: they reach no
     system, so the Gateway has nothing to govern (rule 3 as D87 precises it).
 
@@ -318,6 +324,8 @@ def build_request(
         {"role": turn.role, "content": [{"text": turn.text}]}
         for turn in history[-MAX_HISTORY_MESSAGES:]
     ]
+    if recalled and messages and messages[-1]["role"] == "user":
+        messages[-1] = {**messages[-1], "content": [{"text": recalled}, *messages[-1]["content"]]}
     limits = agent.limits
     # Server-defined model configuration with the base guardrail (never client-supplied).
     model: dict[str, Any] = {"modelId": agent.model}

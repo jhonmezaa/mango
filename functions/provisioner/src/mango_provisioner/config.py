@@ -120,28 +120,6 @@ def stack_id(value: str, *, region: str, account_id: str, namespace: str) -> str
     return _match(own, "MANGO_STACK_ID", value)
 
 
-def _memory(
-    env: Mapping[str, str], *, namespace: str, region: str, account_id: str
-) -> tuple[str, str]:
-    """``AGENT_MEMORY_ARN`` and its key, only when ``AGENT_MEMORY_ENABLED`` is ``true`` (D122):
-    the memory must be this installation's (``Mango_<ns>_memory``), never another one."""
-    if env.get("AGENT_MEMORY_ENABLED", "false") != "true":
-        return "", ""
-    arn = env.get("AGENT_MEMORY_ARN", "")
-    expected = re.compile(
-        rf"^arn:aws:bedrock-agentcore:{re.escape(region)}:{re.escape(account_id)}:memory/"
-        rf"Mango_{re.escape(namespace.replace('-', '_'))}_memory-[A-Za-z0-9]{{10}}$"
-    )
-    if not expected.fullmatch(arn):
-        raise ConfigError("AGENT_MEMORY_ARN is not this installation's memory")
-    key = env.get("AGENT_MEMORY_KEY_ARN", "")
-    if not re.fullmatch(
-        rf"^arn:aws:kms:{re.escape(region)}:{re.escape(account_id)}:key/[a-f0-9-]{{36}}$", key
-    ):
-        raise ConfigError("AGENT_MEMORY_KEY_ARN is not a key of this account")
-    return arn, key
-
-
 @dataclass(frozen=True)
 class Settings:
     namespace: str
@@ -176,12 +154,6 @@ class Settings:
     eval_judge_function: str = ""
     """``Mango-<ns>-EvalJudge``: the provisioner asks it for the canary of a new evals harness
     (D110 (8)). Empty, with the key: the evals harness is not deployed (``evals_unavailable``)."""
-    memory_arn: str = ""
-    """The installation's AgentCore Memory (D122), given only while memory is on
-    (``AGENT_MEMORY_ARN``). Empty: every harness keeps ``memory: disabled``, whatever its
-    version says."""
-    memory_key_arn: str = ""
-    """Its key: the role of an agent with memory encrypts and decrypts through the service."""
 
     @staticmethod
     def from_env(env: Mapping[str, str] | None = None) -> Settings:
@@ -190,9 +162,6 @@ class Settings:
             namespace = _match(_NAMESPACE_RE, "MANGO_NAMESPACE", env["MANGO_NAMESPACE"])
             account_id = _match(_ACCOUNT_RE, "MANGO_ACCOUNT_ID", env["MANGO_ACCOUNT_ID"])
             region = _match(_REGION_RE, "AWS_REGION", env["AWS_REGION"])
-            memory_arn, memory_key_arn = _memory(
-                env, namespace=namespace, region=region, account_id=account_id
-            )
             settings = Settings(
                 namespace=namespace,
                 region=region,
@@ -222,8 +191,6 @@ class Settings:
                 skills_key_arn=env.get("SKILLS_KEY_ARN", ""),
                 evals_logs_key_arn=env.get("EVALS_LOGS_KEY_ARN", ""),
                 eval_judge_function=env.get("EVAL_JUDGE_FUNCTION", ""),
-                memory_arn=memory_arn,
-                memory_key_arn=memory_key_arn,
             )
         except KeyError as exc:
             raise ConfigError(f"missing environment variable {exc.args[0]}") from None

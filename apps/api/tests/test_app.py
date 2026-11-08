@@ -326,6 +326,14 @@ class FakeConversations:
     def code_runs(self, _user: str, turn_id: str) -> list[dict[str, Any]]:
         return list(self.code_rows.get(turn_id, []))
 
+    noted: list[tuple[str, str, str, str]] = field(default_factory=list)
+    """What the memory index noted (D122): person, agent, conversation, session."""
+
+    def note_memory(
+        self, user_id: str, agent_id: str, conversation_id: str, session_id: str
+    ) -> None:
+        self.noted.append((user_id, agent_id, conversation_id, session_id))
+
     def code_uses(self, _user: str, turn_id: str) -> list[Any]:
         self.code_turns.append(turn_id)
         if self.code_cells is None:
@@ -519,6 +527,9 @@ class Harness:
     limits: FakeLimits = field(default_factory=FakeLimits)
     published: FakePublished = field(default_factory=FakePublished)
     models: FakeModelCatalog = field(default_factory=FakeModelCatalog)
+    memory: Any = None
+    """``MemoryDeps`` of the agents' memory (D122), only in the tests that turn it on."""
+    settings: Settings = field(default_factory=_settings)
 
     def client(self) -> TestClient:
         def factory(settings: Settings) -> app_module.Services:
@@ -537,9 +548,10 @@ class Harness:
                 published=self.published,  # type: ignore[arg-type]
                 model_catalog=self.models,  # type: ignore[arg-type]
                 invocation_key=KEY,
+                memory=self.memory,
             )
 
-        asgi = app_module.create_app(_settings(), services_factory=factory)
+        asgi = app_module.create_app(self.settings, services_factory=factory)
         return TestClient(asgi, base_url=f"http://{HOST}")  # type: ignore[arg-type]
 
 

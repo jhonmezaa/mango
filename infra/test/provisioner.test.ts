@@ -655,9 +655,6 @@ describe("provisioner function and state machine", () => {
     expect(Object.keys(env).sort()).toEqual([
       "AGENTS_TABLE",
       "AGENT_BOUNDARY_ARN",
-      "AGENT_MEMORY_ARN",
-      "AGENT_MEMORY_ENABLED",
-      "AGENT_MEMORY_KEY_ARN",
       "AGENT_SESSION_IDLE_SECONDS",
       "AGENT_SESSION_MAX_SECONDS",
       "AUDIT_INDEX_TABLE",

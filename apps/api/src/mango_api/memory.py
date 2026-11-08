@@ -4,8 +4,13 @@ The installation's AgentCore Memory keeps, per person **and** agent, events (a c
 turns, 7 days) and long-term records (preferences, facts, summaries) that its strategies
 extract. This module:
 
-* builds the ``actorId`` of every ``InvokeHarness`` (``turn_actor``, ``task_actor``,
-  ``SENTINEL_ACTOR``) with the one function of ``mango_core.memory`` (TM-ME1);
+* builds the ``actorId`` of a chat turn (``turn_actor``) with the one function of
+  ``mango_core.memory`` (TM-ME1); every ``InvokeHarness`` names the sentinel, since the harness
+  has no memory of its own (D122 (8), precised on 2026-11-08);
+* recalls, in the turn worker and before the harness is invoked, the person's preferences and
+  facts (``recall``), and writes after the turn **only what the person said** (``remember``):
+  never the answer nor a tool result, which the harness would store with the role ``USER``
+  (M0, TM-ME2);
 * serves the person's own memories: ``GET /api/memory``, ``DELETE /api/memory`` and
   ``DELETE /api/memory/{record_id}`` (Cedar ``OwnMemory``). Nobody else reads them, not even
   an administrator (D23, D122 (5));
@@ -13,13 +18,15 @@ extract. This module:
   exists) and everything of a person who is disabled, with a sweep the day after
   (``MemorySweeper``, TM-ME5).
 
-Memory is **off** until the M0 test in AWS (D122 (2)): ``Settings.memory_enabled`` is false by
-default. Off, every turn names the sentinel actor, the routes answer that there is nothing and
+Memory is **off** until the release turns it on (D122 (2)): ``Settings.memory_enabled`` is false
+by default. Off, every turn names the sentinel actor, the routes answer that there is nothing and
 no call reaches AWS.
 
 Security notes (security-best-practices, FastAPI): the actor is never read from a request, only
 from the verified token; a record is deleted only after its namespace says it is the caller's,
-and «not yours» answers the same 404 as «does not exist» (TM-ME3); the text of a memory is
+and «not yours» answers the same 404 as «does not exist» (TM-ME3). IAM cannot do that check for
+mango-api: a condition on the namespace denies every call by record id, even on one's own (M0),
+so its permissions have none and the check is this code's; the text of a memory is
 content of the person (D16, D122 (6)): it reaches only its owner's response, never a log nor
 the audit, which keeps counts; the routes are rate limited per person.
 """
@@ -60,6 +67,9 @@ MAX_PAGES = 20
 """Pages of 100 read per listing of the service in a request («Memoria»)."""
 SWEEP_PAGES = 2000
 """Pages of 100 the sweep reads of the actors of the memory: 200,000 actors."""
+LISTED_SESSIONS = 50
+"""Memory sessions whose summaries «Memoria» lists in one request, each one a listing of its
+own (``ListMemoryRecords`` is not by prefix). More: the answer says it is not complete."""
 PURGE_ROUNDS = 50
 """Rounds of «list, then delete» a purge makes per actor and strategy until nothing is left."""
 PURGE_PK = "MEMORY_PURGE"
@@ -152,6 +162,30 @@ class MemoryStore:
             if not token:
                 return
 
+    def recall(self, namespace: str, query: str, top_k: int) -> list[dict[str, Any]]:
+        """The records of one namespace closest to ``query``, with their ``score``."""
+        answer = self._client.retrieve_memory_records(
+            memoryId=self._id,
+            namespace=namespace,
+            searchCriteria={"searchQuery": query, "topK": top_k},
+            maxResults=top_k,
+        )
+        found: list[dict[str, Any]] = answer.get("memoryRecordSummaries", [])
+        return found
+
+    def create_event(
+        self, actor: str, session: str, text: str, *, at: datetime, token: str
+    ) -> None:
+        """One event with what the person said, and nothing else (D122 (8))."""
+        self._client.create_event(
+            memoryId=self._id,
+            actorId=actor,
+            sessionId=session,
+            eventTimestamp=at,
+            payload=[{"conversational": {"content": {"text": text}, "role": "USER"}}],
+            clientToken=token,
+        )
+
     def records(self, namespace: str) -> Iterator[dict[str, Any]]:
         return self._pages(
             self._client.list_memory_records, "memoryRecordSummaries", namespace=namespace
@@ -230,6 +264,11 @@ class MemoryIndex(Protocol):
         """The agent of the conversation and its memory sessions."""
         ...
 
+    def memory_sessions_by_agent(self, user_id: str) -> dict[str, list[str]]:
+        """Every memory session the person's conversations noted, by agent: where the summaries
+        are once the events (and with them the sessions ``ListSessions`` shows) expired."""
+        ...
+
 
 # --- The actor of a turn --------------------------------------------------------------
 
@@ -244,8 +283,9 @@ def turn_actor(
     conversation_id: str,
     session_id: str,
 ) -> str:
-    """The ``actorId`` of a chat turn. The person's actor with this agent only while memory is
-    on and the served version uses it; the sentinel otherwise. Raises ``MemoryActorError``
+    """The actor of a chat turn's memory: the person's with this agent only while memory is on
+    and the served version uses it; the sentinel otherwise, and then nothing is recalled nor
+    written. Raises ``MemoryActorError``
     (fail closed, TM-ME1) when the person's actor cannot be built or noted: the turn must not
     run then, neither with memory nor with another actor."""
     if not (enabled and agent_memory):
@@ -258,14 +298,10 @@ def turn_actor(
     return actor
 
 
-def task_actor(
-    *, enabled: bool, user: UserContext, agent_id: str, agent_memory: bool, run_id: str
-) -> str:
-    """Task runs do not use memory in v1 (D122 (8), TM-ME9): a run on an agent whose harness
-    has memory gets a throwaway actor of its own, which the sweep empties."""
-    if not (enabled and agent_memory):
-        return SENTINEL_ACTOR
-    return memory.task_actor_id(user.user_id, agent_id, run_id)
+def task_actor() -> str:
+    """Task runs do not use memory in v1 (D122 (8), TM-ME9): nothing is recalled nor written,
+    and the harness, which has no memory, gets the sentinel."""
+    return SENTINEL_ACTOR
 
 
 TEST_ACTOR = SENTINEL_ACTOR
@@ -317,14 +353,42 @@ def _actors(deps: MemoryDeps, sub: str) -> list[str]:
     return [memory.actor_id(sub, agent) for agent in deps.index.memory_agents(sub)]
 
 
+def _sessions(
+    store: MemoryStore, actor: str, noted: dict[str, list[str]] | None = None
+) -> list[str]:
+    """The memory sessions of an actor: those ``ListSessions`` still shows (a session whose
+    events expired is no longer there) and those the person's conversations noted. A session
+    stays listed after its events are deleted (M0): never a sign that something is left."""
+    parsed = memory.parse_actor(actor)
+    from_index = (noted or {}).get(parsed.agent_id, []) if parsed and parsed.run_id is None else []
+    return sorted({*store.sessions(actor), *from_index})
+
+
+def _namespaces(actor: str, sessions: list[str]) -> list[str]:
+    """Every namespace an actor has records in: one for preferences, one for facts and one per
+    session for summaries (``ListMemoryRecords`` is not by prefix, M0)."""
+    return [
+        memory.namespace(Kind.PREFERENCES, actor),
+        memory.namespace(Kind.FACTS, actor),
+        *(memory.summaries_namespace(actor, session) for session in sessions),
+    ]
+
+
 def list_memory(deps: MemoryDeps, caller: Caller) -> MemoryOut:
     user = caller.user
     if deps.store is None:
         return MemoryOut(enabled=False, records=[], complete=True, total=0)
+    store = deps.store
+    noted = deps.index.memory_sessions_by_agent(user.user_id)
     found: list[MemoryRecordOut] = []
+    complete = True
     for actor in _actors(deps, user.user_id):
-        for kind in Kind:
-            for raw in deps.store.records(memory.namespace(kind, actor)):
+        sessions = _sessions(store, actor, noted)
+        if len(sessions) > LISTED_SESSIONS:
+            complete = False
+            sessions = sessions[:LISTED_SESSIONS]
+        for namespace in _namespaces(actor, sessions):
+            for raw in store.records(namespace):
                 out = _record_out(raw)
                 # The namespace asked was the caller's; the record must say so too.
                 if out is None or _owner(raw) != memory.parse_actor(actor):
@@ -335,7 +399,10 @@ def list_memory(deps: MemoryDeps, caller: Caller) -> MemoryOut:
     records = found[:MAX_RECORDS]
     deps.audit.emit("memory.list", user.user_id, {"records": len(records)}, user)
     return MemoryOut(
-        enabled=True, records=records, complete=len(found) <= MAX_RECORDS, total=len(found)
+        enabled=True,
+        records=records,
+        complete=complete and len(found) <= MAX_RECORDS,
+        total=len(found),
     )
 
 
@@ -353,34 +420,42 @@ def forget_record(deps: MemoryDeps, caller: Caller, record_id: str) -> None:
     deps.audit.emit("memory.delete", user.user_id, {"records": 1, "agent": owner.agent_id}, user)
 
 
-def purge_actor(store: MemoryStore, actor: str) -> tuple[int, int]:
-    """Every record and every event of one actor: ``(records, events)``. Lists and deletes
-    until a listing comes back empty: a listing is capped, a purge is not (TM-ME5)."""
+def purge_actor(
+    store: MemoryStore, actor: str, noted: dict[str, list[str]] | None = None
+) -> tuple[int, int]:
+    """Every record and every event of one actor: ``(records, events)``. Each namespace is
+    listed and deleted until a listing comes back empty: a listing is capped, a purge is not
+    (TM-ME5). The end is that every namespace of the actor is empty, never that ``ListActors``
+    or ``ListSessions`` stop showing it: they keep showing an actor whose events were all
+    deleted (M0)."""
+    sessions = _sessions(store, actor, noted)
     records = 0
-    for kind in Kind:
+    for namespace in _namespaces(actor, sessions):
         for _ in range(PURGE_ROUNDS):
-            ids = [
-                str(raw["memoryRecordId"]) for raw in store.records(memory.namespace(kind, actor))
-            ]
+            ids = [str(raw["memoryRecordId"]) for raw in store.records(namespace)]
             if not ids:
                 break
             records += store.delete_records(ids)
         else:
             raise MemoryUnavailableError("records left after the purge")
-    events = sum(store.delete_events(actor, session) for session in store.sessions(actor))
+    events = sum(store.delete_events(actor, session) for session in sessions)
     return records, events
 
 
-def person_actors(store: MemoryStore, sub: str) -> list[str]:
-    """Every actor of a person, chat and task runs, read from the memory itself: what the
-    index says is not enough for a purge (TM-ME5)."""
-    return [a for a in store.actors() if (parsed := memory.parse_actor(a)) and parsed.sub == sub]
+def person_actors(store: MemoryStore, index: MemoryIndex | None, sub: str) -> list[str]:
+    """Every actor of a person: those the memory itself lists (task runs too) and those the
+    person's conversations noted, whose events may have expired and left them off
+    ``ListActors`` while their records stay (TM-ME5)."""
+    listed = {a for a in store.actors() if (parsed := memory.parse_actor(a)) and parsed.sub == sub}
+    noted = {memory.actor_id(sub, agent) for agent in index.memory_agents(sub)} if index else set()
+    return sorted(listed | noted)
 
 
-def purge_person(store: MemoryStore, sub: str) -> tuple[int, int]:
+def purge_person(store: MemoryStore, sub: str, index: MemoryIndex | None = None) -> tuple[int, int]:
+    noted = index.memory_sessions_by_agent(sub) if index is not None else None
     records = events = 0
-    for actor in person_actors(store, sub):
-        r, e = purge_actor(store, actor)
+    for actor in person_actors(store, index, sub):
+        r, e = purge_actor(store, actor, noted)
         records, events = records + r, events + e
     return records, events
 
@@ -392,9 +467,10 @@ def forget_all(deps: MemoryDeps, caller: Caller) -> MemoryDeletedOut:
     # The actors of the index now, in the request; every actor of the person (task runs too),
     # read from the whole memory, by the sweep in the background, and again the day after for
     # what an extraction that was running writes: the request never walks the whole memory.
+    noted = deps.index.memory_sessions_by_agent(user.user_id)
     records = events = 0
     for actor in _actors(deps, user.user_id):
-        r, e = purge_actor(deps.store, actor)
+        r, e = purge_actor(deps.store, actor, noted)
         records, events = records + r, events + e
     if deps.sweeper is not None:
         deps.sweeper.schedule(user.user_id)
@@ -422,6 +498,59 @@ def forget_conversation(deps: MemoryDeps, user: UserContext, conversation_id: st
     return events
 
 
+# --- The memory of a chat turn, in the worker (D122 (8)) -------------------------------
+
+
+def recall(deps: MemoryDeps, actor: str, text: str, min_score: float) -> str:
+    """What the turn's prompt gets of what this agent remembers of the person: the
+    preferences and facts of their actor closest to what they asked, above ``min_score``,
+    as a delimited block of untrusted data (``recalled_context``). Before the harness is
+    invoked; empty for the sentinel, when memory is off or when nothing came back. A memory
+    that does not answer leaves the turn without it: it is never a reason not to answer."""
+    store = deps.store
+    if store is None or actor == SENTINEL_ACTOR or not text.strip():
+        return ""
+    owner = memory.parse_actor(actor)
+    query = text[: memory.MAX_QUERY]
+    found: list[tuple[float, str]] = []
+    try:
+        for kind in memory.RECALLED:
+            for raw in store.recall(memory.namespace(kind, actor), query, memory.RETRIEVAL_TOP_K):
+                score = float(raw.get("score") or 0)
+                # The namespace asked was the person's; each record must say so too (TM-ME3).
+                if score < min_score or owner is None or _owner(raw) != owner:
+                    continue
+                found.append((score, str((raw.get("content") or {}).get("text", ""))))
+    except (ClientError, BotoCoreError) as exc:
+        logger.warning("memory recall failed: %s", type(exc).__name__)
+        return ""
+    found.sort(key=lambda f: f[0], reverse=True)
+    texts = list(dict.fromkeys(found_text for _, found_text in found if found_text))
+    return memory.recalled_context(texts)
+
+
+def remember(deps: MemoryDeps, actor: str, session_id: str, text: str, *, turn_id: str) -> bool:
+    """After an answered turn, one event with **only what the person said** (D122 (8),
+    TM-ME2): never the answer, a tool result or what was recalled. The strategies extract from
+    these events alone. Whether it was written; a memory that does not answer loses this turn
+    and nothing else."""
+    store = deps.store
+    if store is None or actor == SENTINEL_ACTOR or not text.strip():
+        return False
+    try:
+        store.create_event(
+            actor,
+            session_id,
+            text[: memory.MAX_EVENT_TEXT],
+            at=datetime.now(UTC),
+            token=turn_id,
+        )
+    except (ClientError, BotoCoreError) as exc:
+        logger.warning("memory event not written: %s", type(exc).__name__)
+        return False
+    return True
+
+
 # --- Purge of a person and the sweep (TM-ME5) -----------------------------------------
 
 
@@ -439,11 +568,13 @@ class MemorySweeper:
         store: MemoryStore,
         audit: AuditLog,
         *,
+        index: MemoryIndex | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._db = db
         self._table = table
         self._store = store
+        self._index = index
         self._audit = audit
         self._clock = clock
         self._stop = threading.Event()
@@ -547,7 +678,7 @@ class MemorySweeper:
         sweeps = int(item.get("sweeps", {}).get("N", "1"))
         key = {"PK": {"S": PURGE_PK}, "SK": {"S": sub}}
         try:
-            records, events = purge_person(self._store, sub)
+            records, events = purge_person(self._store, sub, self._index)
         except (ClientError, BotoCoreError, MemoryUnavailableError) as exc:
             failures = int(item.get("failures", {}).get("N", "0")) + 1
             # The type only, no traceback: it could carry a namespace.

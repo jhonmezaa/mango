@@ -152,7 +152,6 @@ def role_policy(
     *,
     all_skills: bool = False,
     unified_traces: bool = False,
-    memory: bool = False,
 ) -> dict[str, Any]:
     """Inline policy of an agent role. Same statements for every agent; only the models and
     the skills vary. ``all_skills``: the Playground's test role (D91 (12)), which reads every
@@ -229,46 +228,8 @@ def role_policy(
                 else skill_statements(settings, skills)
             ),
             *(unified_traces_statements(settings, runtime) if unified_traces else []),
-            *(memory_statements(settings) if memory else []),
         ],
     }
-
-
-MEMORY_ACTIONS = (
-    "bedrock-agentcore:CreateEvent",
-    "bedrock-agentcore:GetEvent",
-    "bedrock-agentcore:ListEvents",
-    "bedrock-agentcore:RetrieveMemoryRecords",
-)
-"""What the harness of an agent with memory does with it (D122): store the turn's events and
-recall records. Never a deletion nor another memory; the boundary allows the same."""
-
-
-def memory_statements(settings: Settings) -> list[dict[str, Any]]:
-    """The installation's memory, only while it is on (``settings.memory_arn``). IAM does not
-    narrow these actions to an actor (M-b of the threat model, until M0): the ``actorId`` of
-    each invocation is what separates the people (TM-ME1)."""
-    if not settings.memory_arn:
-        return []
-    return [
-        {
-            "Sid": "AgentMemory",
-            "Effect": "Allow",
-            "Action": list(MEMORY_ACTIONS),
-            "Resource": settings.memory_arn,
-        },
-        {
-            "Sid": "AgentMemoryKey",
-            "Effect": "Allow",
-            "Action": ["kms:Decrypt", "kms:GenerateDataKey"],
-            "Resource": settings.memory_key_arn,
-            "Condition": {
-                "StringEquals": {
-                    "kms:ViaService": f"bedrock-agentcore.{settings.region}.amazonaws.com"
-                }
-            },
-        },
-    ]
 
 
 def unified_traces_statements(settings: Settings, runtime: str) -> list[dict[str, Any]]:
@@ -301,7 +262,6 @@ class AgentRoles:
         *,
         all_skills: bool = False,
         unified_traces: bool = False,
-        memory: bool = False,
     ) -> bool:
         """Create the role if needed and set its policy. Returns whether it was created.
 
@@ -316,7 +276,6 @@ class AgentRoles:
             skills,
             all_skills=all_skills,
             unified_traces=unified_traces,
-            memory=memory,
         )
         created = False
         role = self._get(name)

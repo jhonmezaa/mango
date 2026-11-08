@@ -161,8 +161,8 @@ Va primero: el sandbox alarga los turnos y el formato del stream cambia para tod
 
 | PR | Qué | Tamaño | Depende de | Claude Design |
 |---|---|---|---|---|
-| **M0** | Modelo de amenazas `memory-threat-model.md` y prueba de aislamiento de namespaces (R4/TM-007) en AWS, si el dueño la autoriza | M | P0 | — |
-| **M1** | Infra: AgentCore Memory de la instalación, estrategias (preferencias, hechos, resumen), por persona y agente; el harness la usa solo con el `actorId` de quien pregunta, que arma el servidor, y falla cerrado sin él (D122 (8)). **Construido apagado el 2026-11-08** (D122, notas de construcción): se enciende tras M0 | M | M0 | — |
+| **M0** | Modelo de amenazas `memory-threat-model.md` y prueba de aislamiento de namespaces (R4/TM-007) en AWS, si el dueño la autoriza. **Prueba hecha el 2026-11-08** (D122, notas de M0) | M | P0 | — |
+| **M1** | Infra: AgentCore Memory de la instalación, estrategias (preferencias, hechos, resumen), por persona y agente; el harness la usa solo con el `actorId` de quien pregunta, que arma el servidor, y falla cerrado sin él (D122 (8)). **Construido apagado el 2026-11-08** (D122, notas de construcción). **M4 (2026-11-08), tras M0:** el harness sin memoria; el trabajador recupera antes de invocar y escribe solo lo que dijo la persona (D122 (8), decisión del dueño) | M | M0 | — |
 | **M2** | API: listar, editar y borrar las memorias propias; borrado al dar de baja a una persona; auditoría sin contenido. **Construido apagado el 2026-11-08** salvo editar | M | M1 | — |
 | **M3** | Web: «Memoria» en Ajustes, indicador en el chat cuando se usa. **Construido el 2026-11-08** con la ronda 41 (D122, notas de M3): página propia desde el menú de la cuenta, casilla del Builder y «capacidades» en la revisión; el indicador por turno espera a M0 | M | M2 | **Ronda 4** |
 
@@ -208,13 +208,13 @@ Todas en la instalación del cliente solo si el dueño lo autoriza por menú; re
 
 | # | Qué confirma | PR |
 |---|---|---|
-| T5 | Si la red `SANDBOX` deja subir a un bucket ajeno (exfiltración); C2 no se integra sin su resultado (TM-CI3). **Hecha el 2026-11-07**, con el visto bueno del dueño, desde el CI del sistema: S3 de la región responde (HTTP 307); S3 de otra región, STS, DynamoDB e internet, no. Mitigación: modo `VPC` sin salida ni DNS (D114 (11)); falta repetirla desde el CI de Mango en una instalación | C1 |
+| T5 | Si la red `SANDBOX` deja subir a un bucket ajeno (exfiltración); C2 no se integra sin su resultado (TM-CI3). **Hecha el 2026-11-07**, con el visto bueno del dueño, desde el CI del sistema: S3 de la región responde (HTTP 307); S3 de otra región, STS, DynamoDB e internet, no. Mitigación: modo `VPC` sin salida ni DNS (D114 (11)). **Repetida en VPC el 2026-11-08** con un CI temporal con esa red: no sale nada, y los flow logs no ven los intentos (D114 (15)); falta repetirla desde el CI de Mango en una instalación | C1 |
 | T6/T7 | Nombre de la tool en `allowedTools` y sesión del CI que usa el harness (solo para cerrar la comparación) | — |
 | R0 | Protección de tarea de ECS frente a un despliegue; sesión del harness tras cortar el stream. **Hecha el 2026-11-07** (D121 (9)) | R0 |
 | G | Imagen en el resultado MCP del Gateway: ¿la ve el modelo? | D3 |
 | L | Tiempo máximo de una llamada del Gateway a un target Lambda (60, 180, 300 s) | C2 |
-| M | Aislamiento de namespaces de AgentCore Memory | M0 |
-| W | Dos distribuciones como dos sitios, CSP de 1.783 caracteres, `.wasm`, Pyodide en origen opaco | V0 |
+| M | Aislamiento de namespaces de AgentCore Memory. **Hecha el 2026-11-08** (D122, notas de M0): aislamiento entre actores en IAM y en el recuerdo; el harness guarda los resultados de tools como `USER`, por eso el harness va sin memoria (D122 (8)) | M0 |
+| W | Dos distribuciones como dos sitios, CSP de 1.783 caracteres, `.wasm`, Pyodide en origen opaco. **Hecha el 2026-11-08** salvo Pyodide y los canales de salida (D123 (9)) | V0 |
 | GD | GuardDuty Malware Protection con CMK y TBAC | C1 |
 
 ## 9. Riesgos

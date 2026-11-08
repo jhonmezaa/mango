@@ -186,8 +186,6 @@ export class AgentPlatform extends Construct {
             `${agentcore}:workload-identity-directory/default/workload-identity/${agentNames.runtimePrefix(ns)}*`,
           ],
         }),
-        // D122: the memory's events and recall, only while memory is on.
-        ...this.memory.agentStatements(),
       ],
     });
     // Same agreed exception as the agent execution role (AGENTS.md): the boundary must allow

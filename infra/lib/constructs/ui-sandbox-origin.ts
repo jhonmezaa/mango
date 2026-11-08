@@ -140,8 +140,10 @@ export class UiSandboxOrigin extends Construct {
       responseHeadersPolicyName: mangoName(ns, "ui-sandbox-headers"),
       comment: "Headers of the UI sandbox origin (D123)",
       securityHeadersBehavior: {
-        // Only when the function did not put it (an answer of the web ACL, which runs no
-        // function): the ceiling, and nobody may frame it.
+        // Only when the function did not put it: an answer of the web ACL or an error of the
+        // origin (a key that does not exist), which run no function (V0, P7, 2026-11-08). When
+        // the function runs it runs after this policy and its CSP is the one that arrives. The
+        // ceiling, and nobody may frame it.
         contentSecurityPolicy: {
           override: false,
           contentSecurityPolicy: `${UI_SANDBOX_CSP}; frame-ancestors 'none'`,

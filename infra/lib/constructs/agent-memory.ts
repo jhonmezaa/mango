@@ -7,11 +7,11 @@ import { Installation } from "../config/schema.js";
 import { mangoName, memoryName } from "../names.js";
 
 /**
- * Whether the agents of the installation remember their people (D122). **Off** until the M0
- * test in AWS confirms the isolation between actors and what the harness stores (D122 (2), (8)),
- * which the owner authorizes. Off, the memory exists but nothing reaches it: no harness gets its
- * ARN, no role gets a permission on it and mango-api answers that nothing is remembered. Turning
- * it on is a change of this constant in a release, never a parameter of one customer.
+ * Whether the agents of the installation remember their people (D122). **Off** until a release
+ * turns it on, once «Memoria» is in the web (M3). Off, the memory exists but nothing reaches it:
+ * no role gets a permission on it, the turn worker neither recalls nor writes and mango-api
+ * answers that nothing is remembered. Turning it on is a change of this constant in a release,
+ * never a parameter of one customer.
  */
 export const AGENT_MEMORY_ENABLED = false;
 
@@ -29,15 +29,36 @@ export const MEMORY_STRATEGIES = {
   summaries: "/mango/{actorId}/summaries/{sessionId}/",
 } as const;
 
-/** What the harness of an agent with memory does with it: store events and recall records. */
-export const AGENT_MEMORY_ACTIONS = [
-  "bedrock-agentcore:CreateEvent",
-  "bedrock-agentcore:GetEvent",
-  "bedrock-agentcore:ListEvents",
-  "bedrock-agentcore:RetrieveMemoryRecords",
-];
+/**
+ * Least score of a record the turn worker recalls (`AGENT_MEMORY_MIN_SCORE`). M0 measured 0.35 to
+ * 0.57 for what a person asked, and 0.5 recalled nothing (2026-11-08): `RETRIEVAL_MIN_SCORE` of
+ * `mango_core/memory.py` is the same default, and a test keeps them equal.
+ */
+export const MEMORY_MIN_SCORE = 0.3;
 
-/** What mango-api does: the person's own «Memoria» and the purge of a person (TM-ME3, TM-ME5). */
+/**
+ * What the turn worker does with the memory (D122 (8), precised 2026-11-08): recall the person's
+ * preferences and facts before the harness is invoked and write one event with what the person
+ * said. Nothing else: no listing, no reading of events, no deletion. The harness of an agent has
+ * no memory, and neither its role nor the boundary of agent roles reach it.
+ */
+export const WORKER_MEMORY_ACTIONS = ["bedrock-agentcore:CreateEvent", "bedrock-agentcore:RetrieveMemoryRecords"];
+
+/**
+ * The actors and namespaces the worker may name: those of a person (`m1:<agent>:<sub>`, built by
+ * `mango_core.memory.actor_id`), never the sentinel, and only the namespaces a turn recalls. IAM
+ * cannot narrow it to the person of each turn: the role is one for every person, and the actor
+ * the worker builds from the verified `sub` is what separates them (TM-ME1).
+ */
+export const WORKER_MEMORY_ACTORS = "m1:*";
+export const WORKER_RECALLED_NAMESPACES = ["/mango/m1:*/preferences/", "/mango/m1:*/facts/"];
+
+/**
+ * What mango-api does: the person's own «Memoria» and the purge of a person (TM-ME3, TM-ME5).
+ * Without a condition on the namespace: it would deny every call by record id (`GetMemoryRecord`,
+ * `DeleteMemoryRecord`, `BatchDeleteMemoryRecords`), even on one's own, because those calls carry
+ * no namespace (M0). mango-api checks the namespace of each record in its code before deleting it.
+ */
 export const API_MEMORY_ACTIONS = [
   "bedrock-agentcore:ListActors",
   "bedrock-agentcore:ListSessions",
@@ -61,10 +82,11 @@ export interface AgentMemoryProps {
  * It holds data of the people: it is in Core, never in a nested stack (D99 (2)), and is retained
  * with the data of a customer installation.
  *
- * - One memory for every agent, referenced by ARN from the harness of each agent with memory and
- *   never the managed memory a harness creates when nothing is said (TM-ME8).
- * - The `actorId` of each invocation separates the people (TM-ME1): IAM does not narrow the
- *   actions of a role to an actor until M0 says otherwise (M-b), so a role gets only what it needs.
+ * - One memory for every agent, read and written by the turn worker only (D122 (8)): the harness of
+ *   an agent has none, never the managed memory a harness creates when nothing is said (TM-ME8),
+ *   and the worker writes only what the person said (TM-ME2).
+ * - The `actorId` the worker names separates the people (TM-ME1): IAM narrows the worker to the
+ *   actors of people and to the namespaces a turn recalls, never to one person (M0, M-b).
  * - The strategies extract with the model of the service, outside the turn's reservation
  *   (TM-ME7): their cost is reconciled by the tags of the resource.
  */
@@ -124,6 +146,7 @@ export class AgentMemory extends Construct {
       AGENT_MEMORY_ENABLED: String(this.enabled),
       AGENT_MEMORY_ARN: this.memory.attrMemoryArn,
       AGENT_MEMORY_KEY_ARN: this.key.keyArn,
+      AGENT_MEMORY_MIN_SCORE: String(MEMORY_MIN_SCORE),
     };
   }
 
@@ -138,15 +161,28 @@ export class AgentMemory extends Construct {
   }
 
   /**
-   * The ceiling of an agent role (the boundary, TM-M1): the memory's events and recall, never a
-   * deletion. Nothing while memory is off.
+   * The turn worker (D122 (8)): recall the preferences and facts of a person's actor and write
+   * the events of what the person said. Nothing while memory is off.
    */
-  agentStatements(): iam.PolicyStatement[] {
-    if (!this.enabled) return [];
-    return [
-      new iam.PolicyStatement({ sid: "AgentMemory", actions: AGENT_MEMORY_ACTIONS, resources: [this.memory.attrMemoryArn] }),
-      this.keyStatement("AgentMemoryKey"),
-    ];
+  grantWorker(role: iam.IRole): void {
+    if (!this.enabled) return;
+    role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: "WorkerMemoryEvents",
+        actions: ["bedrock-agentcore:CreateEvent"],
+        resources: [this.memory.attrMemoryArn],
+        conditions: { StringLike: { "bedrock-agentcore:actorId": WORKER_MEMORY_ACTORS } },
+      }),
+    );
+    role.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        sid: "WorkerMemoryRecall",
+        actions: ["bedrock-agentcore:RetrieveMemoryRecords"],
+        resources: [this.memory.attrMemoryArn],
+        conditions: { StringLike: { "bedrock-agentcore:namespace": WORKER_RECALLED_NAMESPACES } },
+      }),
+    );
+    role.addToPrincipalPolicy(this.keyStatement("WorkerMemoryKey"));
   }
 
   /** mango-api: «Memoria» of the person and the purge. Nothing while memory is off. */
@@ -156,17 +192,5 @@ export class AgentMemory extends Construct {
       new iam.PolicyStatement({ sid: "ApiMemory", actions: API_MEMORY_ACTIONS, resources: [this.memory.attrMemoryArn] }),
     );
     role.addToPrincipalPolicy(this.keyStatement("ApiMemoryKey"));
-  }
-
-  /** The provisioner names the memory in a harness: it reads it. Nothing while memory is off. */
-  grantProvisioner(role: iam.IRole): void {
-    if (!this.enabled) return;
-    role.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        sid: "ReadAgentMemory",
-        actions: ["bedrock-agentcore:GetMemory"],
-        resources: [this.memory.attrMemoryArn],
-      }),
-    );
   }
 }

@@ -476,6 +476,20 @@ Un octavo caso, el 2026-10-15, en esa instalación del cliente, de `v0.1.0-g451a
 
    - Si el recurso que falla es otro, parar y mirar su mensaje: esta salida es solo para el almacén de políticas.
    - Una suscripción del correo de alertas rehecha fuera del stack (baja y alta de la misma dirección; [`operations.md`](operations.md#el-enlace-de-baja-del-correo)) no estorba: el topic se borra con sus suscripciones.
+   - **Con el sandbox de código (D114, desde la versión que trae su red),** el borrado de `Core` puede fallar en la red del sandbox, por dos cosas que CloudFormation no controla. Lo vio la prueba T5 del 2026-11-08 con una red temporal igual a la de Mango, no una desinstalación (D114 (15)).
+     - **AgentCore tarda en soltar sus interfaces.** Al borrar el Code Interpreter `Mango_<ns>_sandbox`, sus dos interfaces `agentic_ai` siguieron `in-use` varios minutos, y mientras existan no se borran sus subredes ni su security group. Si el stack anidado `Sandbox` falla ahí, esperar a que la VPC del sandbox no tenga interfaces `agentic_ai` y repetir el `delete-stack` (como la red de packs, paso 2, pero en minutos y no en horas).
+     - **Un security group ajeno en la VPC.** Si la organización del cliente pone por su cuenta un security group en toda VPC nueva (una automatización suya; se vio en la cuenta del cliente al crear la red temporal), CloudFormation no lo conoce y el borrado de la VPC `Mango-<ns>-SandboxVpc` falla con `DependencyViolation`. Hay que borrar ese security group a mano, después de que se fueron las interfaces, o pedírselo a quien lo pone, y repetir el `delete-stack`.
+
+     ```bash
+     vpc=$(aws ec2 describe-vpcs --filters Name=tag:Name,Values=Mango-<ns>-SandboxVpc \
+       --query 'Vpcs[0].VpcId' --output text)
+     aws ec2 describe-network-interfaces --filters Name=vpc-id,Values=$vpc \
+       --query "length(NetworkInterfaces[?InterfaceType=='agentic_ai'])"
+     aws ec2 describe-security-groups --filters Name=vpc-id,Values=$vpc \
+       --query "SecurityGroups[?GroupName!='default'].[GroupId,GroupName]" --output text
+     ```
+
+     Sin ver en una instalación: los comandos no se corrieron contra una VPC del sandbox de Mango (la VPC se llama `Mango-<ns>-SandboxVpc`).
    - Al borrarse `Core`, CloudWatch Transaction Search vuelve a quedar apagado en la cuenta (el destino de las trazas vuelve a `XRay`), salvo que la cuenta lo gestione por fuera (`TransactionSearch` = `external`).
 2. `delete-stack` de `PackNetwork`. Si la instalación nunca tuvo un pack habilitado, termina en unos minutos (3 min 35 s, visto el 2026-10-07). **Si hubo algún pack, hay que borrarlo dos veces, con unas 8 horas entre una y otra:** AgentCore retiene sus interfaces de red (`agentic_ai`) en esas subnets después de borrarse el Runtime del pack, y las suelta por su cuenta. No se pueden forzar. Nada más depende de este stack: `OrgAccess` y `Payer` se pueden borrar mientras tanto.
    - **El primer borrado termina en `DELETE_FAILED` entre los 18 y los 19 minutos,** en el security group de cada pack y las dos subnets (18 min 56 s y 19 min 12 s, en dos desinstalaciones de laboratorio del 2026-10-07, con un pack; 18 min 32 s en una cuenta de ensayo el 2026-10-09). Con dos packs, 17 min 51 s (2026-10-13): fallaron los dos security groups de los packs y las dos subnets.

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from mango_core.code_sandbox import Prices
+from mango_core.memory import RETRIEVAL_MIN_SCORE
 
 
 @dataclass(frozen=True)
@@ -124,6 +125,8 @@ class Settings:
     """The installation's AgentCore Memory (D122), only while memory is on
     (``AGENT_MEMORY_ENABLED``). Empty: memory is off, no turn gets a person's actor and the
     memory routes answer that there is nothing, without calling AWS."""
+    memory_min_score: float = RETRIEVAL_MIN_SCORE
+    """Least score of a record the worker recalls (``AGENT_MEMORY_MIN_SCORE``, D122 (8))."""
     task_runs_queue_arn: str = ""
     """Queue every run starts from: Scheduler, «Ejecutar ahora» and events (D78)."""
     task_schedule_group: str = ""
@@ -259,6 +262,7 @@ class Settings:
                 if env.get("AGENT_MEMORY_ENABLED", "false") == "true"
                 else ""
             ),
+            memory_min_score=_score(env.get("AGENT_MEMORY_MIN_SCORE", "")),
             task_runs_queue_arn=env.get("TASK_RUNS_QUEUE_ARN", ""),
             task_schedule_group=env.get("TASK_SCHEDULE_GROUP", ""),
             task_scheduler_role_arn=env.get("TASK_SCHEDULER_ROLE_ARN", ""),
@@ -298,6 +302,19 @@ class Settings:
     def memory_enabled(self) -> bool:
         """Memory is on only with the installation's memory configured (D122)."""
         return bool(self.memory_arn)
+
+
+def _score(raw: str) -> float:
+    """A least relevance score of the configuration: between 0 and 1, or the default."""
+    if not raw:
+        return RETRIEVAL_MIN_SCORE
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError("AGENT_MEMORY_MIN_SCORE is not a number") from None
+    if not 0 <= value <= 1:
+        raise ValueError("AGENT_MEMORY_MIN_SCORE is not between 0 and 1")
+    return value
 
 
 def _price(raw: str) -> Decimal:

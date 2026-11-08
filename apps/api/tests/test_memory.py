@@ -1,6 +1,7 @@
-"""«Memoria» (D122; threat model ``memory-threat-model.md``): the actor of each invocation,
-isolation between people and agents, fail closed, deletions, the purge and its sweep, and memory
-off by default. AgentCore Memory is a fake of its data plane; DynamoDB is moto. Nothing calls
+"""«Memoria» (D122; threat model ``memory-threat-model.md``): the actor of each turn, isolation
+between people and agents, fail closed, what the worker recalls and writes (only what the person
+said, D122 (8) as precised on 2026-11-08), deletions, the purge and its sweep, and memory off by
+default. AgentCore Memory is a fake of its data plane; DynamoDB is moto. Nothing calls
 AWS."""
 
 # The fake keeps the argument names of the service (memoryId, actorId…).
@@ -10,7 +11,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import boto3
@@ -28,7 +29,7 @@ from mango_core.identity import UserContext
 from mango_core.memory import SENTINEL_ACTOR, Kind, MemoryActorError
 
 from .test_admin import _table
-from .test_app import FakeAudit, Harness, _auth, _settings
+from .test_app import FakeAudit, Harness, _auth, _events, _settings, served
 
 ARN = "arn:aws:bedrock-agentcore:us-east-1:111122223333:memory/Mango_test_memory-abcdefghij"
 ANA = UserContext("11111111-1111-4111-8111-111111111111", None, None, is_admin=False)
@@ -43,6 +44,12 @@ def _caller(user: UserContext) -> Caller:
     return Caller(user, "token", int(time.time()) + 3600)
 
 
+def _run_actor(sub: str, agent: str, run: str) -> str:
+    """The throwaway actor of a task run while the harness had memory: nothing writes it any
+    more, but the purge of a person still finds it."""
+    return f"{memory.actor_id(sub, agent)}:run:{run}"
+
+
 @dataclass
 class FakeMemory:
     """The data plane of one AgentCore Memory: records by namespace, events by actor and
@@ -52,8 +59,16 @@ class FakeMemory:
     events: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     calls: list[str] = field(default_factory=list)
     fail: bool = False
+    written: list[dict[str, Any]] = field(default_factory=list)
+    """Every ``CreateEvent``, as it was called."""
+    scores: dict[str, float] = field(default_factory=dict)
+    """The score ``RetrieveMemoryRecords`` gives each record (0.5 when not said)."""
+    listed: set[tuple[str, str]] = field(default_factory=set)
+    """Actors and sessions the service keeps listing after their events are deleted (M0)."""
+    expired: set[str] = field(default_factory=set)
+    """Actors whose events expired: ``ListActors`` no longer shows them, their records stay."""
 
-    def add_record(self, actor: str, kind: Kind, text: str, session: str = "s1") -> str:
+    def add_record(self, actor: str, kind: Kind, text: str, session: str = "s" * 40) -> str:
         record_id = f"mem-{len(self.records):036d}"
         ns = memory.namespace(kind, actor) + (f"{session}/" if kind is Kind.SUMMARIES else "")
         self.records[record_id] = {
@@ -76,8 +91,27 @@ class FakeMemory:
 
     def list_memory_records(self, *, memoryId: str, namespace: str, **_: Any) -> dict[str, Any]:
         self._call("ListMemoryRecords", memoryId)
-        found = [r for r in self.records.values() if r["namespaces"][0].startswith(namespace)]
+        # Not a prefix (M0): only the records of exactly that namespace.
+        found = [r for r in self.records.values() if r["namespaces"][0] == namespace]
         return {"memoryRecordSummaries": found}
+
+    def retrieve_memory_records(
+        self, *, memoryId: str, namespace: str, searchCriteria: dict[str, Any], **_: Any
+    ) -> dict[str, Any]:
+        self._call("RetrieveMemoryRecords", memoryId)
+        assert searchCriteria["searchQuery"]
+        found = [
+            {**r, "score": self.scores.get(r["memoryRecordId"], 0.5)}
+            for r in self.records.values()
+            if r["namespaces"][0] == namespace
+        ]
+        return {"memoryRecordSummaries": found[: searchCriteria["topK"]]}
+
+    def create_event(self, *, memoryId: str, **request: Any) -> dict[str, Any]:
+        self._call("CreateEvent", memoryId)
+        self.written.append(request)
+        self.add_event(request["actorId"], request["sessionId"])
+        return {"event": {"eventId": "1#abcdef"}}
 
     def get_memory_record(self, *, memoryId: str, memoryRecordId: str) -> dict[str, Any]:
         self._call("GetMemoryRecord", memoryId)
@@ -104,7 +138,7 @@ class FakeMemory:
             "sessionSummaries": [
                 {"sessionId": s, "actorId": a}
                 for (a, s), ev in self.events.items()
-                if a == actorId and ev
+                if a == actorId and (ev or (a, s) in self.listed)
             ]
         }
 
@@ -119,16 +153,17 @@ class FakeMemory:
     ) -> dict[str, Any]:
         self._call("DeleteEvent", memoryId)
         self.events[(actorId, sessionId)].remove(eventId)
+        self.listed.add((actorId, sessionId))
         return {"eventId": eventId}
 
     def list_actors(self, *, memoryId: str, **_: Any) -> dict[str, Any]:
         self._call("ListActors", memoryId)
         actors = {memory.owner_of(r["namespaces"][0]) for r in self.records.values()}
         ids = {a.id for a in actors if a is not None} | {
-            a for (a, _), ev in self.events.items() if ev
+            a for (a, s), ev in self.events.items() if ev or (a, s) in self.listed
         }
         ids |= {r["namespaces"][0].split("/")[2] for r in self.records.values()}
-        return {"actorSummaries": [{"actorId": a} for a in sorted(ids)]}
+        return {"actorSummaries": [{"actorId": a} for a in sorted(ids - self.expired)]}
 
 
 @dataclass
@@ -152,6 +187,13 @@ class FakeIndex:
 
     def memory_sessions(self, user_id: str, conversation_id: str) -> tuple[str | None, list[str]]:
         return self.sessions.get((user_id, conversation_id), (None, []))
+
+    def memory_sessions_by_agent(self, user_id: str) -> dict[str, list[str]]:
+        found: dict[str, list[str]] = {}
+        for (user, _), (agent, ids) in self.sessions.items():
+            if user == user_id:
+                found.setdefault(agent, []).extend(ids)
+        return found
 
 
 @pytest.fixture
@@ -216,12 +258,11 @@ def test_an_actor_is_never_built_from_anything_but_a_user_id_and_an_agent_id(
         memory.actor_id(sub, agent)
 
 
-def test_a_task_run_gets_a_throwaway_actor_that_names_its_owner() -> None:
-    a = memory.task_actor_id(ANA.user_id, AGENT, "01JABCDEF")
+def test_a_task_run_names_the_sentinel_and_an_old_run_actor_still_names_its_owner() -> None:
+    assert mem.task_actor() == SENTINEL_ACTOR
+    a = _run_actor(ANA.user_id, AGENT, "01JABCDEF")
     assert memory.parse_actor(a) == memory.Actor(ANA.user_id, AGENT, "01JABCDEF")
-    assert a != memory.actor_id(ANA.user_id, AGENT)
-    with pytest.raises(MemoryActorError):
-        memory.task_actor_id(ANA.user_id, AGENT, "a:b")
+    assert memory.parse_actor(f"{memory.actor_id(ANA.user_id, AGENT)}:run:a/b") is None
 
 
 def test_the_sentinel_and_foreign_ids_are_nobodys() -> None:
@@ -245,12 +286,6 @@ def test_memory_off_every_turn_names_the_sentinel_and_notes_nothing() -> None:
             session_id="s" * 40,
         )
         assert actor == SENTINEL_ACTOR
-        assert (
-            mem.task_actor(
-                enabled=enabled, user=ANA, agent_id=AGENT, agent_memory=agent_memory, run_id="r1"
-            )
-            == SENTINEL_ACTOR
-        )
     assert index.agents == {}
 
 
@@ -269,20 +304,13 @@ def test_tests_of_the_playground_and_the_evals_name_the_sentinel() -> None:
     assert mem.TEST_ACTOR == SENTINEL_ACTOR
 
 
-def test_the_harness_names_the_installations_memory_with_the_sentinel_or_none() -> None:
-    assert memory.harness_memory(None) == {"disabled": {}}
-    assert memory.harness_memory("") == {"disabled": {}}
-    config = memory.harness_memory(ARN)
-    assert list(config) == ["agentCoreMemoryConfiguration"]  # never the managed one (TM-ME8)
-    inner = config["agentCoreMemoryConfiguration"]
-    assert inner["arn"] == ARN
-    assert inner["actorId"] == SENTINEL_ACTOR
-    assert set(inner["retrievalConfig"]) == {
-        memory.NAMESPACE_TEMPLATES[Kind.PREFERENCES],
-        memory.NAMESPACE_TEMPLATES[Kind.FACTS],
-    }
+def test_every_namespace_starts_with_the_actor_and_summaries_go_by_session() -> None:
     for template in memory.NAMESPACE_TEMPLATES.values():
         assert template.startswith("/mango/{actorId}/")
+    actor = memory.actor_id(ANA.user_id, AGENT)
+    assert memory.summaries_namespace(actor, "s" * 40) == f"/mango/{actor}/summaries/{'s' * 40}/"
+    assert memory.owner_of(memory.summaries_namespace(actor, "s1")) == memory.parse_actor(actor)
+    assert memory.RETRIEVAL_MIN_SCORE == 0.3
 
 
 # --- «Memoria» of the person (TM-ME3) ---------------------------------------------------
@@ -296,7 +324,7 @@ def test_a_person_sees_only_their_own_memories(deps: mem.MemoryDeps, fake: FakeM
     fake.add_record(ana, Kind.SUMMARIES, "resumen")
     fake.add_record(bea, Kind.FACTS, "secreto de Bea")
     # A record of Ana's actor under a namespace of Bea's must not leak either way.
-    fake.add_record(memory.task_actor_id(ANA.user_id, AGENT, "r1"), Kind.FACTS, "de una tarea")
+    fake.add_record(_run_actor(ANA.user_id, AGENT, "r1"), Kind.FACTS, "de una tarea")
 
     out = mem.list_memory(deps, _caller(ANA))
     assert out.enabled
@@ -342,7 +370,7 @@ def test_a_person_deletes_their_record_and_never_anothers(
 ) -> None:
     mine = fake.add_record(_remember(deps, ANA, AGENT), Kind.FACTS, "mío")
     theirs = fake.add_record(_remember(deps, BEA, AGENT), Kind.FACTS, "de Bea")
-    task = fake.add_record(memory.task_actor_id(ANA.user_id, AGENT, "r1"), Kind.FACTS, "tarea")
+    task = fake.add_record(_run_actor(ANA.user_id, AGENT, "r1"), Kind.FACTS, "tarea")
     for record_id in (theirs, task, "mem-" + "9" * 36):
         with pytest.raises(ApiError) as err:
             mem.forget_record(deps, _caller(ANA), record_id)
@@ -360,7 +388,7 @@ def test_deleting_all_purges_every_actor_of_the_person_only(
     assert deps.store is not None
     deps.sweeper = mem.MemorySweeper(settings_table, "settings", deps.store, deps.audit)
     ana, bea = _remember(deps, ANA, AGENT), _remember(deps, BEA, AGENT)
-    run = memory.task_actor_id(ANA.user_id, OTHER_AGENT, "r1")
+    run = _run_actor(ANA.user_id, OTHER_AGENT, "r1")
     for actor in (ana, run, bea):
         fake.add_record(actor, Kind.FACTS, f"de {actor}")
         fake.add_event(actor, "s1")
@@ -501,8 +529,17 @@ def test_the_index_notes_agents_and_sessions_in_the_persons_partition(
     assert repo.memory_agents(BEA.user_id) == []
     assert repo.memory_sessions(ANA.user_id, CONV) == (AGENT, ["a" * 40, "b" * 40])
     assert repo.memory_sessions(BEA.user_id, CONV) == (None, [])
+    other = "d" * 32
+    repo.upsert_conversation(ANA.user_id, other, "t", OTHER_AGENT)
+    repo.note_memory(ANA.user_id, OTHER_AGENT, other, "c" * 40)
+    repo.upsert_conversation(ANA.user_id, "e" * 32, "sin memoria", AGENT)
+    assert repo.memory_sessions_by_agent(ANA.user_id) == {
+        AGENT: ["a" * 40, "b" * 40],
+        OTHER_AGENT: ["c" * 40],
+    }
+    assert repo.memory_sessions_by_agent(BEA.user_id) == {}
     # The index never lists among the conversations.
-    assert [c["conversation_id"] for c in repo.list_conversations(ANA.user_id)] == [CONV]
+    assert CONV in [c["conversation_id"] for c in repo.list_conversations(ANA.user_id)]
     keys = {i["PK"]["S"] for i in db.scan(TableName="conv")["Items"]}
     assert keys == {f"USER#{ANA.user_id}"}
 
@@ -527,7 +564,7 @@ def test_disabling_a_person_purges_now_and_sweeps_the_day_after(
         settings_table, "settings", deps.store, deps.audit, clock=lambda: now[0]
     )
     ana, bea = _remember(deps, ANA, AGENT), _remember(deps, BEA, AGENT)
-    run = memory.task_actor_id(ANA.user_id, AGENT, "r1")
+    run = _run_actor(ANA.user_id, AGENT, "r1")
     for actor in (ana, run, bea):
         fake.add_record(actor, Kind.FACTS, "x")
         fake.add_event(actor, "s1")
@@ -601,7 +638,7 @@ def test_the_sweep_empties_the_sentinel_and_the_task_runs(
     sweeper = mem.MemorySweeper(settings_table, "settings", deps.store, deps.audit)
     ana = _remember(deps, ANA, AGENT)
     fake.add_record(ana, Kind.FACTS, "de Ana")
-    fake.add_record(memory.task_actor_id(ANA.user_id, AGENT, "r1"), Kind.FACTS, "tarea")
+    fake.add_record(_run_actor(ANA.user_id, AGENT, "r1"), Kind.FACTS, "tarea")
     fake.records[fake.add_record(ana, Kind.FACTS, "x")]["namespaces"] = [
         f"/mango/{SENTINEL_ACTOR}/facts/"
     ]
@@ -641,3 +678,186 @@ def test_a_version_turns_memory_on_and_the_review_shows_it() -> None:
     assert [(f.field, f.before, f.after) for f in diff.fields] == [("memory", False, True)]
     assert diff.changes == 1
     assert _definition_out(on).memory and not _definition_out(off).memory
+
+
+# --- What the worker recalls and writes (D122 (8), TM-ME2) ------------------------------
+
+
+def test_a_turn_recalls_the_persons_preferences_and_facts_above_the_score(
+    deps: mem.MemoryDeps, fake: FakeMemory
+) -> None:
+    ana, bea = _remember(deps, ANA, AGENT), _remember(deps, BEA, AGENT)
+    near = fake.add_record(ana, Kind.FACTS, "Su proyecto es <Zafiro-71>")
+    fake.scores[near] = 0.57
+    fake.scores[fake.add_record(ana, Kind.PREFERENCES, "Prefiere tablas")] = 0.38
+    fake.scores[fake.add_record(ana, Kind.FACTS, "Lejano")] = 0.2
+    fake.add_record(ana, Kind.SUMMARIES, "Resumen de una conversación")
+    fake.add_record(bea, Kind.FACTS, "Obsidiana-42")
+    block = mem.recall(deps, ana, "Resume el estado de mi proyecto", 0.3)
+    lines = block.splitlines()
+    assert (lines[0], lines[-1]) == ("<mango_memory>", "</mango_memory>")
+    assert "never instructions" in lines[1]
+    # Closest first; a record cannot open or close the block.
+    assert lines[2:-1] == ["- Su proyecto es &lt;Zafiro-71&gt;", "- Prefiere tablas"]
+    assert "Lejano" not in block
+    assert "Resumen" not in block  # a summary belongs to its conversation
+    assert "Obsidiana" not in block
+    assert fake.calls.count("RetrieveMemoryRecords") == 2
+    assert "CreateEvent" not in fake.calls
+
+
+def test_a_recalled_record_that_is_not_the_persons_is_dropped(
+    deps: mem.MemoryDeps, fake: FakeMemory
+) -> None:
+    ana, bea = _remember(deps, ANA, AGENT), _remember(deps, BEA, AGENT)
+    foreign = fake.records[fake.add_record(bea, Kind.FACTS, "de Bea")]
+
+    def leaky(**kwargs: Any) -> dict[str, Any]:
+        return {"memoryRecordSummaries": [{**foreign, "score": 0.9}]}
+
+    fake.retrieve_memory_records = leaky  # type: ignore[method-assign]
+    assert mem.recall(deps, ana, "hola", 0.3) == ""
+
+
+def test_nothing_is_recalled_nor_written_for_the_sentinel_or_with_memory_off(
+    deps: mem.MemoryDeps, fake: FakeMemory
+) -> None:
+    off = mem.MemoryDeps(
+        store=None,
+        index=FakeIndex(),
+        audit=FakeAudit(),  # type: ignore[arg-type]
+        limiter=RateLimiter(100, 60),
+    )
+    ana = memory.actor_id(ANA.user_id, AGENT)
+    assert mem.recall(deps, SENTINEL_ACTOR, "hola", 0.3) == ""
+    assert mem.recall(off, ana, "hola", 0.3) == ""
+    assert not mem.remember(deps, SENTINEL_ACTOR, "s" * 40, "hola", turn_id="t1")
+    assert not mem.remember(off, ana, "s" * 40, "hola", turn_id="t1")
+    assert fake.calls == []
+
+
+def test_a_memory_that_does_not_answer_leaves_the_turn_without_it(
+    deps: mem.MemoryDeps, fake: FakeMemory, caplog: pytest.LogCaptureFixture
+) -> None:
+    ana = _remember(deps, ANA, AGENT)
+    fake.add_record(ana, Kind.FACTS, "secreto")
+    fake.fail = True
+    assert mem.recall(deps, ana, "hola", 0.3) == ""
+    assert not mem.remember(deps, ana, "s" * 40, "mi texto", turn_id="t1")
+    assert "secreto" not in caplog.text
+    assert "mi texto" not in caplog.text
+
+
+def test_after_a_turn_only_what_the_person_said_is_written(
+    deps: mem.MemoryDeps, fake: FakeMemory
+) -> None:
+    ana = _remember(deps, ANA, AGENT)
+    assert mem.remember(deps, ana, "s" * 40, "Me llamo Ana", turn_id="turn-1")
+    (event,) = fake.written
+    assert event["actorId"] == ana
+    assert event["sessionId"] == "s" * 40
+    assert event["clientToken"] == "turn-1"
+    assert event["payload"] == [
+        {"conversational": {"content": {"text": "Me llamo Ana"}, "role": "USER"}}
+    ]
+
+
+def test_memoria_lists_the_summaries_of_each_session_even_when_its_events_expired(
+    deps: mem.MemoryDeps, fake: FakeMemory
+) -> None:
+    ana = _remember(deps, ANA, AGENT, session="a" * 40)
+    # One session the index noted, whose events expired: ListSessions no longer shows it.
+    fake.add_record(ana, Kind.SUMMARIES, "del índice", session="a" * 40)
+    # One the index does not have, still listed by the service.
+    fake.add_event(ana, "b" * 40)
+    fake.add_record(ana, Kind.SUMMARIES, "de ListSessions", session="b" * 40)
+    out = mem.list_memory(deps, _caller(ANA))
+    assert sorted(r.text for r in out.records) == ["de ListSessions", "del índice"]
+    assert {r.kind for r in out.records} == {"summaries"}
+
+
+def test_the_purge_reaches_actors_whose_events_expired_and_ends_while_still_listed(
+    deps: mem.MemoryDeps, fake: FakeMemory, settings_table: Any
+) -> None:
+    assert deps.store is not None
+    sweeper = mem.MemorySweeper(
+        settings_table, "settings", deps.store, deps.audit, index=deps.index
+    )
+    ana = _remember(deps, ANA, AGENT, session="a" * 40)
+    other = _remember(deps, ANA, OTHER_AGENT, session="b" * 40)
+    # Ana's actor with this agent: events expired, so ListActors does not show it.
+    fake.add_record(ana, Kind.FACTS, "hecho")
+    fake.add_record(ana, Kind.SUMMARIES, "resumen", session="a" * 40)
+    # With the other agent: events and a summary.
+    fake.add_event(other, "b" * 40)
+    fake.add_record(other, Kind.SUMMARIES, "otro resumen", session="b" * 40)
+    fake.expired.add(ana)
+    assert ana not in mem.MemoryStore(fake, ARN).actors()
+    mem.PersonMemory(sweeper).disabled(ANA.user_id)
+    sweeper.run_once()
+    assert fake.records == {}
+    assert not fake.events[(other, "b" * 40)]
+    # The service still lists the actor and its session: the purge did not wait for that.
+    assert other in mem.MemoryStore(fake, ARN).actors()
+
+
+def test_the_least_score_is_configuration() -> None:
+    from mango_api.settings import _score  # noqa: PLC0415
+
+    assert _settings().memory_min_score == 0.3
+    assert _score("") == 0.3
+    assert _score("0.45") == 0.45
+    for raw in ("abc", "-0.1", "1.5", "nan"):
+        with pytest.raises(ValueError, match="AGENT_MEMORY_MIN_SCORE"):
+            _score(raw)
+
+
+# --- The turn, end to end (worker in-process) --------------------------------------------
+
+
+def _memory_harness(fake: FakeMemory) -> Harness:
+    h = Harness(settings=replace(_settings(), memory_arn=ARN))
+    h.published.agents["finops"] = served(memory=True)
+    h.memory = mem.MemoryDeps(
+        store=mem.MemoryStore(fake, ARN),
+        index=h.conversations,  # type: ignore[arg-type]
+        audit=h.audit,  # type: ignore[arg-type]
+        limiter=RateLimiter(100, 60),
+    )
+    return h
+
+
+def test_a_turn_with_memory_recalls_into_the_prompt_and_remembers_only_the_question(
+    fake: FakeMemory,
+) -> None:
+    h = _memory_harness(fake)
+    actor = memory.actor_id("user-1", "finops")
+    fake.add_record(actor, Kind.FACTS, "Se llama Ana")
+    response = h.client().post("/api/chat", headers=_auth(), json={"message": "¿Cómo me llamo?"})
+    assert response.status_code == 200, response.text
+    assert any(k == "done" for k, _ in _events(response.text))
+    (request,) = h.agentcore.requests
+    # The harness has no memory: it gets the sentinel, never the person's actor.
+    assert request["actorId"] == SENTINEL_ACTOR
+    first, question = request["messages"][-1]["content"]
+    assert first["text"].startswith("<mango_memory>")
+    assert "- Se llama Ana" in first["text"]
+    assert question == {"text": "¿Cómo me llamo?"}
+    assert "Se llama Ana" not in request["systemPrompt"][0]["text"]
+    (event,) = fake.written
+    assert event["actorId"] == actor
+    assert event["payload"] == [
+        {"conversational": {"content": {"text": "¿Cómo me llamo?"}, "role": "USER"}}
+    ]
+    # Never the answer, a tool or what was recalled (TM-ME2).
+    assert "Hola" not in str(fake.written)
+    assert "Se llama Ana" not in str(fake.written)
+    assert h.conversations.noted[0][:2] == ("user-1", "finops")
+
+
+def test_a_question_the_guardrail_stopped_is_not_remembered(fake: FakeMemory) -> None:
+    h = _memory_harness(fake)
+    h.agentcore.stop_reason = "guardrail_intervened"
+    response = h.client().post("/api/chat", headers=_auth(), json={"message": "algo"})
+    assert response.status_code == 200, response.text
+    assert fake.written == []

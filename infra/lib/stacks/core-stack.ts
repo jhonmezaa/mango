@@ -861,6 +861,8 @@ export class CoreStack extends Stack {
           packPlatform.grantReadStatements(grantee);
           remoteRelease.grantRead(grantee);
         },
+        // D122 (8): the worker, never the harness, reads and writes the memory.
+        grantMemory: (role) => agentPlatform.memory.grantWorker(role),
       },
       // D121 (5): the turns of task runs too.
       taskRuns: { tasks: tasks.table, tickets: tickets.table, reportFunction: taskReports.function },

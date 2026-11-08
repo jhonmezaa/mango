@@ -1230,7 +1230,13 @@ def _memory_deps(services: Services, dynamodb: Any) -> MemoryDeps:
         store = memory.MemoryStore(
             boto3.client("bedrock-agentcore", region_name=settings.region), settings.memory_arn
         )
-        sweeper = memory.MemorySweeper(dynamodb, settings.settings_table, store, services.audit)
+        sweeper = memory.MemorySweeper(
+            dynamodb,
+            settings.settings_table,
+            store,
+            services.audit,
+            index=services.conversations,
+        )
         if services.people is not None:
             person = memory.PersonMemory(sweeper)
             services.people.forget_memory = person.disabled
@@ -2685,14 +2691,8 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     request = harness.build_request(
         invocation_request,
         session_id=session_id,
-        # Task runs do not use memory in v1 (D122 (8), TM-ME9): a throwaway actor of the run.
-        actor_id=memory.task_actor(
-            enabled=services.settings.memory_enabled,
-            user=user,
-            agent_id=agent_id,
-            agent_memory=agent.definition.memory,
-            run_id=run.run_id,
-        ),
+        # Task runs do not use memory in v1 (D122 (8), TM-ME9): nothing is recalled nor written.
+        actor_id=memory.task_actor(),
         access_token=caller.token,
         invocation_signature=signature,
         history=history,

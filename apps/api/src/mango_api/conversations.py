@@ -504,6 +504,29 @@ class ConversationRepository:
             item.get("memory_sessions", {}).get("SS", [])
         )
 
+    def memory_sessions_by_agent(self, user_id: str) -> dict[str, list[str]]:
+        """The memory sessions every conversation of the person noted, by agent (D122): where
+        «Memoria» and the purge find the summaries once the events expired."""
+        found: dict[str, set[str]] = {}
+        kwargs: dict[str, Any] = {
+            "TableName": self._table,
+            "KeyConditionExpression": "PK = :pk AND begins_with(SK, :prefix)",
+            "FilterExpression": "attribute_exists(memory_sessions)",
+            "ProjectionExpression": "agent_id, memory_sessions",
+            "ExpressionAttributeValues": {":pk": self._pk(user_id), ":prefix": {"S": "CONV#"}},
+        }
+        while True:
+            page = self._clients(user_id).query(**kwargs)
+            for item in page.get("Items", []):
+                agent = item.get("agent_id", {}).get("S")
+                if agent:
+                    found.setdefault(agent, set()).update(
+                        item.get("memory_sessions", {}).get("SS", [])
+                    )
+            if "LastEvaluatedKey" not in page:
+                return {agent: sorted(ids) for agent, ids in found.items()}
+            kwargs["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+
     def list_conversations(self, user_id: str) -> list[dict[str, str | None]]:
         resp = self._clients(user_id).query(
             TableName=self._table,

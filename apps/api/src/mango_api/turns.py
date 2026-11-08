@@ -85,6 +85,7 @@ from mango_core.chat_files import MAX_FILES
 from mango_core.harness_tools import KNOWLEDGE_TOOL
 from mango_core.identity import IdentityError, NoAreaError, NoGroupError, user_from_claims
 from mango_core.knowledge import ID_PATTERN as FILE_ID_PATTERN
+from mango_core.memory import SENTINEL_ACTOR
 from mango_core.skills import parse_ref as parse_skill_ref
 
 if TYPE_CHECKING:
@@ -801,6 +802,9 @@ class _Started:
     request: dict[str, Any]
     detail: dict[str, Any]
     agentcore: Any
+    memory_actor: str = SENTINEL_ACTOR
+    """The person's actor with this agent, or the sentinel: nothing is written then."""
+    session_id: str = ""
 
 
 class ChatTurns:
@@ -1466,7 +1470,8 @@ class ChatTurns:
             # Where the reconciler looks for what the turn cost if this task never says.
             services.budgets.bind_session(pending, session_id)
             # The person's actor with this agent, or the sentinel (D122, TM-ME1). Built by the
-            # one function of mango_core.memory from the verified sub; fails closed.
+            # one function of mango_core.memory from the verified sub; fails closed. Only the
+            # worker reads and writes the memory with it: the harness has none (D122 (8)).
             actor = memory.turn_actor(
                 enabled=services.settings.memory_enabled,
                 index=repo,
@@ -1481,15 +1486,21 @@ class ChatTurns:
             # finding F2). If this fails too, the reconciler releases it.
             release_turn(services, pending)
             raise
+        recalled = (
+            memory.recall(services.memory, actor, text, services.settings.memory_min_score)
+            if services.memory is not None
+            else ""
+        )
         request = harness.build_request(
             invocation_request,
             session_id=session_id,
-            actor_id=actor,
+            actor_id=SENTINEL_ACTOR,
             access_token=caller.token,
             invocation_signature=checked.signature,
             # A live session already holds the earlier turns: resending them would duplicate
             # them.
             history=history[-1:] if session.reused else history,
+            recalled=recalled,
         )
         agentcore = (
             services.agentcore.for_turn(limits.timeout_seconds)
@@ -1509,6 +1520,8 @@ class ChatTurns:
             request=request,
             detail={**turn, "conversation_id": conversation_id, "turn": turn_id},
             agentcore=agentcore,
+            memory_actor=actor,
+            session_id=session_id,
         )
 
     def _answer(self, started: _Started) -> TurnState:  # noqa: PLR0912, PLR0915
@@ -1666,6 +1679,20 @@ class ChatTurns:
             )
             if activity is not None:
                 activity.end()
+        # What the person said, and only that, is remembered (D122 (8), TM-ME2): never the
+        # answer nor a tool result. Not a question the guardrail stopped.
+        if (
+            answered
+            and services.memory is not None
+            and result.stop_reason != sessions.GUARDRAIL_STOP
+        ):
+            memory.remember(
+                services.memory,
+                started.memory_actor,
+                started.session_id,
+                message.message,
+                turn_id=turn_id,
+            )
         # Only a turn whose reservation is closed leaves its session open to the next one:
         # the traces of a session with a pending turn belong to that turn alone (D73).
         if answered and settled:
