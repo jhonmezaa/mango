@@ -2,6 +2,8 @@
 export interface SseMessage {
   event: string;
   data: string;
+  /** The `id:` of this event, when it has one (the `v1` chat stream numbers its deltas). */
+  id?: string;
 }
 
 /** Upper bound for a single buffered event, to cap memory use on a misbehaving stream. */
@@ -14,11 +16,13 @@ export class SseProtocolError extends Error {
 /**
  * Incremental text/event-stream parser. Feed decoded text chunks with `push`; complete events are
  * returned as soon as their terminating blank line arrives. Comment lines (`: ping` heartbeats)
- * and `id`/`retry` fields are ignored because the chat stream does not use reconnection.
+ * and `retry` are ignored. An event's own `id` is kept on it (the `v1` stream resumes from it
+ * with `?after=`, not with `Last-Event-ID`, so it is not carried over to the next event).
  */
 export class SseParser {
   private buffer = '';
   private eventType = '';
+  private eventId: string | null = null;
   private dataLines: string[] = [];
   private pendingBytes = 0;
 
@@ -57,6 +61,9 @@ export class SseParser {
     if (value.startsWith(' ')) value = value.slice(1);
     if (field === 'event') {
       this.eventType = value;
+    } else if (field === 'id') {
+      // Per the spec an id with NUL is ignored.
+      if (!value.includes('\u0000')) this.eventId = value;
     } else if (field === 'data') {
       this.dataLines.push(value);
       this.pendingBytes += value.length;
@@ -69,13 +76,18 @@ export class SseParser {
       this.reset();
       return null;
     }
-    const message = { event: this.eventType || 'message', data: this.dataLines.join('\n') };
+    const message: SseMessage = {
+      event: this.eventType || 'message',
+      data: this.dataLines.join('\n'),
+      ...(this.eventId === null ? {} : { id: this.eventId }),
+    };
     this.reset();
     return message;
   }
 
   private reset(): void {
     this.eventType = '';
+    this.eventId = null;
     this.dataLines = [];
     this.pendingBytes = 0;
   }

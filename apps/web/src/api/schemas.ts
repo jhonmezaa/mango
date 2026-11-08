@@ -9,6 +9,8 @@ export const MESSAGE_MAX_LENGTH = 4000;
 
 /** Conversation IDs are ULIDs/UUIDs; anything else is rejected before it reaches a URL. */
 export const conversationIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+/** A chat turn (D121): a random id, used only in the path of its stream and «Cancelar». */
+export const turnIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 
 export const meSchema = z.object({
   user_id: z.string(),

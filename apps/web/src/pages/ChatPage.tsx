@@ -24,7 +24,7 @@ import { ChatHeader } from '../components/chat/ChatHeader';
 import { ChatInput } from '../components/chat/ChatInput';
 import { ChatMessage } from '../components/chat/ChatMessage';
 import { ThreadList } from '../components/chat/ThreadList';
-import { ChevronDownIcon, CloseIcon, RefreshIcon, WarnIcon } from '../components/icons';
+import { ChevronDownIcon, CloseIcon, InfoIcon, RefreshIcon, WarnIcon } from '../components/icons';
 import { RateWaitButton, RateWaitLine } from '../components/RateWait';
 import { retryAtOf } from '../components/rateLimitWait';
 import { fromApiMessage, type DisplayMessage, type ErrorKey } from '../hooks/chatState';
@@ -299,12 +299,30 @@ export function ChatPage() {
     [answeredBy, notify, t],
   );
 
-  const { state, isStreaming, send, stop, reset, updateApproval } = useChatStream({
+  // Design round 40 «Otra pestaña»: the message goes back to the box, with its notice.
+  // Kept with its conversation: another conversation does not show it.
+  const [busy, setBusy] = useState<{ text: string; key: number; conversationId: string } | null>(
+    null,
+  );
+  const onBusy = useCallback(
+    (text: string) => {
+      if (routeId === null) return;
+      setBusy((current) => ({ text, key: (current?.key ?? 0) + 1, conversationId: routeId }));
+    },
+    [routeId],
+  );
+  const onSessionEndedDuringTurn = useCallback(() => {
+    expireSession('turn');
+  }, [expireSession]);
+
+  const { state, isStreaming, send, stop, reset, reconnect, updateApproval } = useChatStream({
     api,
     onConversationStarted,
     onTurnFinished: reloadConversations,
     onTurnCompleted,
     onUnauthenticated: expireSession,
+    onSessionEndedDuringTurn,
+    onBusy,
   });
 
   // Reacts to navigation only. Reading the in-memory conversation through an effect event means
@@ -495,6 +513,7 @@ export function ChatPage() {
       if (!agentId || !canChat) return;
       // Emptied first, so the same sentence is announced again after the next answer.
       setAnnouncement('');
+      setBusy(null);
       // Sending takes the person to the end, where their question is.
       awayRef.current = false;
       setAway(false);
@@ -699,6 +718,7 @@ export function ChatPage() {
                             ? retryText
                             : null
                         }
+                        onReconnect={reconnect}
                       />
                     </div>
                     {/* Design chat.jsx: the write actions of the answer wait here for a person
@@ -738,6 +758,12 @@ export function ChatPage() {
                   </Fragment>
                 );
               })}
+              {busy?.conversationId === routeId ? (
+                <div className="mc-alert chat-busy" role="status">
+                  <InfoIcon size={14} />
+                  <div>{t('chat.busy')}</div>
+                </div>
+              ) : null}
               <div ref={bottomRef} />
             </div>
           )}
@@ -752,6 +778,7 @@ export function ChatPage() {
             isStreaming={isStreaming}
             onSend={sendText}
             onStop={stop}
+            restore={busy}
           />
         )}
       </div>

@@ -207,7 +207,7 @@ test('a message sent while the renewal answers 503 fails without signing out', a
   // The renewal is back: the same message goes out again and gets its answer.
   await page.unroute('**/api/session/refresh');
   const renewed = page.waitForResponse((r) => r.url().endsWith('/api/session/refresh'));
-  const sent = page.waitForResponse((r) => r.url().endsWith('/api/chat'));
+  const sent = page.waitForResponse((r) => r.url().endsWith('/api/chat/turns'));
   // The one of the message: the history, which failed too, has its own.
   await page.getByText(GENERIC).locator('..').getByRole('button', { name: 'Reintentar' }).click();
   expect((await renewed).status()).toBe(200);

@@ -12,7 +12,12 @@ import type { AuthContextValue } from '../auth/AuthContext';
 import type { SessionContextValue } from '../auth/SessionContext';
 import { agentFixture, authValue, baseMe, finopsAgent, sessionValue } from '../test/fixtures';
 import { TestProviders } from '../test/TestProviders';
+import { turnsApi } from '../test/turnsApi';
 import { ChatPage } from './ChatPage';
+
+/** Design round 40: «Cancelar» ends the turn interrupted and charged in full (D121 (7)). */
+const STOPPED =
+  'Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.';
 
 type StreamArgs = Parameters<ApiClient['streamChat']>[0];
 
@@ -37,7 +42,7 @@ function streamingApi(events: ChatEvent[]) {
         };
       }),
   );
-  return { api: { streamChat } as unknown as ApiClient, streamChat, pending };
+  return { api: turnsApi({ streamChat }) as unknown as ApiClient, streamChat, pending };
 }
 
 function renderChat(
@@ -239,19 +244,19 @@ describe('ChatPage', () => {
       onEvent({ type: 'status', phase: 'tool', tool: '<b>get_cost_and_usage</b>' });
     });
     // The tool name is untrusted text: shown verbatim, never as markup.
-    expect(screen.getByText('Consultando <b>get_cost_and_usage</b>…')).toBeInTheDocument();
+    expect(await screen.findByText('Consultando <b>get_cost_and_usage</b>…')).toBeInTheDocument();
     act(() => {
       onEvent({ type: 'status', phase: 'tool' });
     });
-    expect(screen.getByText('Consultando una tool…')).toBeInTheDocument();
+    expect(await screen.findByText('Consultando una tool…')).toBeInTheDocument();
     act(() => {
       onEvent({ type: 'status', phase: 'tool_result' });
     });
-    expect(screen.getByText('Procesando resultados…')).toBeInTheDocument();
+    expect(await screen.findByText('Procesando resultados…')).toBeInTheDocument();
     act(() => {
       onEvent({ type: 'status', phase: 'writing' });
     });
-    expect(screen.getByText('Escribiendo…')).toBeInTheDocument();
+    expect(await screen.findByText('Escribiendo…')).toBeInTheDocument();
 
     act(() => {
       pending.finish();
@@ -330,10 +335,10 @@ describe('ChatPage', () => {
           });
         }),
     );
-    renderChat({ streamChat } as unknown as ApiClient);
+    renderChat(turnsApi({ streamChat }) as unknown as ApiClient);
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
     await user.click(await screen.findByRole('button', { name: 'Cancelar respuesta' }));
-    expect(await screen.findByText('Respuesta detenida.')).toBeInTheDocument();
+    expect(await screen.findByText(STOPPED)).toBeInTheDocument();
     expect(screen.queryByText('Respuesta completa')).toBeNull();
   });
 
@@ -356,6 +361,47 @@ describe('ChatPage', () => {
     expect(within(history).getByRole('alert')).toHaveTextContent('No se pudo cargar el historial.');
     await user.click(within(history).getByRole('button', { name: 'Reintentar' }));
     expect(reloadConversations).toHaveBeenCalledOnce();
+  });
+
+  it('gives the message back with its notice when another tab is answering (round 40)', async () => {
+    const user = userEvent.setup();
+    const getConversation = vi.fn<ApiClient['getConversation']>().mockResolvedValue({
+      ...conversationOf('finops'),
+      messages: [
+        {
+          message_id: 'q1',
+          role: 'user',
+          content: 'Gasto de EC2',
+          created_at: '2026-11-07T10:00:00Z',
+          tools: [],
+        },
+        {
+          message_id: 'a1',
+          role: 'assistant',
+          content: 'Fueron USD 10.',
+          created_at: '2026-11-07T10:00:05Z',
+          tools: [],
+        },
+      ],
+    } as unknown as Awaited<ReturnType<ApiClient['getConversation']>>);
+    const streamChat = vi.fn(({ onEvent }: StreamArgs) => {
+      onEvent({ type: 'error', code: 'conversation_busy', message: 'busy' });
+      return Promise.resolve();
+    });
+    renderChat(turnsApi({ getConversation, streamChat }) as unknown as ApiClient, false, {
+      path: `/c/${CONVERSATION_ID}`,
+    });
+    await screen.findByText('Fueron USD 10.');
+    const input = screen.getByRole('textbox', { name: 'Mensaje a FinOps' });
+    await user.type(input, '¿Y RDS?{Enter}');
+    expect(
+      await screen.findByText(
+        'Tu mensaje no se envió: hay una respuesta en curso en esta conversación, desde otra pestaña. Sigue en el cuadro de texto; envíalo cuando termine.',
+      ),
+    ).toBeInTheDocument();
+    expect(input).toHaveValue('¿Y RDS?');
+    // The question that did not go out is not in the conversation.
+    expect(screen.queryByText('¿Y RDS?', { selector: '.msg-user-bubble' })).toBeNull();
   });
 
   it('shows the design skeleton while a conversation loads', async () => {
@@ -525,7 +571,7 @@ describe('ChatPage: a turn that fails says whether the session ended', () => {
     const auth = authValue();
     const streamChat = vi.fn<ApiClient['streamChat']>(() => Promise.reject(failure));
     const user = userEvent.setup();
-    renderChat({ streamChat } as unknown as ApiClient, false, { auth });
+    renderChat(turnsApi({ streamChat }) as unknown as ApiClient, false, { auth });
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
     return { auth, streamChat, user };
   }
@@ -591,7 +637,7 @@ describe('ChatPage with several agents', () => {
       onEvent(done);
       return Promise.resolve();
     });
-    return { api: { streamChat } as unknown as ApiClient, streamChat };
+    return { api: turnsApi({ streamChat }) as unknown as ApiClient, streamChat };
   };
 
   it('opens a new conversation with the agent of the URL, with its texts as text', () => {

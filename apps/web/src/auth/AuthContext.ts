@@ -54,8 +54,11 @@ export interface AuthContextValue {
    * ended, or the renewal did not answer and the session is kept).
    */
   refreshSession: () => Promise<boolean>;
-  /** Drops the tokens in memory (e.g. after a 401 from the API). */
-  expireSession: () => void;
+  /**
+   * Drops the tokens in memory (e.g. after a 401 from the API). `turn`: it ended while a chat
+   * turn was read, so the sign-in says the answer goes on (design round 40).
+   */
+  expireSession: (reason?: 'turn') => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

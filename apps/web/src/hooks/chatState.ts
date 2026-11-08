@@ -1,7 +1,20 @@
 import type { ChatEvent } from '../api/chatEvents';
 import type { ChatApproval, Message, ToolCall, ToolStatus } from '../api/schemas';
+import type { TurnView } from './turnView';
 
-export type MessageStatus = 'streaming' | 'done' | 'error' | 'stopped';
+/**
+ * `interrupted`: Mango lost the turn halfway (design round 40): the text it wrote stays, with
+ * its notice and without «Reintentar». `away`: the session ended while the turn was read; the
+ * answer goes on in Mango.
+ */
+export type MessageStatus = 'streaming' | 'done' | 'error' | 'stopped' | 'interrupted' | 'away';
+
+/**
+ * The connection of a turn being read (design round 40 `ConnLine`): reconnecting (attempt n of
+ * 12), reconnected for 2.5 s, or given up until «Volver a conectar».
+ */
+export type ConnectionView =
+  { kind: 'reconnecting'; attempt: number } | { kind: 'resumed' } | { kind: 'failed' };
 
 /**
  * `interrupted`: the turn ended (stopped, failed or finished) while the tool was still `started`,
@@ -164,6 +177,8 @@ export interface DisplayMessage {
   /** ISO timestamp: `created_at` for loaded history, the client clock for messages sent now. */
   createdAt?: string;
   errorKey?: ErrorKey;
+  /** While a turn is read and its connection is not live (live only). */
+  connection?: ConnectionView;
   /** A 429 (design round 34 `RateWait`): when «Reintentar» may be used (client clock, ms). */
   retryAt?: number;
   usage?: { inputTokens: number; outputTokens: number; costUsd: string };
@@ -225,6 +240,21 @@ export type ChatAction =
       /** Client clock (ms) when the event arrived; used to time tool calls. */
       receivedAt?: number;
     }
+  /** The conversation of a turn just created (`POST /api/chat/turns`). */
+  | { type: 'conversation'; conversationId: string }
+  /** The `v1` documents of a turn changed (D120): `view` after, `previous` before. */
+  | {
+      type: 'turn';
+      assistantId: string;
+      previous: TurnView;
+      view: TurnView;
+      receivedAt?: number;
+    }
+  | { type: 'connection'; assistantId: string; connection: ConnectionView | null }
+  /** A turn in flight read again: its answer follows the conversation as it was loaded. */
+  | { type: 'resume'; assistantId: string }
+  /** Messages that never reached the conversation (the server refused the turn). */
+  | { type: 'withdraw'; ids: readonly string[] }
   /** A request changed (confirmed, signed, run…): replace it wherever it is shown. */
   | { type: 'approval'; approval: ChatApproval }
   | {
@@ -301,8 +331,142 @@ function updateMessage(
   };
 }
 
+/** A turn that ended in an error and is known to have started: Mango lost it halfway. */
+const LOST_CODE = 'upstream_error';
+/** The end «Cancelar» writes (D121 (7)). */
+const CANCELLED_CODE = 'cancelled';
+
+/**
+ * The changes from `previous` to `view` as the events of D57 the reducer already knows (the
+ * steps, the timing of the tools and the knowledge searches are built from them). The text and
+ * the end of the turn are set from the view itself.
+ */
+export function eventsOfChange(previous: TurnView, view: TurnView): ChatEvent[] {
+  const events: ChatEvent[] = [];
+  view.tools.forEach((tool, index) => {
+    const before = previous.tools[index];
+    if (!before) {
+      events.push({ type: 'tool', name: tool.name, status: 'started' });
+      if (tool.status !== 'started') events.push({ type: 'tool', ...tool });
+    } else if (before.status !== tool.status) {
+      events.push({ type: 'tool', ...tool });
+    }
+  });
+  const phase = view.phase;
+  if (phase && (previous.phase?.phase !== phase.phase || previous.phase.tool !== phase.tool)) {
+    events.push({ type: 'status', ...phase });
+  }
+  for (const search of view.knowledge.slice(previous.knowledge.length)) {
+    events.push({ type: 'knowledge', ...search });
+  }
+  const known = new Set(previous.approvals.map((item) => item.approval_id));
+  for (const approval of view.approvals) {
+    if (!known.has(approval.approval_id)) events.push({ type: 'approval', approval });
+  }
+  for (const registration of view.connectionRequired.slice(previous.connectionRequired.length)) {
+    events.push({ type: 'remote_connection_required', registration_id: registration });
+  }
+  return events;
+}
+
+/** The end of a turn on its message, from the view's status (`in_progress`: nothing yet). */
+function endOfTurn(message: DisplayMessage, view: TurnView): DisplayMessage {
+  if (view.status === 'in_progress' || message.status !== 'streaming') return message;
+  const settled = { ...message, tools: settleTools(message.tools), steps: [] };
+  delete settled.connection;
+  if (view.status === 'finished') {
+    const result = view.result ?? {};
+    const stop = result.stop_reason;
+    return {
+      ...settled,
+      status: 'done',
+      ...(stop === GUARDRAIL_STOP ? { guardrail: true } : {}),
+      ...(stop === CAP_STOP ? { truncated: truncationOf(message) } : {}),
+      ...(result.remote_sources?.length ? { remoteSources: result.remote_sources } : {}),
+      ...(result.usage
+        ? {
+            usage: {
+              inputTokens: result.usage.input_tokens,
+              outputTokens: result.usage.output_tokens,
+              costUsd: result.cost_usd ?? '0',
+            },
+          }
+        : {}),
+    };
+  }
+  const code = view.error?.code ?? 'error';
+  if (view.status === 'interrupted' || code === CANCELLED_CODE) {
+    return { ...settled, status: 'stopped' };
+  }
+  // The turn failed after it wrote something: Mango lost it halfway and it is charged in full
+  // (D121 (7)); sending it again would not continue it, so there is no «Reintentar».
+  if (code === LOST_CODE && view.text) return { ...settled, status: 'interrupted' };
+  return {
+    ...settled,
+    status: 'error',
+    errorKey: errorKeyForCode(code, view.error?.status),
+  };
+}
+
+function eventReducer(
+  state: ChatState,
+  assistantId: string,
+  event: ChatEvent,
+  receivedAt?: number,
+): ChatState {
+  return chatReducer(state, {
+    type: 'event',
+    assistantId,
+    event,
+    ...(receivedAt === undefined ? {} : { receivedAt }),
+  });
+}
+
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
+    case 'conversation':
+      return { ...state, conversationId: action.conversationId };
+    case 'turn': {
+      const { assistantId, previous, view } = action;
+      let next = state;
+      for (const event of eventsOfChange(previous, view)) {
+        next = eventReducer(next, assistantId, event, action.receivedAt);
+      }
+      return updateMessage(next, assistantId, (message) =>
+        endOfTurn(
+          message.content === view.text ? message : { ...message, content: view.text },
+          view,
+        ),
+      );
+    }
+    case 'connection':
+      return updateMessage(state, action.assistantId, (message) => {
+        if (message.status !== 'streaming') return message;
+        if (action.connection === null) {
+          const next = { ...message };
+          delete next.connection;
+          return next;
+        }
+        return { ...message, connection: action.connection };
+      });
+    case 'resume':
+      return {
+        ...state,
+        messages: [
+          ...state.messages,
+          {
+            id: action.assistantId,
+            role: 'assistant',
+            content: '',
+            tools: [],
+            status: 'streaming',
+          },
+        ],
+      };
+    case 'withdraw': {
+      const ids = new Set(action.ids);
+      return { ...state, messages: state.messages.filter((message) => !ids.has(message.id)) };
+    }
     case 'reset':
       return { conversationId: action.conversationId, messages: action.messages };
     case 'send':
@@ -449,6 +613,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           tools: settleTools(message.tools),
           steps: [],
         };
+        delete next.connection;
         if (action.errorKey) next.errorKey = action.errorKey;
         if (action.retryAt !== undefined) next.retryAt = action.retryAt;
         return next;

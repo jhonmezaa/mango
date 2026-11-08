@@ -7,6 +7,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DisplayMessage } from '../../hooks/chatState';
 import { ChatMessage } from './ChatMessage';
 
+/** Design round 40: «Cancelar» ends the turn interrupted and charged in full (D121 (7)). */
+const STOPPED =
+  'Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.';
+
 type Props = ComponentProps<typeof ChatMessage>;
 
 function renderMessage(message: DisplayMessage, props: Partial<Props> = {}) {
@@ -362,8 +366,8 @@ describe('ChatMessage: user and agent actions', () => {
     });
     const article = container.querySelector('article');
     expect(article).toHaveTextContent('Texto parcial');
-    expect(article).not.toHaveTextContent('Respuesta detenida.');
-    const note = screen.getByText('Respuesta detenida.');
+    expect(article).not.toHaveTextContent('Respuesta detenida');
+    const note = screen.getByText(STOPPED);
     expect(note).toHaveClass('msg-stopped');
     expect(note.querySelector('svg')).not.toBeNull();
   });
@@ -377,7 +381,7 @@ describe('ChatMessage: user and agent actions', () => {
       tools: [],
     });
     expect(container.querySelector('article')).toBeNull();
-    expect(screen.getByText('Respuesta detenida.')).toBeInTheDocument();
+    expect(screen.getByText(STOPPED)).toBeInTheDocument();
   });
 
   it('has no actions while the answer streams', () => {
@@ -493,5 +497,76 @@ describe('ChatMessage: knowledge searches and sources (design kb-agent.jsx, D88 
     const sources = screen.getByRole('region', { name: 'Fuentes' });
     expect(within(sources).getByText('Fuentes', { selector: '.kb-cites-h' })).toBeVisible();
     expect(within(sources).getByText('· Legal')).toBeVisible();
+  });
+});
+
+describe('ChatMessage: a turn read in v1 (design round 40)', () => {
+  const partial = (extra: Partial<DisplayMessage>): DisplayMessage => ({
+    id: 'a',
+    role: 'assistant',
+    content: 'Texto parcial',
+    status: 'streaming',
+    tools: [],
+    progress: { phase: 'writing' },
+    ...extra,
+  });
+
+  it('says it reconnects under the text, without the phase line or the cursor', () => {
+    const { container } = renderMessage(
+      partial({ connection: { kind: 'reconnecting', attempt: 3 } }),
+    );
+    const line = screen.getByRole('status');
+    expect(container).toHaveTextContent('Texto parcial');
+    expect(line).toHaveClass('cr-conn');
+    expect(line).toHaveTextContent('Se cortó la conexión. Reconectando… intento 3 de 12');
+    expect(line.querySelector('.mono')).toHaveTextContent('intento 3 de 12');
+    expect(container.querySelector('.ch-phase')).toBeNull();
+    expect(container.querySelector('.md-cursor')).toBeNull();
+  });
+
+  it('says it reconnected, in green', () => {
+    renderMessage(partial({ connection: { kind: 'resumed' } }));
+    const line = screen.getByText('Reconectado. La respuesta sigue donde iba.');
+    expect(line).toHaveClass('cr-conn', 'is-ok');
+  });
+
+  it('offers «Volver a conectar» once it gave up', async () => {
+    const user = userEvent.setup();
+    const onReconnect = vi.fn();
+    const { container } = renderMessage(partial({ connection: { kind: 'failed' } }), {
+      onReconnect,
+    });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveClass('mc-alert', 'amber');
+    expect(alert).toHaveTextContent(
+      'No se pudo reconectar. La respuesta puede seguir en Mango. «Volver a conectar» trae lo que haya, sin preguntar otra vez. También la verás al abrir de nuevo la conversación.',
+    );
+    expect(within(alert).queryByRole('button', { name: 'Reintentar' })).toBeNull();
+    await user.click(within(alert).getByRole('button', { name: 'Volver a conectar' }));
+    expect(onReconnect).toHaveBeenCalledOnce();
+    expect(container).toHaveTextContent('Texto parcial');
+  });
+
+  it('says the answer was interrupted, without «Reintentar»', () => {
+    renderMessage(partial({ status: 'interrupted' }), { resendText: 'Hola' });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Respuesta interrumpida. Mango perdió el turno a mitad. Lo de arriba es lo que alcanzó a escribir; el turno se cobra entero. Puedes volver a preguntar: el agente solo recordará lo que se ve aquí.',
+    );
+    expect(screen.getByRole('button', { name: 'Copiar respuesta' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull();
+  });
+
+  it('says the answer goes on in Mango when the session ended while reading it', () => {
+    renderMessage(partial({ status: 'away' }), { resendText: 'Hola' });
+    expect(
+      screen.getByText('La respuesta sigue en Mango. La verás completa al volver a entrar.'),
+    ).toHaveClass('msg-away');
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull();
+  });
+
+  it('does not offer to send a stopped answer again', () => {
+    renderMessage(partial({ status: 'stopped' }), { resendText: 'Hola' });
+    expect(screen.getByText(STOPPED)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull();
   });
 });

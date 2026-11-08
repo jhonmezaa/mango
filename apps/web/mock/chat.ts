@@ -1,4 +1,8 @@
-/** Chat of the mock: conversations in memory and the SSE stream of POST /api/chat. */
+/**
+ * Chat of the mock: conversations in memory, the turns of `POST /api/chat/turns` read in `v1`
+ * (D120, D121) and the old SSE stream of `POST /api/chat` (retired in R5).
+ */
+import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { agents, versionOf } from './agents.ts';
@@ -7,6 +11,17 @@ import { recordAudit } from './audit.ts';
 import { bearerOf, firstUsableRemote, isConnected, markConsentPending } from './connections.ts';
 import { newId, readBody, sendError, sendJson, type ApiHandler } from './http.ts';
 import { demoTicket } from './tickets.ts';
+import {
+  CANCELLED,
+  Compressor,
+  Translator,
+  completeFrames,
+  deltaFrame,
+  encodingFrame,
+  textOf,
+  type TurnEnd,
+  type TurnEventRecord,
+} from './turnTranslator.ts';
 
 interface StoredMessage {
   message_id: string;
@@ -33,6 +48,8 @@ interface StoredConversation {
 }
 
 const conversations = new Map<string, StoredConversation>();
+/** A conversation id as the API makes it (32 hex, `secrets.token_hex(16)`): its routes check it. */
+const newConversationId = (): string => randomBytes(16).toString('hex');
 /** Agent of a chat that names none, and of the seeded conversations. */
 const RELEASE_AGENT = 'finops';
 const AGENT_ID = /^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/;
@@ -101,7 +118,7 @@ function seedConversations(): void {
   ];
   for (const [title, hoursAgo, agentId] of seeds) {
     const updatedAt = new Date(Date.now() - hoursAgo * HOUR_MS).toISOString();
-    const conversationId = newId();
+    const conversationId = newConversationId();
     conversations.set(conversationId, {
       conversation_id: conversationId,
       agent_id: agentId,
@@ -133,13 +150,33 @@ function seedConversations(): void {
 }
 seedConversations();
 
-async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
+/** A turn admitted like the API admits it: what the scenario needs to answer it. */
+interface AdmittedTurn {
+  conversation: StoredConversation;
+  chatAgent: string;
+  version: { number: number; definition: { name: string } };
+  message: string;
+  turn: { agent: string; version: number; model: string; conversation_id: string; turn: string };
+  /** The bearer of the request, for the remote MCP consent of the mock. */
+  bearer: string | null;
+}
+
+/** Where a turn writes its events (D57): an SSE response, or a turn record (D121). */
+interface TurnSink {
+  send: (event: string, data: unknown) => void;
+  closed: () => boolean;
+  /** The turn never started (the worker's rejection): its stream ends with this error. */
+  reject: (error: { status: number; code: string; message: string }) => void;
+}
+
+/** Validates and admits a chat turn (the checks of `begin_turn`); answers the error itself. */
+async function admitTurn(req: IncomingMessage, res: ServerResponse): Promise<AdmittedTurn | null> {
   let body: unknown;
   try {
     body = JSON.parse(await readBody(req));
   } catch {
     sendError(res, 422, 'invalid_request', 'Invalid JSON body');
-    return;
+    return null;
   }
   const record: Record<string, unknown> =
     typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
@@ -155,18 +192,18 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     (model != null && typeof model !== 'string')
   ) {
     sendError(res, 422, 'invalid_request', 'Invalid chat request');
-    return;
+    return null;
   }
   if (/presupuesto agotado/i.test(message)) {
     sendError(res, 402, 'budget_exceeded', 'Budget exceeded');
-    return;
+    return null;
   }
 
   let conversation =
     typeof conversationId === 'string' ? conversations.get(conversationId) : undefined;
   if (typeof conversationId === 'string' && !conversation) {
     sendError(res, 404, 'not_found', 'Conversation not found');
-    return;
+    return null;
   }
   // A conversation keeps the agent of its first turn; the agent must be published and the
   // model one of the version's allowed models (same answers as the API).
@@ -174,26 +211,26 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     conversation?.agent_id ?? (typeof agentId === 'string' ? agentId : RELEASE_AGENT);
   if (typeof agentId === 'string' && agentId !== chatAgent) {
     sendError(res, 409, 'agent_mismatch', 'This conversation belongs to another agent');
-    return;
+    return null;
   }
   const agent = agents.get(chatAgent);
   const version = agent ? versionOf(agent, agent.published_version) : null;
   if (!agent || !version || agent.status === 'draft') {
     sendError(res, 403, 'forbidden', 'not allowed');
-    return;
+    return null;
   }
   if (agent.status === 'retired') {
     sendError(res, 409, 'agent_retired', 'This agent was retired');
-    return;
+    return null;
   }
   const chatModel = typeof model === 'string' ? model : (version.definition.model ?? '');
   if (!version.definition.allowed_models.includes(chatModel)) {
     sendError(res, 422, 'model_not_allowed', 'The agent does not allow this model');
-    return;
+    return null;
   }
   if (!conversation) {
     conversation = {
-      conversation_id: newId(),
+      conversation_id: newConversationId(),
       agent_id: chatAgent,
       title: message.slice(0, 60),
       updated_at: '',
@@ -228,25 +265,42 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     turn: turn.turn,
   });
   recordAudit('agent.invoke', turn);
+  return {
+    conversation,
+    chatAgent,
+    version,
+    message,
+    turn,
+    bearer: bearerOf(req),
+  };
+}
 
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-store');
-  const stream = { closed: false };
-  req.on('close', () => {
-    stream.closed = true;
-  });
-  const send = (event: string, data: unknown) => {
-    if (!stream.closed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+/** The answer of the mock agent, event by event, with the demo variants of the design. */
+async function runTurn(admitted: AdmittedTurn, sink: TurnSink): Promise<void> {
+  const { conversation, chatAgent, version, message, turn } = admitted;
+  const { send } = sink;
+  // What the turn stores at its end; nothing once it was stopped (the stop keeps what it saw).
+  const keep = (stored: StoredMessage) => {
+    if (!sink.closed()) conversation.messages.push(stored);
   };
 
   send('conversation', { conversation_id: conversation.conversation_id });
   // Live progress like the API: `status` on every phase change, never text of the model.
   send('status', { phase: 'thinking' });
   await sleep(300);
+  // Design round 40 «Turno en otra pestaña»: the API refuses the turn (`conversation_busy`) and
+  // its question never reaches the conversation.
+  if (/otra pestaña/i.test(message)) {
+    conversation.messages.pop();
+    sink.reject({
+      status: 409,
+      code: 'conversation_busy',
+      message: 'another message is being answered; try again',
+    });
+    return;
+  }
   if (/error/i.test(message)) {
     send('error', { code: 'upstream_error', message: 'Simulated upstream failure' });
-    res.end();
     return;
   }
   // "abre un ticket", "comenta en el ticket", "actualiza el ticket": the agent calls the tickets
@@ -290,7 +344,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     const reply = 'Para escribir en un ticket necesito **tu confirmación**.';
     send('delta', { text: reply });
     const replyId = newId();
-    conversation.messages.push({
+    keep({
       message_id: replyId,
       role: 'assistant',
       content: reply,
@@ -307,7 +361,6 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
       usage: { input_tokens: 380, output_tokens: 40 },
       cost_usd: '0.0024',
     });
-    res.end();
     return;
   }
   // "crea un presupuesto de 300 para team-a": the agent calls the write tool, the Gateway
@@ -329,7 +382,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
         : 'Puedo hacerlo, pero la política exige **aprobación de otras personas**. La dejé en cola; cuando la aprueben podrás ejecutarla desde aquí.';
     send('delta', { text: reply });
     const replyId = newId();
-    conversation.messages.push({
+    keep({
       message_id: replyId,
       role: 'assistant',
       content: reply,
@@ -346,7 +399,6 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
       usage: { input_tokens: 420, output_tokens: 60 },
       cost_usd: '0.0031',
     });
-    res.end();
     return;
   }
   // "sprint": the agent reads Azure DevOps through a remote MCP (D93). Without a connection the
@@ -360,7 +412,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     const ready = isConnected(remote.id);
     send('tool', { name: tool, status: ready ? 'completed' : 'error' });
     if (!ready) {
-      markConsentPending(remote.id, bearerOf(req));
+      markConsentPending(remote.id, admitted.bearer);
       send('remote_connection_required', { registration_id: remote.id });
     }
     send('status', { phase: 'writing' });
@@ -374,7 +426,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
         : ask;
     send('delta', { text: reply });
     const replyId = newId();
-    conversation.messages.push({
+    keep({
       message_id: replyId,
       role: 'assistant',
       content: reply,
@@ -392,7 +444,6 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
       cost_usd: '0.0042',
       remote_sources: ready ? [remote.id] : [],
     });
-    res.end();
     return;
   }
   // "vacaciones": the agent searches a knowledge base first; the stream says where and how many
@@ -421,7 +472,6 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   send('tool', { name: 'get_cost_and_usage', status: 'started' });
   send('status', { phase: 'tool', tool: 'get_cost_and_usage' });
   if (parallel) send('tool', { name: 'get_rightsizing_recommendations', status: 'started' });
-  res.write(': ping\n\n');
   await sleep(1200);
   if (parallel) send('tool', { name: 'get_rightsizing_recommendations', status: 'error' });
   send('tool', { name: 'get_cost_and_usage', status: 'completed' });
@@ -437,17 +487,21 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   let answer = '';
   const text =
     cut || capped ? CANNED_ANSWER.slice(0, Math.round(CANNED_ANSWER.length * 0.45)) : CANNED_ANSWER;
-  for (const piece of chunkText(text, 24)) {
-    if (stream.closed) break;
+  // Design round 40 «Turno interrumpido»: Mango loses the turn after part of the answer.
+  const lost = /interrumpid/i.test(message);
+  const pieces = chunkText(text, 24);
+  for (const [index, piece] of pieces.entries()) {
+    if (sink.closed()) break;
+    if (lost && index > pieces.length * 0.4) {
+      send('error', { code: 'upstream_error', message: 'the agent failed' });
+      return;
+    }
     answer += piece;
-    // Split a chunk across two writes to exercise the client's incremental parser.
-    const frame = `event: delta\r\ndata: ${JSON.stringify({ text: piece })}\r\n\r\n`;
-    res.write(frame.slice(0, 10));
-    res.write(frame.slice(10));
+    send('delta', { text: piece });
     await sleep(40);
   }
   const messageId = newId();
-  conversation.messages.push({
+  keep({
     message_id: messageId,
     role: 'assistant',
     content: answer,
@@ -474,7 +528,207 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     cost_usd: '0.0123',
     authz: { action: 'UseAgent', allowed: true },
   });
+}
+
+/** `POST /api/chat` (D57, retired in R5): the turn answered on the request, as SSE. */
+async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const admitted = await admitTurn(req, res);
+  if (!admitted) return;
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-store');
+  const stream = { closed: false };
+  req.on('close', () => {
+    stream.closed = true;
+  });
+  const send = (event: string, data: unknown) => {
+    if (!stream.closed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  await runTurn(admitted, {
+    send,
+    closed: () => stream.closed,
+    reject: (error) => {
+      send('error', { code: error.code, message: error.message });
+    },
+  });
   res.end();
+}
+
+/**
+ * Demo variants of the design (round 40) for the connection of a turn, by a word of the
+ * question: «reconecta» cuts the first connection halfway and the next one resumes; «no
+ * reconecta» cuts it and answers 502 to the next 12 (then «Volver a conectar» works); «sesión
+ * termina» cuts it and answers 401 (the session ended while reconnecting).
+ */
+type ConnectionDemo = 'cut' | 'cut-fail' | 'cut-session' | null;
+
+function connectionDemo(message: string): ConnectionDemo {
+  if (/no reconecta/i.test(message)) return 'cut-fail';
+  if (/sesi[oó]n termina/i.test(message)) return 'cut-session';
+  if (/reconecta/i.test(message)) return 'cut';
+  return null;
+}
+
+/** A turn of the mock (D121): its events, how it ended, and who reads it. */
+interface MockTurn {
+  turnId: string;
+  conversationId: string;
+  events: TurnEventRecord[];
+  end: TurnEnd | null;
+  readers: Set<() => void>;
+  demo: ConnectionDemo;
+  /** Connections after the cut, for «no reconecta». */
+  afterCut: number;
+  cut: boolean;
+  /** For «Cancelar»: the conversation, to store what was written. */
+  conversation: StoredConversation;
+}
+
+const turns = new Map<string, MockTurn>();
+/** Deltas the first connection of a «reconecta» turn sends before it is cut. */
+const CUT_AFTER = 18;
+const FAILED_RECONNECTS = 12;
+
+function notify(turn: MockTurn): void {
+  for (const reader of turn.readers) reader();
+}
+
+/** `POST /api/chat/turns` (D120, D121 (2)): admitted like `POST /api/chat`, answered apart. */
+async function createTurn(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const admitted = await admitTurn(req, res);
+  if (!admitted) return;
+  const turnId = admitted.turn.turn;
+  const turn: MockTurn = {
+    turnId,
+    conversationId: admitted.conversation.conversation_id,
+    events: [],
+    end: null,
+    readers: new Set(),
+    demo: connectionDemo(admitted.message),
+    afterCut: 0,
+    cut: false,
+    conversation: admitted.conversation,
+  };
+  turns.set(turnId, turn);
+  const ended = () =>
+    turn.end !== null || turn.events.some((e) => e.kind === 'done' || e.kind === 'error');
+  sendJson(res, 200, { conversation_id: turn.conversationId, turn_id: turnId });
+  void runTurn(admitted, {
+    send: (event, data) => {
+      if (ended() || event === 'conversation') return;
+      turn.events.push({ kind: event, data: data as Record<string, unknown> });
+      notify(turn);
+    },
+    closed: ended,
+    reject: (error) => {
+      if (ended()) return;
+      turn.end = { state: 'failed', error };
+      notify(turn);
+    },
+  }).then(() => {
+    if (!ended()) turn.end = { state: 'done' };
+    notify(turn);
+  });
+}
+
+/** `GET /api/chat/turns/{turn}/stream?after=<n>`: the turn in `v1`, from delta `after + 1`. */
+function streamTurn(req: IncomingMessage, res: ServerResponse, turnId: string): void {
+  const turn = turns.get(turnId);
+  const after = Number(new URL(req.url ?? '', 'http://mock').searchParams.get('after') ?? '0');
+  if (!turn || !Number.isInteger(after) || after < 0) {
+    sendError(res, 404, 'not_found', 'not found');
+    return;
+  }
+  if (turn.cut && turn.demo === 'cut-session') {
+    sendError(res, 401, 'unauthenticated', 'invalid token');
+    return;
+  }
+  if (turn.cut && turn.demo === 'cut-fail' && turn.afterCut < FAILED_RECONNECTS) {
+    turn.afterCut += 1;
+    sendError(res, 502, 'http_502', 'Bad Gateway');
+    return;
+  }
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-store');
+  const translator = new Translator(turn.turnId, turn.conversationId);
+  const compressor = new Compressor();
+  let offset = 0;
+  let seen = 0;
+  let sentHere = 0;
+  let closed = false;
+  res.write(encodingFrame());
+  const ping = setInterval(() => {
+    res.write(': ping\n\n');
+  }, 15_000);
+  const stop = () => {
+    closed = true;
+    clearInterval(ping);
+    turn.readers.delete(pump);
+  };
+  const pump = () => {
+    if (closed) return;
+    const deltas = turn.events.slice(seen).flatMap((event) => translator.feed(event));
+    seen = turn.events.length;
+    if (turn.end && !translator.ended) deltas.push(...translator.close(turn.end));
+    for (const delta of deltas) {
+      offset += 1;
+      if (offset <= after) continue;
+      // The demo cut: the first connection drops halfway through the answer.
+      if (turn.demo !== null && !turn.cut && sentHere >= CUT_AFTER) {
+        turn.cut = true;
+        stop();
+        res.destroy();
+        return;
+      }
+      res.write(deltaFrame(offset, compressor.short(delta)));
+      sentHere += 1;
+    }
+    if (translator.ended) {
+      res.write(completeFrames(turn.conversationId, turn.turnId));
+      stop();
+      res.end();
+    }
+  };
+  req.on('close', stop);
+  turn.readers.add(pump);
+  pump();
+}
+
+/** `POST /api/chat/turns/{turn}/cancel` (D121 (7)): interrupted, what was written is kept. */
+function cancelTurn(res: ServerResponse, turnId: string): void {
+  const turn = turns.get(turnId);
+  if (!turn) {
+    sendError(res, 404, 'not_found', 'not found');
+    return;
+  }
+  const running =
+    turn.end === null && !turn.events.some((e) => e.kind === 'done' || e.kind === 'error');
+  if (running) {
+    turn.events.push({ kind: 'error', data: { ...CANCELLED } });
+    const text = turn.events
+      .flatMap((e) => (e.kind === 'delta' ? [textOf(e.data.text, '')] : []))
+      .join('');
+    if (text) {
+      turn.conversation.messages.push({
+        message_id: newId(),
+        role: 'assistant',
+        content: text,
+        created_at: new Date().toISOString(),
+        tools: turn.events.flatMap((e) =>
+          e.kind === 'tool'
+            ? [{ name: textOf(e.data.name, ''), status: textOf(e.data.status, '') }]
+            : [],
+        ),
+      });
+    }
+    notify(turn);
+  }
+  sendJson(res, 200, {
+    turn_id: turnId,
+    state: running ? 'interrupted' : turn.end?.state === 'failed' ? 'failed' : 'done',
+    cancelled: running,
+  });
 }
 
 export const handleChatApi: ApiHandler = async (req, res, path) => {
@@ -509,6 +763,20 @@ export const handleChatApi: ApiHandler = async (req, res, path) => {
   }
   if (path === '/chat' && req.method === 'POST') {
     await handleChat(req, res);
+    return true;
+  }
+  if (path === '/chat/turns' && req.method === 'POST') {
+    await createTurn(req, res);
+    return true;
+  }
+  const turnStream = /^\/chat\/turns\/([A-Za-z0-9_-]{1,64})\/stream$/.exec(path);
+  if (turnStream && req.method === 'GET') {
+    streamTurn(req, res, turnStream[1] ?? '');
+    return true;
+  }
+  const turnCancel = /^\/chat\/turns\/([A-Za-z0-9_-]{1,64})\/cancel$/.exec(path);
+  if (turnCancel && req.method === 'POST') {
+    cancelTurn(res, turnCancel[1] ?? '');
     return true;
   }
   return false;

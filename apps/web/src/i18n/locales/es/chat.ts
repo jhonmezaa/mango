@@ -134,7 +134,28 @@ export const chat = {
     rest: 'Lo de arriba es lo que alcanzó a escribir. Si necesitas el resto, pídelo en un mensaje nuevo; por ejemplo, «sigue desde donde quedaste».',
   },
   live: 'LIVE',
-  stopped: 'Respuesta detenida.',
+  // Design round 40 (D121 (7)): «Cancelar» ends the turn interrupted; it is charged in full.
+  stopped:
+    'Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.',
+  // Design round 40 `ConnLine`: the stream of the turn was cut and is read again (D120 (4)).
+  connection: {
+    reconnecting: 'Se cortó la conexión. Reconectando…',
+    attempt: 'intento {{n}} de 12',
+    resumed: 'Reconectado. La respuesta sigue donde iba.',
+    failedTitle: 'No se pudo reconectar.',
+    failedBody:
+      'La respuesta puede seguir en Mango. «Volver a conectar» trae lo que haya, sin preguntar otra vez. También la verás al abrir de nuevo la conversación.',
+    reconnect: 'Volver a conectar',
+  },
+  // Design round 40: Mango lost the turn halfway (D121 (7)).
+  interrupted: {
+    title: 'Respuesta interrumpida.',
+    body: 'Mango perdió el turno a mitad. Lo de arriba es lo que alcanzó a escribir; el turno se cobra entero. Puedes volver a preguntar: el agente solo recordará lo que se ve aquí.',
+  },
+  // Design round 40: the session ended while the turn was read.
+  away: 'La respuesta sigue en Mango. La verás completa al volver a entrar.',
+  // Design round 40 «Otra pestaña»: the server refused the turn (`conversation_busy`).
+  busy: 'Tu mensaje no se envió: hay una respuesta en curso en esta conversación, desde otra pestaña. Sigue en el cuadro de texto; envíalo cuando termine.',
   loadError: 'No se pudo cargar la conversación',
   // Design round 34: «+» while the first answer of a new conversation runs.
   newChatWait: 'Podrás empezar otra cuando termine la primera respuesta',

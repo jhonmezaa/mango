@@ -25,6 +25,7 @@ import {
   conversationListSchema,
   conversationSchema,
   meSchema,
+  turnIdSchema,
   modelIdSchema,
 } from './schemas';
 import { SseParser, type SseMessage } from './sse';
@@ -42,6 +43,18 @@ export interface ApiClientOptions {
   onUnauthorized?: () => void;
   fetchImpl?: typeof fetch;
 }
+
+export interface CreateTurnRequest {
+  conversationId: string | null;
+  /** Agent of a new conversation; an existing one keeps the agent of its first turn. */
+  agentId?: string | null;
+  /** One of the agent's allowed models; the API rejects any other (D22). */
+  model?: string | null;
+  message: string;
+}
+
+/** Highest `after` the API accepts (`MAX_STREAM_OFFSET`). */
+export const MAX_STREAM_AFTER = 1_000_000;
 
 export interface StreamChatRequest {
   conversationId: string | null;
@@ -102,7 +115,15 @@ async function readEvents(response: Response, onMessage: (message: SseMessage) =
 export function createApiClient(options: ApiClientOptions) {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
 
-  async function authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  /**
+   * `quiet401`: the caller decides what a 401 means (the stream of a turn says the session ended
+   * with the turn's own notice); every other request lets the app drop the session at once.
+   */
+  async function authorizedFetch(
+    path: string,
+    init: RequestInit = {},
+    { quiet401 = false }: { quiet401?: boolean } = {},
+  ): Promise<Response> {
     const token = await options.getAccessToken();
     if (!token) throw new NotAuthenticatedError('No active session');
     const headers = new Headers(init.headers);
@@ -115,7 +136,7 @@ export function createApiClient(options: ApiClientOptions) {
       cache: 'no-store',
       redirect: 'error',
     });
-    if (response.status === 401) {
+    if (response.status === 401 && !quiet401) {
       options.onUnauthorized?.();
     }
     if (!response.ok) throw await apiErrorFromResponse(response);
@@ -187,12 +208,14 @@ export function createApiClient(options: ApiClientOptions) {
     return `/conversations/${encodeURIComponent(id)}`;
   }
 
+  const call = createOperationCaller((path, init) => authorizedFetch(path, init));
+
   return {
     /**
      * Any JSON route by its name in the generated client (packages/ts/api-client). New screens use
      * this; the methods below predate the generated client and keep their hand-written schemas.
      */
-    call: createOperationCaller(authorizedFetch),
+    call,
     getMe: () => getJson('/me', meSchema),
     listConversations: async () => (await getJson('/conversations', conversationListSchema)).items,
     getConversation: async (conversationId: string) =>
@@ -290,6 +313,53 @@ export function createApiClient(options: ApiClientOptions) {
       postNoContent(evalChangePath(changeId, 'withdraw')),
     withdrawMfaReset: async (changeId: string) =>
       (await sendJson('POST', mfaResetPath(changeId, 'withdraw'), {}, mfaResetListSchema)).items,
+
+    /**
+     * POST /api/chat/turns (D120, D121 (2)): the turn is queued and its stream is read with
+     * `openTurnStream`. Only the fields of the contract go out (TM-I2); the generated client
+     * validates the body and the answer.
+     */
+    createTurn: async (
+      request: CreateTurnRequest,
+    ): Promise<{ conversationId: string; turnId: string }> => {
+      const message = request.message.trim();
+      if (message.length < 1 || message.length > MESSAGE_MAX_LENGTH) {
+        throw new ApiError(422, 'invalid_message', 'Message length out of range');
+      }
+      const created = await call('createTurn', {
+        body: {
+          conversation_id: request.conversationId,
+          message,
+          ...(request.agentId ? { agent_id: agentIdSchema.parse(request.agentId) } : {}),
+          ...(request.model ? { model: modelIdSchema.parse(request.model) } : {}),
+        },
+      });
+      return {
+        conversationId: conversationIdSchema.parse(created.conversation_id),
+        turnId: turnIdSchema.parse(created.turn_id),
+      };
+    },
+
+    /**
+     * One connection to GET /api/chat/turns/{turn}/stream?after=<n> (D120 (4)). Not in the
+     * generated client (no JSON response). A 401 does not drop the session here: `followTurn`
+     * reports it and the chat ends the session with the turn's notice.
+     */
+    openTurnStream: (turnId: string, after: number, signal: AbortSignal) => {
+      if (!Number.isInteger(after) || after < 0 || after > MAX_STREAM_AFTER) {
+        throw new ApiError(422, 'invalid_request', 'Stream offset out of range');
+      }
+      const id = encodeURIComponent(turnIdSchema.parse(turnId));
+      return authorizedFetch(
+        `/chat/turns/${id}/stream?after=${String(after)}`,
+        { headers: { Accept: 'text/event-stream' }, signal },
+        { quiet401: true },
+      );
+    },
+
+    /** «Cancelar» (D121 (7)): POST /api/chat/turns/{turn}/cancel; idempotent. */
+    cancelTurn: (turnId: string) =>
+      call('cancelTurn', { path: { turn_id: turnIdSchema.parse(turnId) } }),
 
     /**
      * POST /api/chat and consume the SSE response with fetch + ReadableStream (EventSource cannot

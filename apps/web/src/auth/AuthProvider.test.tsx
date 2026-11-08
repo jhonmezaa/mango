@@ -428,6 +428,19 @@ describe('AuthProvider (session cookie of the server, D63)', () => {
     expect(auth().noticeKey).toBe('auth.sessionEnded');
   });
 
+  it('says the answer goes on when the session ended while a chat turn was read', async () => {
+    const { auth } = await setup({}, { start: vi.fn(() => Promise.resolve(true)) });
+    await act(async () => {
+      auth().acceptTokens({ ...signedIn(), expiresAt: Date.now() + 10_000 });
+      await Promise.resolve();
+    });
+    act(() => {
+      auth().expireSession('turn');
+    });
+    expect(screen.getByText('unauthenticated')).toBeInTheDocument();
+    expect(auth().noticeKey).toBe('auth.sessionEndedTurn');
+  });
+
   it('keeps the session through an outage of the renewal', async () => {
     const { auth, session } = await setup({}, { start: vi.fn(() => Promise.resolve(true)) });
     await act(async () => {

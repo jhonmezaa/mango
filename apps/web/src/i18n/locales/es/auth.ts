@@ -26,6 +26,9 @@ export const auth = {
   keep: 'Sigues dentro hasta {{count}} h, aunque recargues o cierres el navegador. En un equipo compartido, cierra sesión al terminar.',
   signedOutElsewhere: 'Cerraste sesión en otra pestaña. Vuelve a entrar para seguir.',
   sessionEnded: 'Tu sesión terminó. Vuelve a entrar para seguir.',
+  // Design round 40: the session ended while a chat turn was read; the answer goes on.
+  sessionEndedTurn:
+    'Tu sesión terminó. Vuelve a entrar para seguir. La respuesta sigue en Mango y la verás al volver a entrar.',
   bootFail: {
     title: 'No se pudo abrir Mango',
     body: 'Mango no responde. Inténtalo de nuevo en unos minutos.',

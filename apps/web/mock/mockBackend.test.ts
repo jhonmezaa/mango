@@ -4,6 +4,8 @@ import type { AddressInfo } from 'node:net';
 
 import {
   zAdminAuditResponse,
+  zCancelTurnResponse,
+  zCreateTurnResponse,
   zGetActivityResponse,
   zGetAdminGroupsResponse,
   zGetAdminModelsResponse,
@@ -551,5 +553,89 @@ describe('mock brains', () => {
     const event = audit.items.find((item) => item.event === 'directory.lookup');
     expect(event?.detail).toMatchObject({ emails: 2, ids: 2, emails_found: 1, ids_found: 1 });
     expect(JSON.stringify(event?.detail)).not.toContain('empresa.com');
+  });
+});
+
+describe('mock chat turns in v1 (D120, D121)', () => {
+  const create = async (message: string) => {
+    const response = await post('/chat/turns', { message });
+    expect(response.status).toBe(200);
+    return zCreateTurnResponse.parse(await response.json());
+  };
+  /** Reads a connection to its end; a cut connection rejects or ends without [DONE]. */
+  const read = async (turnId: string, after = 0) => {
+    const response = await api(`/chat/turns/${turnId}/stream?after=${String(after)}`);
+    try {
+      return { status: response.status, body: await response.text() };
+    } catch {
+      return { status: response.status, body: '' };
+    }
+  };
+  const ids = (body: string) => [...body.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+
+  it('creates a turn and serves its stream in deltas, from any offset', async () => {
+    const { turn_id: turnId, conversation_id: conversationId } = await create('hola');
+    const whole = await read(turnId);
+    expect(whole.status).toBe(200);
+    expect(whole.body.startsWith('event: delta_encoding\ndata: "v1"\n\n')).toBe(true);
+    expect(whole.body).toContain('event: message_stream_complete');
+    expect(whole.body.trimEnd().endsWith('data: [DONE]')).toBe(true);
+    const all = ids(whole.body);
+    expect(all).toEqual(Array.from({ length: all.length }, (_, i) => i + 1));
+    // `after` goes on from the next delta, and the first one carries c, p and o.
+    const resumed = await read(turnId, 5);
+    expect(ids(resumed.body)[0]).toBe(6);
+    expect(resumed.body).toMatch(/id: 6\nevent: delta\ndata: \{"c":\d+,"p":"[^"]*","o":"\w+"/);
+    const detail = zGetConversationResponse.parse(await json(`/conversations/${conversationId}`));
+    expect(detail.messages.at(-1)?.role).toBe('assistant');
+  });
+
+  it('cuts «reconecta» once and resumes it', async () => {
+    const { turn_id: turnId } = await create('se corta y reconecta');
+    const first = await read(turnId);
+    expect(first.body).not.toContain('[DONE]');
+    const got = ids(first.body);
+    const second = await read(turnId, got.at(-1) ?? 0);
+    expect(second.body).toContain('[DONE]');
+    expect(ids(second.body)[0]).toBe((got.at(-1) ?? 0) + 1);
+  });
+
+  it('answers 502 twelve times to «no reconecta», then serves it', async () => {
+    const { turn_id: turnId } = await create('se corta y no reconecta');
+    const first = await read(turnId);
+    const after = ids(first.body).at(-1) ?? 0;
+    for (let i = 0; i < 12; i++) expect((await read(turnId, after)).status).toBe(502);
+    expect((await read(turnId, after)).body).toContain('[DONE]');
+  });
+
+  it('answers 401 after the cut of «sesión termina»', async () => {
+    const { turn_id: turnId } = await create('la sesión termina al reconectar');
+    await read(turnId);
+    expect((await read(turnId)).status).toBe(401);
+  });
+
+  it('ends «otra pestaña» refused, and «interrumpido» lost halfway', async () => {
+    const busy = await read((await create('desde otra pestaña')).turn_id);
+    expect(busy.body).toContain('"code":"conversation_busy"');
+    expect(busy.body).toContain('"status":409');
+    const lost = await read((await create('turno interrumpido')).turn_id);
+    expect(lost.body).toContain('"code":"upstream_error"');
+    expect(lost.body).toContain('/content/text');
+  });
+
+  it('stops a turn with «Cancelar» and keeps what it wrote', async () => {
+    const { turn_id: turnId } = await create('hola');
+    await new Promise((resolve) => setTimeout(resolve, 3200));
+    const cancel = await post(`/chat/turns/${turnId}/cancel`, {});
+    const body = zCancelTurnResponse.parse(await cancel.json());
+    expect(body).toEqual({ turn_id: turnId, state: 'interrupted', cancelled: true });
+    const stream = await read(turnId);
+    expect(stream.body).toContain('"v":"interrupted"');
+    expect(stream.body).toContain('[DONE]');
+    const again = zCancelTurnResponse.parse(
+      await (await post(`/chat/turns/${turnId}/cancel`, {})).json(),
+    );
+    expect(again.cancelled).toBe(false);
+    expect((await post('/chat/turns/nope/cancel', {})).status).toBe(404);
   });
 });

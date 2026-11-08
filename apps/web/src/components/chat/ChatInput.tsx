@@ -13,6 +13,11 @@ interface Props {
   isStreaming: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
+  /**
+   * A message that did not go out goes back to the box (design round 40, «otra pestaña»): each
+   * new `key` puts its `text` in the box again.
+   */
+  restore?: { text: string; key: number } | null;
 }
 
 /**
@@ -20,9 +25,22 @@ interface Props {
  * commands are "Próximamente", so typing "/" opens no command menu. There is no «Skill» button
  * (design round 23): a skill cannot be forced, the agent loads one when it helps.
  */
-export function ChatInput({ agentName, disabled = false, isStreaming, onSend, onStop }: Props) {
+export function ChatInput({
+  agentName,
+  disabled = false,
+  isStreaming,
+  onSend,
+  onStop,
+  restore = null,
+}: Props) {
   const { t } = useTranslation();
   const [text, setText] = useState('');
+  // Adjusted while rendering (no effect): the box shows the message that came back at once.
+  const [restored, setRestored] = useState<number | null>(null);
+  if (restore && restore.key !== restored) {
+    setRestored(restore.key);
+    setText(restore.text);
+  }
   const trimmed = text.trim();
   // Like the design, the limit counts what was typed; there is no visible counter, only the error.
   const tooLong = text.length > MESSAGE_MAX_LENGTH;

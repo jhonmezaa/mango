@@ -706,6 +706,34 @@
     max-width: 760px;
     margin-bottom: 24px;
   }
+  /* Design round 40 `.cr-conn`: the connection of a turn being read (D120 (4)). */
+  .cr-conn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .cr-conn .mono {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .cr-conn.is-ok {
+    color: var(--green);
+  }
+  /* Design round 40 `busy_note`. */
+  .chat-busy {
+    margin-bottom: 18px;
+  }
+  .msg-away {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
   .msg-stopped {
     display: flex;
     align-items: center;

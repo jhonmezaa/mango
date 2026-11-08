@@ -52,6 +52,7 @@ const REFRESH_REJECTED: ReadonlySet<string> = new Set([
 const SIGNED_OUT = 'signed-out';
 const SIGNED_OUT_ELSEWHERE = 'auth.signedOutElsewhere';
 const SESSION_ENDED = 'auth.sessionEnded';
+const SESSION_ENDED_TURN = 'auth.sessionEndedTurn';
 const CHANNEL = 'mango-auth';
 
 /**
@@ -351,9 +352,12 @@ export function AuthProvider({ config, cognito, serverSession: injected, childre
     if (wasFederated) window.location.assign(logoutUrl(config));
   }, [cognito, config, endSession, serverSession]);
 
-  const expireSession = useCallback(() => {
-    endSession(null, SESSION_ENDED);
-  }, [endSession]);
+  const expireSession = useCallback(
+    (reason?: 'turn') => {
+      endSession(null, reason === 'turn' ? SESSION_ENDED_TURN : SESSION_ENDED);
+    },
+    [endSession],
+  );
 
   const startSso = useCallback(async () => {
     if (!config.ssoProvider) return;

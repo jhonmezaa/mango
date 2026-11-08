@@ -2,20 +2,23 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import type { ApiClient } from '../api/client';
 import { ApiError, NotAuthenticatedError } from '../api/errors';
-import { retryAtOf } from '../components/rateLimitWait';
+import {
+  TURN_START,
+  followTurn,
+  type ConnectionState,
+  type TurnEnd,
+  type TurnProgress,
+} from '../api/turnStream';
 import type { ChatApproval } from '../api/schemas';
+import { retryAtOf } from '../components/rateLimitWait';
 import {
   CAP_STOP,
   chatReducer,
   errorKeyForCode,
   initialChatState,
   type DisplayMessage,
-  type ErrorKey,
 } from './chatState';
-
-// Read through a function: TypeScript would otherwise keep the narrowing from the assignment above,
-// although other turns can change the ref while this one awaits.
-const currentController = (ref: { current: AbortController | null }) => ref.current;
+import { EMPTY_TURN, turnViewOf, type TurnView } from './turnView';
 
 /** What a turn runs on: the agent of the conversation and one of its allowed models. */
 export interface ChatTarget {
@@ -23,16 +26,51 @@ export interface ChatTarget {
   model: string | null;
 }
 
+/** Design round 40: «Reconectado. La respuesta sigue donde iba.» stays this long. */
+export const RESUMED_MS = 2500;
+
+/**
+ * The turn in flight of each conversation this tab started, while the page lives (in memory
+ * only: a turn id is not a secret, but nothing of the chat goes to Web Storage). Leaving the
+ * conversation and coming back reads it again (design round 40, «Turno en curso al volver»).
+ */
+const turnsInFlight = new Map<string, string>();
+
+/** For tests: forget the turns of other tests. */
+export function forgetTurnsInFlight(): void {
+  turnsInFlight.clear();
+}
+
 interface Options {
   api: ApiClient;
   onConversationStarted: (conversationId: string) => void;
   onTurnFinished: () => void;
   /**
-   * The agent answered (`done` event): not called for stopped or failed turns. `incomplete`
-   * when the answer reached its token cap (design round 34, «Respuesta incompleta»).
+   * The agent answered: not called for stopped or failed turns. `incomplete` when the answer
+   * reached its token cap (design round 34, «Respuesta incompleta»).
    */
   onTurnCompleted?: (incomplete: boolean) => void;
   onUnauthenticated: () => void;
+  /** The session ended while a turn was read: the answer goes on in Mango (design round 40). */
+  onSessionEndedDuringTurn?: () => void;
+  /**
+   * The server refused the turn because another one of the conversation is being answered
+   * (another tab): the message did not go out and goes back to the composer (design round 40).
+   */
+  onBusy?: (text: string) => void;
+}
+
+/** One turn being read: what «Volver a conectar» and «Cancelar» need. */
+interface Reading {
+  turnId: string;
+  conversationId: string;
+  assistantId: string;
+  controller: AbortController;
+  progress: TurnProgress;
+  view: TurnView;
+  /** The question of the turn, for «otra pestaña»; null for a turn read again on opening. */
+  text: string | null;
+  userId: string | null;
 }
 
 export function useChatStream({
@@ -41,128 +79,311 @@ export function useChatStream({
   onTurnFinished,
   onTurnCompleted,
   onUnauthenticated,
+  onSessionEndedDuringTurn,
+  onBusy,
 }: Options) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [isStreaming, setIsStreaming] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const readingRef = useRef<Reading | null>(null);
+  // A turn being created (before its id is known), so a second send waits.
+  const creatingRef = useRef<{ controller: AbortController; assistantId: string } | null>(null);
+  const resumedTimer = useRef<number | undefined>(undefined);
 
-  const stop = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+  // Read through refs: the callbacks of the page change, the reading outlives a render.
+  const callbacks = useRef({
+    onConversationStarted,
+    onTurnFinished,
+    onTurnCompleted,
+    onUnauthenticated,
+    onSessionEndedDuringTurn,
+    onBusy,
+  });
+  useEffect(() => {
+    callbacks.current = {
+      onConversationStarted,
+      onTurnFinished,
+      onTurnCompleted,
+      onUnauthenticated,
+      onSessionEndedDuringTurn,
+      onBusy,
+    };
+  });
+
+  /** Stops reading (the turn goes on in Mango); nothing is said to the API. */
+  const detach = useCallback(() => {
+    creatingRef.current?.controller.abort();
+    creatingRef.current = null;
+    readingRef.current?.controller.abort();
+    readingRef.current = null;
+    window.clearTimeout(resumedTimer.current);
+    setIsStreaming(false);
   }, []);
 
-  useEffect(() => stop, [stop]);
+  useEffect(() => detach, [detach]);
+
+  const settle = useCallback((reading: Reading, end: TurnEnd) => {
+    if (readingRef.current !== reading) return;
+    const { assistantId } = reading;
+    window.clearTimeout(resumedTimer.current);
+    if (end.kind === 'aborted') return;
+    if (end.kind === 'failed') {
+      // Design round 40 «No se pudo reconectar»: the text stays and «Volver a conectar» reads
+      // the turn again from where it stopped. «Cancelar» stays available meanwhile.
+      reading.progress = end.progress;
+      if (end.code === 'invalid_event') {
+        dispatch({
+          type: 'finish',
+          assistantId,
+          status: 'error',
+          errorKey: 'errors.streamInterrupted',
+        });
+        readingRef.current = null;
+        turnsInFlight.delete(reading.conversationId);
+        setIsStreaming(false);
+        callbacks.current.onTurnFinished();
+        return;
+      }
+      dispatch({ type: 'connection', assistantId, connection: { kind: 'failed' } });
+      return;
+    }
+    readingRef.current = null;
+    setIsStreaming(false);
+    if (end.kind === 'unauthenticated') {
+      // Design round 40: the partial text stays with «La respuesta sigue en Mango…».
+      dispatch({ type: 'finish', assistantId, status: 'away' });
+      const ended =
+        callbacks.current.onSessionEndedDuringTurn ?? callbacks.current.onUnauthenticated;
+      ended();
+      return;
+    }
+    turnsInFlight.delete(reading.conversationId);
+    const view = reading.view;
+    if (view.status === 'error' && view.error?.code === 'conversation_busy' && reading.text) {
+      // Design round 40 «Otra pestaña»: the message did not go out; it goes back to the box.
+      dispatch({
+        type: 'withdraw',
+        ids: [assistantId, ...(reading.userId ? [reading.userId] : [])],
+      });
+      callbacks.current.onBusy?.(reading.text);
+      callbacks.current.onTurnFinished();
+      return;
+    }
+    if (view.status === 'error' && view.error?.status === 401) {
+      callbacks.current.onUnauthenticated();
+    }
+    if (view.status === 'in_progress') {
+      // The stream ended without the end of the turn: never left as if it were running.
+      dispatch({
+        type: 'finish',
+        assistantId,
+        status: 'error',
+        errorKey: 'errors.streamInterrupted',
+      });
+    }
+    callbacks.current.onTurnFinished();
+    if (view.status === 'finished') {
+      callbacks.current.onTurnCompleted?.(view.result?.stop_reason === CAP_STOP);
+    }
+  }, []);
+
+  /** Reads `reading` from where it stands until the turn ends or the reading stops. */
+  const read = useCallback(
+    (reading: Reading) => {
+      const { assistantId } = reading;
+      const onConnection = (connection: ConnectionState) => {
+        if (readingRef.current !== reading) return;
+        window.clearTimeout(resumedTimer.current);
+        if (connection.kind === 'live') {
+          dispatch({ type: 'connection', assistantId, connection: null });
+        } else if (connection.kind === 'resumed') {
+          dispatch({ type: 'connection', assistantId, connection: { kind: 'resumed' } });
+          resumedTimer.current = window.setTimeout(() => {
+            if (readingRef.current === reading) {
+              dispatch({ type: 'connection', assistantId, connection: null });
+            }
+          }, RESUMED_MS);
+        } else {
+          dispatch({
+            type: 'connection',
+            assistantId,
+            connection: { kind: 'reconnecting', attempt: connection.attempt },
+          });
+        }
+      };
+      void followTurn({
+        open: (after, signal) => api.openTurnStream(reading.turnId, after, signal),
+        signal: reading.controller.signal,
+        from: reading.progress,
+        onConnection,
+        onProgress: (progress) => {
+          if (readingRef.current !== reading) return;
+          reading.progress = progress;
+          const view = turnViewOf(progress.channels);
+          const previous = reading.view;
+          reading.view = view;
+          dispatch({
+            type: 'turn',
+            assistantId,
+            previous,
+            view,
+            receivedAt: performance.now(),
+          });
+        },
+      }).then((end) => {
+        settle(reading, end);
+      });
+    },
+    [api, settle],
+  );
 
   const reset = useCallback(
     (conversationId: string | null, messages: DisplayMessage[] = []) => {
-      stop();
+      detach();
       dispatch({ type: 'reset', conversationId, messages });
+      // Design round 40 «Turno en curso al volver»: a turn of this conversation that this tab
+      // started and that the loaded history does not answer yet is read again, live.
+      const turnId = conversationId ? turnsInFlight.get(conversationId) : undefined;
+      if (!conversationId || !turnId || messages.length === 0) return;
+      if (messages.at(-1)?.role !== 'user') {
+        turnsInFlight.delete(conversationId);
+        return;
+      }
+      const assistantId = crypto.randomUUID();
+      dispatch({ type: 'resume', assistantId });
+      const reading: Reading = {
+        turnId,
+        conversationId,
+        assistantId,
+        controller: new AbortController(),
+        progress: TURN_START,
+        view: EMPTY_TURN,
+        text: null,
+        userId: null,
+      };
+      readingRef.current = reading;
+      setIsStreaming(true);
+      read(reading);
     },
-    [stop],
+    [detach, read],
   );
 
   const send = useCallback(
     async (text: string, target: ChatTarget) => {
-      if (abortRef.current) return;
+      if (creatingRef.current || readingRef.current) return;
       const controller = new AbortController();
-      abortRef.current = controller;
-      setIsStreaming(true);
       const assistantId = crypto.randomUUID();
+      const userId = crypto.randomUUID();
+      const creating = { controller, assistantId };
+      creatingRef.current = creating;
+      setIsStreaming(true);
       dispatch({
         type: 'send',
-        userId: crypto.randomUUID(),
+        userId,
         assistantId,
         text,
         sentAt: new Date().toISOString(),
       });
-
-      // Mutated from callbacks, so kept in an object rather than narrowed locals.
-      const turn: {
-        settled: boolean;
-        completed: boolean;
-        incomplete: boolean;
-        errorKey: ErrorKey | null;
-        retryAt: number | null;
-      } = {
-        settled: false,
-        completed: false,
-        incomplete: false,
-        errorKey: null,
-        retryAt: null,
-      };
+      let created: { conversationId: string; turnId: string };
       try {
-        await api.streamChat({
+        created = await api.createTurn({
           conversationId: state.conversationId,
           // The agent is only sent to start a conversation; afterwards the API keeps it.
           agentId: state.conversationId === null ? target.agentId : null,
           model: target.model,
           message: text,
-          signal: controller.signal,
-          onEvent: (event) => {
-            dispatch({ type: 'event', assistantId, event, receivedAt: performance.now() });
-            if (event.type === 'conversation') onConversationStarted(event.conversation_id);
-            if (event.type === 'done' || event.type === 'error') turn.settled = true;
-            if (event.type === 'done') {
-              turn.completed = true;
-              turn.incomplete = event.stop_reason === CAP_STOP;
-            }
-          },
         });
       } catch (error) {
+        if (creatingRef.current !== creating) return;
+        creatingRef.current = null;
+        setIsStreaming(false);
         if (error instanceof NotAuthenticatedError) {
-          onUnauthenticated();
-          turn.errorKey = 'errors.generic';
+          callbacks.current.onUnauthenticated();
+          dispatch({ type: 'finish', assistantId, status: 'error', errorKey: 'errors.generic' });
         } else if (error instanceof ApiError) {
-          if (error.status === 401) onUnauthenticated();
-          turn.errorKey = errorKeyForCode(error.code, error.status);
-          turn.retryAt = retryAtOf(error);
-        } else if (!controller.signal.aborted) {
-          turn.errorKey =
-            error instanceof TypeError ? 'errors.network' : 'errors.streamInterrupted';
-        }
-      } finally {
-        if (controller.signal.aborted) {
-          dispatch({ type: 'finish', assistantId, status: 'stopped' });
-        } else if (turn.errorKey) {
+          if (error.status === 401) callbacks.current.onUnauthenticated();
+          const retryAt = retryAtOf(error);
           dispatch({
             type: 'finish',
             assistantId,
             status: 'error',
-            errorKey: turn.errorKey,
-            ...(turn.retryAt === null ? {} : { retryAt: turn.retryAt }),
+            errorKey: errorKeyForCode(error.code, error.status),
+            ...(retryAt === null ? {} : { retryAt }),
           });
-        } else if (!turn.settled) {
+        } else {
           dispatch({
             type: 'finish',
             assistantId,
             status: 'error',
-            errorKey: 'errors.streamInterrupted',
+            errorKey: error instanceof TypeError ? 'errors.network' : 'errors.generic',
           });
         }
-        // A newer turn may already own the ref (reset + send while this one was unwinding).
-        const owner = currentController(abortRef);
-        if (owner === controller || owner === null) {
-          abortRef.current = null;
-          setIsStreaming(false);
-        }
-        onTurnFinished();
-        if (turn.completed && !turn.errorKey && !controller.signal.aborted)
-          onTurnCompleted?.(turn.incomplete);
+        callbacks.current.onTurnFinished();
+        return;
       }
+      // «Cancelar» or another conversation while the turn was being created.
+      if (creatingRef.current !== creating) {
+        if (controller.signal.aborted) void api.cancelTurn(created.turnId).catch(() => undefined);
+        return;
+      }
+      creatingRef.current = null;
+      turnsInFlight.set(created.conversationId, created.turnId);
+      dispatch({ type: 'conversation', conversationId: created.conversationId });
+      callbacks.current.onConversationStarted(created.conversationId);
+      const reading: Reading = {
+        turnId: created.turnId,
+        conversationId: created.conversationId,
+        assistantId,
+        controller: new AbortController(),
+        progress: TURN_START,
+        view: EMPTY_TURN,
+        text,
+        userId,
+      };
+      readingRef.current = reading;
+      read(reading);
     },
-    [
-      api,
-      state.conversationId,
-      onConversationStarted,
-      onTurnFinished,
-      onTurnCompleted,
-      onUnauthenticated,
-    ],
+    [api, read, state.conversationId],
   );
+
+  /**
+   * «Cancelar» (D121 (7)): the turn ends interrupted in Mango; what was written stays, with
+   * «Respuesta detenida…». Shown at once; the API is told without waiting for it.
+   */
+  const stop = useCallback(() => {
+    const creating = creatingRef.current;
+    const reading = readingRef.current;
+    creating?.controller.abort();
+    if (reading) {
+      reading.controller.abort();
+      readingRef.current = null;
+      turnsInFlight.delete(reading.conversationId);
+      void api.cancelTurn(reading.turnId).catch(() => undefined);
+    }
+    window.clearTimeout(resumedTimer.current);
+    const assistantId = reading?.assistantId ?? creating?.assistantId;
+    if (assistantId) dispatch({ type: 'finish', assistantId, status: 'stopped' });
+    creatingRef.current = null;
+    setIsStreaming(false);
+    if (creating || reading) callbacks.current.onTurnFinished();
+  }, [api]);
+
+  /** «Volver a conectar»: reads the turn again from where it stopped, without asking again. */
+  const reconnect = useCallback(() => {
+    const reading = readingRef.current;
+    if (!reading) return;
+    const next: Reading = { ...reading, controller: new AbortController() };
+    readingRef.current = next;
+    dispatch({
+      type: 'connection',
+      assistantId: reading.assistantId,
+      connection: { kind: 'reconnecting', attempt: 1 },
+    });
+    read(next);
+  }, [read]);
 
   const updateApproval = useCallback((approval: ChatApproval) => {
     dispatch({ type: 'approval', approval });
   }, []);
 
-  return { state, isStreaming, send, stop, reset, updateApproval };
+  return { state, isStreaming, send, stop, reset, reconnect, updateApproval };
 }

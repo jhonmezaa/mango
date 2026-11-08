@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 
 import type {
   Citation,
+  ConnectionView,
   DisplayMessage,
   KnowledgeSearch,
   TurnProgress,
@@ -172,6 +173,8 @@ interface Props {
   resendText: string | null;
   /** Question to send again when this failed turn can be retried; null otherwise. */
   retryText: string | null;
+  /** «Volver a conectar» of a turn whose reading gave up (design round 40). */
+  onReconnect?: () => void;
 }
 
 const NO_SOURCES: readonly string[] = [];
@@ -187,6 +190,52 @@ function useRemoteSources(registrations: readonly string[]): readonly RemoteLink
   return useMemo(
     () => (used ? linkSourcesOf(registrations, list) : NO_LINK_SOURCES),
     [used, registrations, list],
+  );
+}
+
+/**
+ * Design round 40 `ConnLine` (D120 (4)): the stream of the turn was cut. While it reconnects the
+ * text stays and only this line says so; once it is back, «Reconectado» for 2.5 s; after 12
+ * attempts, «Volver a conectar», which reads the turn again without asking it again.
+ */
+function ConnLine({
+  connection,
+  onReconnect,
+}: {
+  connection: ConnectionView;
+  onReconnect: (() => void) | undefined;
+}) {
+  const { t } = useTranslation();
+  if (connection.kind === 'reconnecting') {
+    return (
+      <div className="cr-conn" role="status">
+        <span className="spinner" aria-hidden="true" />
+        {t('chat.connection.reconnecting')}{' '}
+        <span className="mono">{t('chat.connection.attempt', { n: connection.attempt })}</span>
+      </div>
+    );
+  }
+  if (connection.kind === 'resumed') {
+    return (
+      <div className="cr-conn is-ok" role="status">
+        <CheckIcon size={12} />
+        {t('chat.connection.resumed')}
+      </div>
+    );
+  }
+  return (
+    <div className="mc-alert amber msg-guardrail" role="alert">
+      <WarnIcon size={14} />
+      <div className="min-w-0 flex-1">
+        <b>{t('chat.connection.failedTitle')}</b> {t('chat.connection.failedBody')}
+      </div>
+      {onReconnect ? (
+        <button type="button" className="btn btn-sm" onClick={onReconnect}>
+          <RefreshIcon size={11} />
+          {t('chat.connection.reconnect')}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -229,6 +278,7 @@ export const ChatMessage = memo(function ChatMessage({
   onSend,
   resendText,
   retryText,
+  onReconnect,
 }: Props) {
   const { t } = useTranslation();
   const running = message.tools.reduce(
@@ -269,10 +319,20 @@ export const ChatMessage = memo(function ChatMessage({
   }
 
   const streaming = message.status === 'streaming';
+  const connection = message.connection;
+  // Design round 40: while the connection is cut, the cursor and the phase line are hidden.
+  const cut = connection !== undefined && connection.kind !== 'resumed';
   const writing = streaming && message.progress?.phase === 'writing';
   const steps = message.steps ?? NO_STEPS;
   const budgetExceeded = message.errorKey === 'errors.budget_exceeded';
-  const finished = (message.status === 'done' || message.status === 'stopped') && message.content;
+  const finished =
+    (message.status === 'done' ||
+      message.status === 'stopped' ||
+      message.status === 'interrupted' ||
+      message.status === 'away') &&
+    message.content;
+  // Design round 40: a stopped, interrupted or still running answer is not asked again from it.
+  const resendable = message.status === 'done' && !message.truncated;
   // A cancelled answer keeps its partial text as is, followed by a separate note (design: chat.jsx
   // "stopped_note"); with nothing received yet, only the note is shown.
   const stoppedNote = message.status === 'stopped' && (
@@ -303,14 +363,17 @@ export const ChatMessage = memo(function ChatMessage({
         {message.content ? (
           // Until the markdown chunk loads, the text is shown as plain text (escaped by React).
           <Suspense fallback={<p className="md whitespace-pre-wrap">{message.content}</p>}>
-            <ChatMarkdown streaming={writing} remote={remote} strip={strip}>
+            <ChatMarkdown streaming={writing && !cut} remote={remote} strip={strip}>
               {message.content}
             </ChatMarkdown>
           </Suspense>
         ) : null}
         {/* The phase stays under the partial text while the agent calls tools or the next block
             is on its way; while it writes, the cursor says so. */}
-        {streaming && !(writing && message.content) ? (
+        {streaming && connection ? (
+          <ConnLine connection={connection} onReconnect={onReconnect} />
+        ) : null}
+        {streaming && !cut && !(writing && message.content) ? (
           <p className="msg-thinking ch-phase" role="status" aria-live="polite">
             <span
               className="ch-orb"
@@ -328,7 +391,7 @@ export const ChatMessage = memo(function ChatMessage({
             ) : null}
           </p>
         ) : null}
-        {writing && message.content ? (
+        {writing && !cut && message.content ? (
           <span className="sr-only" role="status">
             {t('chat.progress.writing')}
           </span>
@@ -340,6 +403,20 @@ export const ChatMessage = memo(function ChatMessage({
           </div>
         ) : null}
         {message.truncated ? <TruncatedNotice truncation={message.truncated} /> : null}
+        {message.status === 'interrupted' ? (
+          <div className="mc-alert amber msg-guardrail" role="status">
+            <WarnIcon size={14} />
+            <div>
+              <b>{t('chat.interrupted.title')}</b> {t('chat.interrupted.body')}
+            </div>
+          </div>
+        ) : null}
+        {message.status === 'away' ? (
+          <p className="msg-away">
+            <span className="spinner" aria-hidden="true" />
+            {t('chat.away')}
+          </p>
+        ) : null}
         <KnowledgeCitations citations={message.citations ?? NO_CITATIONS} />
         {message.status === 'error' &&
           (budgetExceeded ? (
@@ -403,7 +480,7 @@ export const ChatMessage = memo(function ChatMessage({
               </span>
             </Soon>
             {/* Design round 34: asking again would be cut the same way and charged again. */}
-            {resendText !== null && !message.truncated && (
+            {resendText !== null && resendable && (
               <button
                 type="button"
                 className="btn btn-ghost btn-icon"
