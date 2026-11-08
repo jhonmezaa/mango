@@ -1,0 +1,16 @@
+[project]
+name = "mango-chat-files-scan"
+version = "0.1.0"
+description = "Lambda that records the GuardDuty malware scan of each file of the chat (D116 (2))"
+requires-python = ">=3.13,<3.14"
+dependencies = ["boto3>=1.43.104", "mango-core"]
+
+[tool.uv.sources]
+mango-core = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mango_chat_files_scan"]

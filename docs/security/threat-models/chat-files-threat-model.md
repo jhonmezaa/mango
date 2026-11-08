@@ -1,4 +1,4 @@
-# Archivos del chat (subida, generados, escaneo y descarga): modelo de amenazas (v0.1)
+# Archivos del chat (subida, generados, escaneo y descarga): modelo de amenazas (v0.2)
 
 > Fecha: 2026-11-07 · Skill: `security-threat-model`. Plan: [`docs/specs/chat-capacidades-plan.md`](../../specs/chat-capacidades-plan.md) (§5, PR C1, C5, W1 y U1, §7). Decisión que lo enmarca: [D116](../../architecture/decisions/D116-archivos-del-chat.md) (bucket propio, 20 × 100 MB, 90 días, escaneo de malware; vigente; su punto 9, el borrado, lo fijó este modelo); precisa D88 (25) (escaneo) y D86 (1), (5) y (10) (vía nueva, firma con `Mango-<ns>-Presign`). Además D16, D23, D24, D59, D63, D70 y la CSP de `infra/lib/constructs/edge.ts`.
 > Amplía `knowledge-bases-threat-model.md` (TM-K11, firma con rol propio; el patrón de subida de D88 (9), (30) y (33)) y `task-reports-threat-model.md` (descarga prefirmada de 5 min). El sandbox que genera archivos está en [`code-interpreter-threat-model.md`](code-interpreter-threat-model.md).
@@ -140,13 +140,32 @@ flowchart LR
 
 ## Focus paths for security review
 
-| Ruta (cuando exista) | Por qué | Amenazas |
+| Ruta | Por qué | Amenazas |
 |---|---|---|
 | `infra/lib/constructs/` del bucket de archivos | Política, TBAC, ciclo de vida, plan de GuardDuty, llave | TM-CF3, CF5, CF6 |
-| `apps/api/src/mango_api/chat_files.py` (y `_store`) | Resolución por dueño, tipos, firma | TM-CF1, CF4, CF9 |
+| `apps/api/src/mango_api/chat_files.py` y `chat_files_store.py` | Resolución por dueño, estados, tipos, firma, contenido | TM-CF1, CF3, CF4, CF9 |
+| `functions/chat-files-scan/`, `infra/lib/constructs/chat-files-scan.ts` | El registro del escaneo y su rol | TM-CF3 |
+| `packages/py/mango-core/src/mango_core/chat_files.py` | Tipos, firma de bytes, claves | TM-CF4, CF8 |
 | `apps/api/src/mango_api/presign.py` | Permisos del rol y session policy | TM-CF5 |
 | `infra/lib/constructs/edge.ts` | `img-src blob:`, `connect-src` | TM-CF4 |
 | `apps/web/src/security/safeUrl.ts`, `ChatMarkdown.tsx` | `mango-file:` | TM-CF2 |
+
+## Estado tras U1 (v0.2, 2026-11-08)
+
+Construido en `mango-api` con tests (moto), sin web y sin ver en una instalación ([D116](../../architecture/decisions/D116-archivos-del-chat.md) (11)). Skill aplicada: `security-best-practices` (FastAPI) en modo generación; `security-audit` (guía) sobre IAM.
+
+| ID | Qué quedó construido | Lo que falta |
+|---|---|---|
+| TM-CF1 | `chat_files.py`: cada archivo se lee en la partición de quien llama (sesión de seguridad por fila) y Cedar decide `OwnConversation` con el dueño de su registro; ajeno e inexistente responden el mismo 404; la clave sale del registro; la descarga y la subida, firmadas por `Mango-<ns>-Presign` con la sesión del dueño | La session policy por persona de la sesión de Presign (defensa en profundidad): sigue pendiente; la prioridad no cambia (**medium**) |
+| TM-CF3 | Nada se lee ni se copia antes del registro del escaneo (`CSCAN#<clave>`, que escribe `Mango-<ns>-ChatFilesScanResults`); solo `NO_THREATS_FOUND` abre un archivo y cualquier otro valor lo bloquea; la copia a `owner/` va sin etiquetas, toma solo el objeto que el escaneo limpió (ETag) y se escanea otra vez; un escaneo que no llega en 30 minutos falla el archivo; alarmas `ChatFiles-blocked` y `ChatFilesScanResults-failed` | La prueba GD en una instalación (CMK, etiqueta, TBAC y el evento) |
+| TM-CF4 | Lista cerrada por extensión y por bytes (PDF, CSV, TXT, JSON, XLSX, DOCX, PPTX, PNG, JPEG); la descarga siempre `attachment` con el nombre en RFC 5987 y el tipo del servidor; `…/content` solo PNG y JPEG, con sus primeros bytes comprobados otra vez, `nosniff`, `Cache-Control: private, no-store` y `Content-Security-Policy: default-src 'none'; sandbox` | `img-src blob:` en la CSP de la SPA (W1) |
+| TM-CF5 | Enlaces de 5 minutos, 60 por persona y hora (compartido), auditados antes de emitirse; nunca se loguean ni se guardan | — |
+| TM-CF6 | 20 × 100 MB con `content-length-range`; 200 archivos por hora y 5 GB por día por persona; 120 confirmaciones e imágenes por minuto; todo compartido entre tareas (D70) | — |
+| TM-CF7 | `delete_conversation_files`: borra los objetos de `uploads/` y `owner/` y marca los registros, que vencen con el TTL; auditado con conteos | No existe la ruta de borrar una conversación ni la baja de una persona que lo llamen; la sesión del Code Interpreter es de C2 |
+| TM-CF8 | Claves de ids; la auditoría lleva ids, tipo, tamaño y SHA-256, nunca el nombre; la función del escaneo loguea ids y el resultado | — |
+| TM-CF9 | `ChatRequest.attachments` (hasta 20 ids): solo subidas `ready`, no vencidas, de esa conversación y de esa persona, comprobadas por `mango-api` y otra vez por el trabajador antes de reservar; una conversación que aún no existe solo se admite si trae adjuntos suyos | Que el sandbox los reciba con `writeFiles` (C2) y que solo los acepten agentes con «Ejecutar código» (C3) |
+
+Nuevo: el rol de `Mango-<ns>-ChatFilesScanResults` solo actualiza los atributos del escaneo (`dynamodb:Attributes`) en particiones `USER#*` de `Conversations` y no lee nada; un evento falso en el bus por defecto no puede abrir un archivo, porque además de su registro la política del bucket sigue negando la lectura sin la etiqueta limpia.
 
 ## Supuestos validados
 

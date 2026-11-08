@@ -55,6 +55,8 @@ export const roleNames = {
    * the role lives in a stack nested in Core (D99).
    */
   chatFilesScanner: (ns: string) => mangoName(ns, "ChatFilesScan"),
+  /** Function that records what the scan said of each chat file, for mango-api (D116 (2)). */
+  chatFilesScanResults: (ns: string) => mangoName(ns, "ChatFilesScanResults"),
 };
 
 /**

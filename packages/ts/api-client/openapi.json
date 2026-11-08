@@ -2516,6 +2516,131 @@
         "title": "ChangeListOut",
         "type": "object"
       },
+      "ChatAttachmentOut": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "gone": {
+            "title": "Gone",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "upload",
+              "generated"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "uploading",
+              "scanning",
+              "ready",
+              "blocked",
+              "type_mismatch",
+              "too_large",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_id",
+          "name",
+          "kind",
+          "size_bytes",
+          "status",
+          "origin",
+          "expires_at",
+          "gone"
+        ],
+        "title": "ChatAttachmentOut",
+        "type": "object"
+      },
+      "ChatAttachmentsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAttachmentOut"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "ChatAttachmentsOut",
+        "type": "object"
+      },
+      "ChatConfirmIn": {
+        "additionalProperties": false,
+        "properties": {
+          "file_ids": {
+            "items": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "File Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "file_ids"
+        ],
+        "title": "ChatConfirmIn",
+        "type": "object"
+      },
+      "ChatEmptyIn": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "ChatEmptyIn",
+        "type": "object"
+      },
+      "ChatFileLinkOut": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "title": "File",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "file"
+        ],
+        "title": "ChatFileLinkOut",
+        "type": "object"
+      },
       "ChatRequest": {
         "additionalProperties": false,
         "description": "A turn. Besides the message the client only picks the agent of a new conversation and\none of that agent's allowed models; everything else comes from the published version.",
@@ -2531,6 +2656,16 @@
               }
             ],
             "title": "Agent Id"
+          },
+          "attachments": {
+            "default": [],
+            "items": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Attachments",
+            "type": "array"
           },
           "conversation_id": {
             "anyOf": [
@@ -2567,6 +2702,137 @@
           "message"
         ],
         "title": "ChatRequest",
+        "type": "object"
+      },
+      "ChatSignedUploadOut": {
+        "additionalProperties": false,
+        "description": "One announced file, in the order it was announced.",
+        "properties": {
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "uploading",
+              "unsupported_type",
+              "too_large"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "ChatSignedUploadOut",
+        "type": "object"
+      },
+      "ChatUploadFileIn": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 1099511627776.0,
+            "minimum": 1.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size"
+        ],
+        "title": "ChatUploadFileIn",
+        "type": "object"
+      },
+      "ChatUploadsIn": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ChatUploadFileIn"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "ChatUploadsIn",
+        "type": "object"
+      },
+      "ChatUploadsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/ChatSignedUploadOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "expires_at",
+          "files"
+        ],
+        "title": "ChatUploadsOut",
         "type": "object"
       },
       "CitationOut": {
@@ -6169,6 +6435,41 @@
         "title": "MemoryRecordOut",
         "type": "object"
       },
+      "MessageAttachmentOut": {
+        "additionalProperties": false,
+        "description": "A file of a question (D116): its name, kind and size, and whether it is still there.",
+        "properties": {
+          "file_id": {
+            "title": "File Id",
+            "type": "string"
+          },
+          "gone": {
+            "title": "Gone",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id",
+          "name",
+          "kind",
+          "size_bytes",
+          "gone"
+        ],
+        "title": "MessageAttachmentOut",
+        "type": "object"
+      },
       "MessageOut": {
         "additionalProperties": false,
         "properties": {
@@ -6178,6 +6479,14 @@
               "type": "string"
             },
             "title": "Approvals",
+            "type": "array"
+          },
+          "attachments": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MessageAttachmentOut"
+            },
+            "title": "Attachments",
             "type": "array"
           },
           "citations": {
@@ -18620,6 +18929,116 @@
         "summary": "Get Conversation"
       }
     },
+    "/conversations/{conversation_id}/files/{file_id}/content": {
+      "get": {
+        "operationId": "chat_file_content",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "image/jpeg": {},
+              "image/png": {}
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Chat File Content"
+      }
+    },
+    "/conversations/{conversation_id}/files/{file_id}/download": {
+      "post": {
+        "operationId": "download_chat_file",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "file_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatEmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatFileLinkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Download Chat File"
+      }
+    },
     "/conversations/{conversation_id}/turn": {
       "get": {
         "description": "The conversation's turn in flight, if any (D120, D121 (6)): what a reloaded page or\nanother tab follows. Only its owner: looked up in their partition only (row-level\nsecurity) and ``OwnConversation`` decided and audited, with the same 404 for someone\nelse's, a missing one and a denial (TM-TW3). One read of the conversation's\n``INFLIGHT#`` item and one of its turn: no scan.",
@@ -18658,6 +19077,117 @@
           }
         },
         "summary": "Conversation Turn"
+      }
+    },
+    "/conversations/{conversation_id}/uploads": {
+      "post": {
+        "operationId": "request_chat_uploads",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatUploadsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatUploadsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Request Chat Uploads"
+      }
+    },
+    "/conversations/{conversation_id}/uploads/{upload_id}/confirm": {
+      "post": {
+        "description": "Idempotent: the composer calls it once the POSTs end and again to follow the\nscans («Revisando el archivo…»).",
+        "operationId": "confirm_chat_uploads",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "upload_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Upload Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAttachmentsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Confirm Chat Uploads"
       }
     },
     "/costs": {

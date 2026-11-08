@@ -58,6 +58,9 @@ import {
     zConfirmApprovalBody,
     zConfirmApprovalPath,
     zConfirmApprovalResponse,
+    zConfirmChatUploadsBody,
+    zConfirmChatUploadsPath,
+    zConfirmChatUploadsResponse,
     zConnectMyAccountBody,
     zConnectMyAccountPath,
     zConnectMyAccountResponse,
@@ -95,6 +98,9 @@ import {
     zDisconnectMyAccountBody,
     zDisconnectMyAccountPath,
     zDisconnectMyAccountResponse,
+    zDownloadChatFileBody,
+    zDownloadChatFilePath,
+    zDownloadChatFileResponse,
     zDownloadTaskReportBody,
     zDownloadTaskReportPath,
     zDownloadTaskReportResponse,
@@ -284,6 +290,9 @@ import {
     zReopenVersionBody,
     zReopenVersionPath,
     zReopenVersionResponse,
+    zRequestChatUploadsBody,
+    zRequestChatUploadsPath,
+    zRequestChatUploadsResponse,
     zRequestDocumentUploadsBody,
     zRequestDocumentUploadsPath,
     zRequestDocumentUploadsResponse,
@@ -391,7 +400,7 @@ import {
  * Every route of mango-api that answers JSON: how to call it and the zod schemas of its path
  * parameters, query, body and response. Paths are relative to the API base path.
  *
- * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, POST /chat, GET /chat/turns/{turn_id}/stream, POST /evals/requirement-changes/{change_id}/approve, POST /evals/requirement-changes/{change_id}/reject, POST /evals/requirement-changes/{change_id}/withdraw, POST /evals/suites/{suite_id}/delete, DELETE /memory/{record_id}, POST /playground/runs, POST /session, DELETE /session.
+ * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, POST /chat, GET /chat/turns/{turn_id}/stream, GET /conversations/{conversation_id}/files/{file_id}/content, POST /evals/requirement-changes/{change_id}/approve, POST /evals/requirement-changes/{change_id}/reject, POST /evals/requirement-changes/{change_id}/withdraw, POST /evals/suites/{suite_id}/delete, DELETE /memory/{record_id}, POST /playground/runs, POST /session, DELETE /session.
  */
 export const operations = {
     addComment: {
@@ -574,6 +583,15 @@ export const operations = {
         body: zConfirmApprovalBody,
         response: zConfirmApprovalResponse,
     },
+    confirmChatUploads: {
+        method: 'POST',
+        path: '/conversations/{conversation_id}/uploads/{upload_id}/confirm',
+        status: 200,
+        pathParams: zConfirmChatUploadsPath,
+        query: null,
+        body: zConfirmChatUploadsBody,
+        response: zConfirmChatUploadsResponse,
+    },
     connectivityCheck: {
         method: 'POST',
         path: '/admin/connectivity-check',
@@ -708,6 +726,15 @@ export const operations = {
         query: null,
         body: zDisconnectMyAccountBody,
         response: zDisconnectMyAccountResponse,
+    },
+    downloadChatFile: {
+        method: 'POST',
+        path: '/conversations/{conversation_id}/files/{file_id}/download',
+        status: 200,
+        pathParams: zDownloadChatFilePath,
+        query: null,
+        body: zDownloadChatFileBody,
+        response: zDownloadChatFileResponse,
     },
     downloadTaskReport: {
         method: 'POST',
@@ -1554,6 +1581,15 @@ export const operations = {
         query: null,
         body: zReopenVersionBody,
         response: zReopenVersionResponse,
+    },
+    requestChatUploads: {
+        method: 'POST',
+        path: '/conversations/{conversation_id}/uploads',
+        status: 201,
+        pathParams: zRequestChatUploadsPath,
+        query: null,
+        body: zRequestChatUploadsBody,
+        response: zRequestChatUploadsResponse,
     },
     requestDocumentUploads: {
         method: 'POST',

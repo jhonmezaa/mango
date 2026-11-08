@@ -24,6 +24,7 @@ import { CurExportBucket } from "../constructs/cur-export.js";
 import { Deprovisioner } from "../constructs/deprovisioner.js";
 import { Edge } from "../constructs/edge.js";
 import { EVAL_JUDGE_ALARMS, EVALUATION_FEE_USD } from "../constructs/eval-judge.js";
+import { CHAT_FILES_ALARMS } from "../constructs/chat-files-scan.js";
 import { DenyEvalsContent, Evals, EvalsCapture, judgeModels } from "../constructs/evals.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
@@ -296,7 +297,9 @@ export class CoreStack extends Stack {
     edge.allowConnectTo(knowledge.uploadOrigin);
     // D116: the files of the chat (uploads and what the code sandbox generates), read only once
     // their malware scan cleared them. The bucket and its key hold data and stay in Core.
-    const chatFiles = new ChatFiles(this, "ChatFiles", { installation: cfg, accessLogs });
+    const chatFiles = new ChatFiles(this, "ChatFiles", { installation: cfg, accessLogs, appOrigin: edge.origin });
+    // The browser posts the chat's attachments to that bucket only (D116 (4)).
+    edge.allowConnectTo(chatFiles.uploadOrigin);
     // D114: the network of the code sandbox. Its VPC is here because the stack tagger tags its
     // defaults; the subnets, the Code Interpreter and the scan plan are in a nested stack (D99).
     const sandboxVpc = new SandboxVpc(this, "SandboxVpc", { installation: cfg, accessLogs });
@@ -304,6 +307,14 @@ export class CoreStack extends Stack {
       installation: cfg,
       vpcId: sandboxVpc.vpc.vpcId,
       chatFiles: { bucket: chatFiles.bucket, key: chatFiles.key },
+      // D116 (2): what each scan said, for mango-api, and mango-api's policy on the bucket.
+      scanResults: {
+        conversations: governance.conversations,
+        dataKey: governance.dataKey,
+        configKey: tools.configKey,
+        alerts,
+      },
+      apiTaskRole,
     });
     // D117: Word, Excel and PowerPoint to PDF and PNG pages, from the image of the release in the
     // repository of mango-api, by digest. Only in a release: there is no image to name without one.
@@ -700,6 +711,8 @@ export class CoreStack extends Stack {
       ...tasks.apiEnvironment,
       ...taskReports.apiEnvironment,
       ...knowledge.apiEnvironment,
+      // D116: attachments and generated files of the chat.
+      CHAT_FILES_BUCKET: chatFiles.bucket.bucketName,
       ...skills.apiEnvironment,
       ...evals.apiEnvironment,
       // D110: the evaluator mango-api asks for the verdict of a judge case, and its judges.
@@ -821,6 +834,7 @@ export class CoreStack extends Stack {
         ...Object.values(CUR_RECONCILER_ALARMS),
         ...Object.values(EVAL_JUDGE_ALARMS),
         ...(props.release ? Object.values(RENDER_DOCUMENT_ALARMS) : []),
+        ...Object.values(CHAT_FILES_ALARMS),
       ],
     });
     // «Probar búsqueda» throttled by Bedrock counts in the alarm of the tool (D88 (12)).

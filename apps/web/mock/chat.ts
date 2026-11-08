@@ -184,8 +184,14 @@ async function admitTurn(req: IncomingMessage, res: ServerResponse): Promise<Adm
   }
   const record: Record<string, unknown> =
     typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
-  const allowedKeys = ['agent_id', 'conversation_id', 'message', 'model'];
-  const { conversation_id: conversationId, message, agent_id: agentId, model } = record;
+  const allowedKeys = ['agent_id', 'conversation_id', 'message', 'model', 'attachments'];
+  const {
+    conversation_id: conversationId,
+    message,
+    agent_id: agentId,
+    model,
+    attachments,
+  } = record;
   if (
     Object.keys(record).some((key) => !allowedKeys.includes(key)) ||
     typeof message !== 'string' ||
@@ -193,9 +199,16 @@ async function admitTurn(req: IncomingMessage, res: ServerResponse): Promise<Adm
     message.length > 4000 ||
     (conversationId != null && typeof conversationId !== 'string') ||
     (agentId != null && (typeof agentId !== 'string' || !AGENT_ID.test(agentId))) ||
-    (model != null && typeof model !== 'string')
+    (model != null && typeof model !== 'string') ||
+    (attachments != null && (!Array.isArray(attachments) || attachments.length > 20))
   ) {
     sendError(res, 422, 'invalid_request', 'Invalid chat request');
+    return null;
+  }
+  // D116 (11): the files of a question. The mock keeps no uploads: any id is not of the
+  // conversation, as the API answers for one it does not find.
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    sendError(res, 404, 'unknown_attachment', 'an attachment is not of this conversation');
     return null;
   }
   if (/presupuesto agotado/i.test(message)) {

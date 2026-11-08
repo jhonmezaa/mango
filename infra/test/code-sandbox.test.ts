@@ -317,10 +317,96 @@ describe("chat files (D116)", () => {
     expect(sid("ChatFilesKey").Resource).toEqual({ "Fn::GetAtt": [keyId, "Arn"] });
   });
 
-  it("is reached by no role of mango-api's task yet: nothing uses the sandbox or the files (C1)", () => {
+  it("is reached by mango-api to check, copy, show and delete files, never the sandbox (U1, D116)", () => {
     const [apiRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-ApiTask` });
-    const api = JSON.stringify(statementsOf(apiRoleId));
-    expect(api).not.toContain(bucketId);
-    expect(api).not.toContain(ciId);
+    const statements = statementsOf(apiRoleId).filter((s) => JSON.stringify(s).includes(bucketId) || JSON.stringify(s).includes(keyId));
+    expect(statements.map((s) => s.Sid).sort()).toEqual(["ChatFilesKey", "CopyChatUploads", "DeleteChatFiles", "ReadChatFiles"]);
+    const sid = (name: string) => statements.find((s) => s.Sid === name)!;
+    expect(actions(sid("ReadChatFiles"))).toEqual(["s3:GetObject"]);
+    expect(actions(sid("CopyChatUploads"))).toEqual(["s3:PutObject"]);
+    expect(JSON.stringify(sid("CopyChatUploads").Resource)).toContain("/owner/*");
+    expect(JSON.stringify(sid("CopyChatUploads").Resource)).not.toContain("/uploads/*");
+    expect(actions(sid("DeleteChatFiles"))).toEqual(["s3:DeleteObject"]);
+    expect(sid("ChatFilesKey").Condition).toEqual({ StringEquals: { "kms:ViaService": `s3.${cfg.region}.amazonaws.com` } });
+    for (const statement of statements) {
+      expect(statement.Effect).toBe("Allow");
+      // Never a tag: only the scanner tags (D116 (10)).
+      expect(actions(statement).some((a) => a.includes("*") || a.includes("Tagging"))).toBe(false);
+      expect(JSON.stringify(statement.Resource)).not.toBe('"*"');
+    }
+    expect(JSON.stringify(statementsOf(apiRoleId))).not.toContain(ciId);
+    // The policy is in the sandbox stack nested in Core: Core is at its limit of resources (D99).
+    const [policyId] = only("AWS::IAM::ManagedPolicy", { ManagedPolicyName: `Mango-${ns}-ApiChatFiles` });
+    expect(Object.keys(sandboxResources)).toContain(policyId);
+  });
+
+  it("takes uploads only by POST from the SPA, and its host is the only one the CSP adds (D116 (4))", () => {
+    expect(bucket.Properties.CorsConfiguration.CorsRules).toEqual([
+      expect.objectContaining({ AllowedMethods: ["POST"], AllowedHeaders: [], MaxAge: 600 }),
+    ]);
+    expect(bucket.Properties.CorsConfiguration.CorsRules[0].AllowedOrigins).toHaveLength(1);
+    // A name of its own (no cycle with the CSP, D88 (31)): mango-<ns>-chat-files-<8 hex>.
+    expect(JSON.stringify(bucket.Properties.BucketName)).toContain(`mango-${ns}-chat-files-`);
+    const csp = JSON.stringify(template.toJSON()).match(/connect-src[^;]*/g) ?? [];
+    expect(csp.some((directive) => directive.includes("chat-files-"))).toBe(true);
+  });
+
+  it("tells mango-api its bucket, and nothing else of it", () => {
+    const [, service] = ofType("AWS::ECS::TaskDefinition").find(([, r]) =>
+      JSON.stringify(r.Properties.ContainerDefinitions).includes("CHAT_FILES_BUCKET"),
+    )!;
+    const env = service.Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[];
+    expect(env.find((e) => e.Name === "CHAT_FILES_BUCKET")!.Value).toEqual({ Ref: bucketId });
+  });
+});
+
+describe("scan results of the chat files (D116 (2))", () => {
+  const [functionId, fn] = Object.entries(sandboxResources).find(
+    ([, r]) => r.Type === "AWS::Lambda::Function" && r.Properties.FunctionName === `Mango-${ns}-ChatFilesScanResults`,
+  ) ?? [undefined, undefined];
+  const [resultsRoleId] = only("AWS::IAM::Role", { RoleName: `Mango-${ns}-ChatFilesScanResults` });
+
+  it("is a function of the sandbox stack, invoked asynchronously, with a dead-letter queue and alarms", () => {
+    expect(functionId).toBeDefined();
+    expect(fn!.Properties.DeadLetterConfig).toBeDefined();
+    const alarms = Object.values(sandboxResources)
+      .filter((r) => r.Type === "AWS::CloudWatch::Alarm")
+      .map((r) => r.Properties.AlarmName);
+    expect(alarms).toEqual(
+      expect.arrayContaining([`Mango-${ns}-ChatFiles-blocked`, `Mango-${ns}-ChatFilesScanResults-failed`]),
+    );
+  });
+
+  it("is invoked by the scan events of this bucket only, for the keys of people's files", () => {
+    const [, rule] = Object.entries(sandboxResources).find(
+      ([, r]) => r.Type === "AWS::Events::Rule" && r.Properties.Name === `Mango-${ns}-ChatFiles-scan-results`,
+    )!;
+    const pattern = rule.Properties.EventPattern;
+    expect(pattern.source).toEqual(["aws.guardduty"]);
+    expect(pattern["detail-type"]).toEqual(["GuardDuty Malware Protection Object Scan Result"]);
+    expect(pattern.detail.s3ObjectDetails.objectKey).toEqual([{ prefix: "uploads/" }, { prefix: "owner/" }]);
+    expect(pattern.detail.s3ObjectDetails.bucketName).toHaveLength(1);
+  });
+
+  it("only writes the scan's attributes of items of people's partitions, and reads nothing", () => {
+    const statements = statementsOf(resultsRoleId);
+    const record = statements.find((s) => s.Sid === "RecordScanResults")!;
+    expect(actions(record)).toEqual(["dynamodb:UpdateItem"]);
+    expect(record.Condition!["ForAllValues:StringLike"]).toEqual({ "dynamodb:LeadingKeys": ["USER#*"] });
+    expect(record.Condition!["ForAllValues:StringEquals"]!["dynamodb:Attributes"]).toEqual([
+      "PK",
+      "SK",
+      "scan_result",
+      "scanned_at",
+      "scan_etag",
+      "scan_version",
+      "ttl",
+    ]);
+    const all = statements.flatMap(actions);
+    expect(all.some((a) => a.startsWith("s3:") || a === "dynamodb:GetItem" || a === "dynamodb:Query")).toBe(false);
+    for (const statement of statements) {
+      if (statement.Sid === undefined && actions(statement).every((a) => a.startsWith("xray:"))) continue;
+      expect(JSON.stringify(statement.Resource)).not.toBe('"*"');
+    }
   });
 });

@@ -36,7 +36,7 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from mango_api import chat_stream, harness, knowledge_citations, memory, sessions
+from mango_api import chat_files, chat_stream, harness, knowledge_citations, memory, sessions
 from mango_api.activity import TurnActivity
 from mango_api.activity_store import Origin
 from mango_api.approvals import (
@@ -64,8 +64,10 @@ from mango_api.web import ApiError, Caller
 from mango_core import invocation, usage_days
 from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN
 from mango_core.budget_turns import PendingTurn
+from mango_core.chat_files import MAX_FILES
 from mango_core.harness_tools import KNOWLEDGE_TOOL
 from mango_core.identity import IdentityError, NoAreaError, NoGroupError, user_from_claims
+from mango_core.knowledge import ID_PATTERN as FILE_ID_PATTERN
 from mango_core.skills import parse_ref as parse_skill_ref
 
 if TYPE_CHECKING:
@@ -250,8 +252,10 @@ def start_turn(
     agent_id: str,
     binding: str,
     turn_seconds: int,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> sessions.SessionPlan:
-    """Take the runtime session this turn runs in and store the user's message.
+    """Take the runtime session this turn runs in and store the user's message (and what it
+    keeps of its files, D116).
 
     When another turn of the conversation takes the session first, this one plans again from
     the new state (a turn in flight is never continued, so it gets a session of its own).
@@ -281,7 +285,10 @@ def start_turn(
             continue
         # Only a turn that goes ahead stores its question: one refused as busy was never sent
         # (design round 40, «Tu mensaje no se envió»).
-        repo.add_message(user_id, conversation_id, "user", message)
+        if attachments:
+            repo.add_message(user_id, conversation_id, "user", message, attachments=attachments)
+        else:
+            repo.add_message(user_id, conversation_id, "user", message)
         return session
     raise ApiError(409, "conversation_busy", "another message is being answered; try again")
 
@@ -518,6 +525,10 @@ class TurnMessage(_Strict):
     token_exp: int
     signature_context: SignatureContext
     enqueued_at: int
+    attachments: Annotated[
+        tuple[Annotated[str, Field(pattern=FILE_ID_PATTERN)], ...], Field(max_length=MAX_FILES)
+    ] = ()
+    """Ids of the files of the question (D116); the worker reads them again (TM-CF9)."""
 
 
 def signature_context(agent: PublishedAgent) -> SignatureContext:
@@ -737,6 +748,7 @@ class ChatTurns:
         conversation_id: str,
         checked: CheckedTurn,
         message: str,
+        attachments: tuple[str, ...] = (),
     ) -> None:
         """Write the turn as ``queued`` and send it. The body carries the token: it is never
         logged, not even when sending fails."""
@@ -763,6 +775,7 @@ class ChatTurns:
                 "token_exp": caller.expires_at,
                 "signature_context": signature_context(checked.agent).model_dump(mode="json"),
                 "enqueued_at": now,
+                **({"attachments": list(attachments)} if attachments else {}),
             },
             separators=(",", ":"),
             ensure_ascii=False,
@@ -1258,6 +1271,12 @@ class ChatTurns:
         )
         text = message.message
         history.append(harness.ChatTurn("user", f"{note}\n\n{text}" if note else text))
+        # The files of the question, read again (TM-CF9): still ready, of this conversation
+        # and person. Extension point of C2: the session of the code sandbox receives them
+        # with ``writeFiles`` once its connector exists; until then they are only recorded.
+        attached = chat_files.turn_attachments(
+            services.chat_files, user.user_id, conversation_id, message.attachments
+        )
 
         # Reserved with the price of the model this turn runs on (D22, rule 4), and the
         # knowledge searches it may make (D88 (14)).
@@ -1329,6 +1348,7 @@ class ChatTurns:
                 agent_id=agent_id,
                 binding=sessions.session_binding(user, fingerprint),
                 turn_seconds=limits.timeout_seconds,
+                attachments=chat_files.snapshot(attached),
             )
             session_id = sessions.runtime_session_id(
                 user=user,

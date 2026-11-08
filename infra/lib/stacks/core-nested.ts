@@ -4,6 +4,11 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as avp from "aws-cdk-lib/aws-verifiedpermissions";
 import { Construct } from "constructs";
 import { Installation } from "../config/schema.js";
+import {
+  ChatFilesScanResults,
+  ChatFilesScanResultsProps,
+  grantChatFilesApi,
+} from "../constructs/chat-files-scan.js";
 import { CodeSandbox, CodeSandboxProps } from "../constructs/code-sandbox.js";
 import { CurReconciler, CurReconcilerProps } from "../constructs/cur-reconciler.js";
 import { EvalJudge, EvalJudgeProps } from "../constructs/eval-judge.js";
@@ -210,18 +215,38 @@ export class TurnWorkerStack extends CoreNestedStack {
 /**
  * The code sandbox (D114) and the malware scan of the chat files (D116 (2)): the Code Interpreter
  * `Mango_<ns>_sandbox` with its subnets and security group, the GuardDuty Malware Protection plan
- * of the chat files bucket and its role `Mango-<ns>-ChatFilesScan`. Nothing here holds data: the
- * bucket, its key and the sandbox VPC stay in Core (`ChatFiles`, `SandboxVpc`, D99 (2)), and the
- * bucket names the scanner's role by its fixed name.
+ * of the chat files bucket and its role `Mango-<ns>-ChatFilesScan`, the function that records
+ * what each scan said (`Mango-<ns>-ChatFilesScanResults`) and mango-api's policy on the bucket.
+ * Nothing here holds data: the bucket, its key and the sandbox VPC stay in Core (`ChatFiles`,
+ * `SandboxVpc`, D99 (2)), and the bucket names the scanner's role by its fixed name.
  */
+export interface SandboxStackProps extends CodeSandboxProps {
+  readonly scanResults: Omit<ChatFilesScanResultsProps, "installation" | "bucket">;
+  readonly apiTaskRole: iam.IRole;
+}
+
 export class SandboxStack extends CoreNestedStack {
   readonly sandbox: CodeSandbox;
+  readonly scanResults: ChatFilesScanResults;
 
-  constructor(scope: Construct, id: string, props: CodeSandboxProps) {
+  constructor(scope: Construct, id: string, props: SandboxStackProps) {
     super(scope, id, "code sandbox");
+    const installation = this.namespaceOf(props.installation);
     this.sandbox = new CodeSandbox(this, "CodeSandbox", {
-      ...props,
-      installation: this.namespaceOf(props.installation),
+      installation,
+      vpcId: props.vpcId,
+      chatFiles: props.chatFiles,
+    });
+    this.scanResults = new ChatFilesScanResults(this, "ChatFilesScanResults", {
+      ...props.scanResults,
+      installation,
+      bucket: props.chatFiles.bucket,
+    });
+    grantChatFilesApi(this, {
+      namespace: installation.namespace,
+      apiTaskRole: props.apiTaskRole,
+      bucket: props.chatFiles.bucket,
+      key: props.chatFiles.key,
     });
   }
 }

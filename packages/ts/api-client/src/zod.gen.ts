@@ -488,6 +488,55 @@ export const zChangeKindSchema = z.enum([
 ]);
 
 /**
+ * ChatAttachmentOut
+ */
+export const zChatAttachmentOutSchema = z.object({
+    expires_at: z.iso.datetime(),
+    file_id: z.string(),
+    gone: z.boolean(),
+    kind: z.string(),
+    name: z.string(),
+    origin: z.enum(['upload', 'generated']),
+    size_bytes: z.int(),
+    status: z.enum([
+        'uploading',
+        'scanning',
+        'ready',
+        'blocked',
+        'type_mismatch',
+        'too_large',
+        'failed'
+    ])
+});
+
+/**
+ * ChatAttachmentsOut
+ */
+export const zChatAttachmentsOutSchema = z.object({
+    files: z.array(zChatAttachmentOutSchema)
+});
+
+/**
+ * ChatConfirmIn
+ */
+export const zChatConfirmInSchema = z.object({
+    file_ids: z.array(z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)).min(1).max(20)
+});
+
+/**
+ * ChatEmptyIn
+ */
+export const zChatEmptyInSchema = z.record(z.string(), z.never());
+
+/**
+ * ChatFileLinkOut
+ */
+export const zChatFileLinkOutSchema = z.object({
+    file: z.string(),
+    url: z.string()
+});
+
+/**
  * ChatRequest
  *
  * A turn. Besides the message the client only picks the agent of a new conversation and
@@ -495,9 +544,51 @@ export const zChangeKindSchema = z.enum([
  */
 export const zChatRequestSchema = z.object({
     agent_id: z.string().regex(/^(?:[a-z2-7]{16}|[a-z][a-z0-9]{1,15})$/).nullish(),
+    attachments: z.array(z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)).max(20).optional().default([]),
     conversation_id: z.string().regex(/^[0-9a-f]{32}$/).nullish(),
     message: z.string().min(1).max(4000),
     model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$/).nullish()
+});
+
+/**
+ * ChatSignedUploadOut
+ *
+ * One announced file, in the order it was announced.
+ */
+export const zChatSignedUploadOutSchema = z.object({
+    fields: z.record(z.string(), z.string()).nullish(),
+    file_id: z.string().nullish(),
+    name: z.string(),
+    status: z.enum([
+        'uploading',
+        'unsupported_type',
+        'too_large'
+    ]),
+    url: z.string().nullish()
+});
+
+/**
+ * ChatUploadFileIn
+ */
+export const zChatUploadFileInSchema = z.object({
+    name: z.string().min(1).max(1024),
+    size: z.int().gte(1).lte(1099511627776)
+});
+
+/**
+ * ChatUploadsIn
+ */
+export const zChatUploadsInSchema = z.object({
+    files: z.array(zChatUploadFileInSchema).min(1).max(20)
+});
+
+/**
+ * ChatUploadsOut
+ */
+export const zChatUploadsOutSchema = z.object({
+    expires_at: z.iso.datetime(),
+    files: z.array(zChatSignedUploadOutSchema),
+    upload_id: z.string()
 });
 
 /**
@@ -1336,6 +1427,19 @@ export const zMemoryOutSchema = z.object({
     complete: z.boolean(),
     enabled: z.boolean(),
     records: z.array(zMemoryRecordOutSchema)
+});
+
+/**
+ * MessageAttachmentOut
+ *
+ * A file of a question (D116): its name, kind and size, and whether it is still there.
+ */
+export const zMessageAttachmentOutSchema = z.object({
+    file_id: z.string(),
+    gone: z.boolean(),
+    kind: z.string(),
+    name: z.string(),
+    size_bytes: z.int()
 });
 
 /**
@@ -3209,6 +3313,7 @@ export const zToolStatusSchema = z.object({
  */
 export const zMessageOutSchema = z.object({
     approvals: z.array(z.string()).optional().default([]),
+    attachments: z.array(zMessageAttachmentOutSchema).optional().default([]),
     citations: z.array(zCitationOutSchema).optional().default([]),
     connection_required: z.array(z.string()).optional().default([]),
     content: z.string(),
@@ -4687,6 +4792,23 @@ export const zGetConversationPath = z.object({
  */
 export const zGetConversationResponse = zConversationDetailSchema;
 
+export const zChatFileContentPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    file_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+export const zDownloadChatFileBody = zChatEmptyInSchema;
+
+export const zDownloadChatFilePath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    file_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zDownloadChatFileResponse = zChatFileLinkOutSchema;
+
 export const zConversationTurnPath = z.object({
     conversation_id: z.string()
 });
@@ -4695,6 +4817,29 @@ export const zConversationTurnPath = z.object({
  * Successful Response
  */
 export const zConversationTurnResponse = zConversationTurnSchema;
+
+export const zRequestChatUploadsBody = zChatUploadsInSchema;
+
+export const zRequestChatUploadsPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zRequestChatUploadsResponse = zChatUploadsOutSchema;
+
+export const zConfirmChatUploadsBody = zChatConfirmInSchema;
+
+export const zConfirmChatUploadsPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    upload_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zConfirmChatUploadsResponse = zChatAttachmentsOutSchema;
 
 export const zGetCostsQuery = z.object({
     month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/).nullish()

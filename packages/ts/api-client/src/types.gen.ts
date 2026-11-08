@@ -1397,6 +1397,85 @@ export type ChangeListOut = {
 };
 
 /**
+ * ChatAttachmentOut
+ */
+export type ChatAttachmentOut = {
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * File Id
+     */
+    file_id: string;
+    /**
+     * Gone
+     */
+    gone: boolean;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Origin
+     */
+    origin: 'upload' | 'generated';
+    /**
+     * Size Bytes
+     */
+    size_bytes: number;
+    /**
+     * Status
+     */
+    status: 'uploading' | 'scanning' | 'ready' | 'blocked' | 'type_mismatch' | 'too_large' | 'failed';
+};
+
+/**
+ * ChatAttachmentsOut
+ */
+export type ChatAttachmentsOut = {
+    /**
+     * Files
+     */
+    files: Array<ChatAttachmentOut>;
+};
+
+/**
+ * ChatConfirmIn
+ */
+export type ChatConfirmIn = {
+    /**
+     * File Ids
+     */
+    file_ids: Array<string>;
+};
+
+/**
+ * ChatEmptyIn
+ */
+export type ChatEmptyIn = {
+    [key: string]: never;
+};
+
+/**
+ * ChatFileLinkOut
+ */
+export type ChatFileLinkOut = {
+    /**
+     * File
+     */
+    file: string;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
  * ChatRequest
  *
  * A turn. Besides the message the client only picks the agent of a new conversation and
@@ -1407,6 +1486,10 @@ export type ChatRequest = {
      * Agent Id
      */
     agent_id?: string | null;
+    /**
+     * Attachments
+     */
+    attachments?: Array<string>;
     /**
      * Conversation Id
      */
@@ -1419,6 +1502,78 @@ export type ChatRequest = {
      * Model
      */
     model?: string | null;
+};
+
+/**
+ * ChatSignedUploadOut
+ *
+ * One announced file, in the order it was announced.
+ */
+export type ChatSignedUploadOut = {
+    /**
+     * Fields
+     */
+    fields?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * File Id
+     */
+    file_id?: string | null;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Status
+     */
+    status: 'uploading' | 'unsupported_type' | 'too_large';
+    /**
+     * Url
+     */
+    url?: string | null;
+};
+
+/**
+ * ChatUploadFileIn
+ */
+export type ChatUploadFileIn = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Size
+     */
+    size: number;
+};
+
+/**
+ * ChatUploadsIn
+ */
+export type ChatUploadsIn = {
+    /**
+     * Files
+     */
+    files: Array<ChatUploadFileIn>;
+};
+
+/**
+ * ChatUploadsOut
+ */
+export type ChatUploadsOut = {
+    /**
+     * Expires At
+     */
+    expires_at: string;
+    /**
+     * Files
+     */
+    files: Array<ChatSignedUploadOut>;
+    /**
+     * Upload Id
+     */
+    upload_id: string;
 };
 
 /**
@@ -3351,6 +3506,34 @@ export type MemoryRecordOut = {
 };
 
 /**
+ * MessageAttachmentOut
+ *
+ * A file of a question (D116): its name, kind and size, and whether it is still there.
+ */
+export type MessageAttachmentOut = {
+    /**
+     * File Id
+     */
+    file_id: string;
+    /**
+     * Gone
+     */
+    gone: boolean;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Size Bytes
+     */
+    size_bytes: number;
+};
+
+/**
  * MessageOut
  */
 export type MessageOut = {
@@ -3358,6 +3541,10 @@ export type MessageOut = {
      * Approvals
      */
     approvals?: Array<string>;
+    /**
+     * Attachments
+     */
+    attachments?: Array<MessageAttachmentOut>;
     /**
      * Citations
      */
@@ -10161,6 +10348,72 @@ export type GetConversationResponses = {
 
 export type GetConversationResponse = GetConversationResponses[keyof GetConversationResponses];
 
+export type ChatFileContentData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * File Id
+         */
+        file_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/files/{file_id}/content';
+};
+
+export type ChatFileContentErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ChatFileContentError = ChatFileContentErrors[keyof ChatFileContentErrors];
+
+export type ChatFileContentResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type DownloadChatFileData = {
+    body: ChatEmptyIn;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * File Id
+         */
+        file_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/files/{file_id}/download';
+};
+
+export type DownloadChatFileErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type DownloadChatFileError = DownloadChatFileErrors[keyof DownloadChatFileErrors];
+
+export type DownloadChatFileResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatFileLinkOut;
+};
+
+export type DownloadChatFileResponse = DownloadChatFileResponses[keyof DownloadChatFileResponses];
+
 export type ConversationTurnData = {
     body?: never;
     path: {
@@ -10190,6 +10443,70 @@ export type ConversationTurnResponses = {
 };
 
 export type ConversationTurnResponse = ConversationTurnResponses[keyof ConversationTurnResponses];
+
+export type RequestChatUploadsData = {
+    body: ChatUploadsIn;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/uploads';
+};
+
+export type RequestChatUploadsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type RequestChatUploadsError = RequestChatUploadsErrors[keyof RequestChatUploadsErrors];
+
+export type RequestChatUploadsResponses = {
+    /**
+     * Successful Response
+     */
+    201: ChatUploadsOut;
+};
+
+export type RequestChatUploadsResponse = RequestChatUploadsResponses[keyof RequestChatUploadsResponses];
+
+export type ConfirmChatUploadsData = {
+    body: ChatConfirmIn;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * Upload Id
+         */
+        upload_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/uploads/{upload_id}/confirm';
+};
+
+export type ConfirmChatUploadsErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ConfirmChatUploadsError = ConfirmChatUploadsErrors[keyof ConfirmChatUploadsErrors];
+
+export type ConfirmChatUploadsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatAttachmentsOut;
+};
+
+export type ConfirmChatUploadsResponse = ConfirmChatUploadsResponses[keyof ConfirmChatUploadsResponses];
 
 export type GetCostsData = {
     body?: never;

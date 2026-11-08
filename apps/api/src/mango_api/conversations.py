@@ -86,6 +86,9 @@ class StoredMessage:
     stop_code: str = ""
     """Why it was cut: ``cancelled`` («Detener») or ``turn_interrupted`` (lost halfway).
     Empty for an answer that was not cut, or one stored before the code existed."""
+    attachments: list[dict[str, Any]] = field(default_factory=list)
+    """Files of a question (D116): id, name, kind and size of each, never a key of the bucket
+    (``chat_files.snapshot``)."""
 
 
 @dataclass(frozen=True)
@@ -403,6 +406,7 @@ class ConversationRepository:
         message_id: str | None = None,
         stopped: bool = False,
         stop_code: str = "",
+        attachments: list[dict[str, Any]] | None = None,
     ) -> str:
         message_id = message_id or new_id()
         item: dict[str, Any] = {
@@ -427,6 +431,8 @@ class ConversationRepository:
             item["stopped"] = {"BOOL": True}
         if stopped and stop_code:
             item["stop_code"] = {"S": stop_code[:40]}
+        if attachments:
+            item["attachments"] = {"S": json.dumps(attachments, ensure_ascii=False)}
         self._clients(user_id).put_item(TableName=self._table, Item=item)
         return message_id
 
@@ -552,6 +558,7 @@ class ConversationRepository:
                         remote_sources=json.loads(i.get("remote_sources", {}).get("S", "[]")),
                         stopped=i.get("stopped", {}).get("BOOL", False),
                         stop_code=i.get("stop_code", {}).get("S", ""),
+                        attachments=json.loads(i.get("attachments", {}).get("S", "[]")),
                     )
                 )
             if "LastEvaluatedKey" not in resp:

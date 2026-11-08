@@ -33,7 +33,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from mango_api import harness, memory, sessions, turns
+from mango_api import chat_files, harness, memory, sessions, turns
 from mango_api.activity import (
     ActivityDeps,
     AgentView,
@@ -87,6 +87,13 @@ from mango_api.budget import (
     BudgetUnavailableError,
     current_period,
 )
+from mango_api.chat_files import S3_CONFIG as CHAT_FILES_S3_CONFIG
+from mango_api.chat_files import (
+    ChatFilesDeps,
+    ChatFilesStorage,
+    chat_files_router,
+)
+from mango_api.chat_files_store import ChatFileStore
 from mango_api.connections import (
     ConnectionRecords,
     ConnectionsDeps,
@@ -240,6 +247,7 @@ from mango_core import task_reports as reports
 from mango_core import usage_days
 from mango_core.agents import AGENT_ID_PATTERN, MODEL_ID_PATTERN, VersionStatus
 from mango_core.budget_turns import PendingTurn
+from mango_core.chat_files import MAX_FILES as MAX_CHAT_FILES
 from mango_core.identity import (
     AccessTokenVerifier,
     IdentityError,
@@ -248,6 +256,7 @@ from mango_core.identity import (
     UserContext,
     user_from_claims,
 )
+from mango_core.knowledge import ID_PATTERN as KNOWLEDGE_ID_PATTERN
 from mango_core.skills import parse_ref as parse_skill_ref
 from mango_core.tickets import TicketStore
 
@@ -281,6 +290,11 @@ class ChatRequest(_Strict):
     keeps the agent it started with."""
     model: Annotated[str, Field(pattern=MODEL_ID_PATTERN)] | None = None
     """One of the agent's allowed models (D22); default: the agent's default model."""
+    attachments: Annotated[
+        list[Annotated[str, Field(pattern=KNOWLEDGE_ID_PATTERN)]], Field(max_length=MAX_CHAT_FILES)
+    ] = []
+    """Ids of files of this conversation, uploaded and ``ready`` (D116): never files. A new
+    conversation that has them names its id (the one its files were uploaded to)."""
 
 
 class TurnCreated(_Strict):
@@ -352,6 +366,17 @@ class CitationOut(_Strict):
     page: int | None = None
 
 
+class MessageAttachmentOut(_Strict):
+    """A file of a question (D116): its name, kind and size, and whether it is still there."""
+
+    file_id: str
+    name: str
+    kind: str
+    size_bytes: int
+    gone: bool
+    """After 90 days or with its conversation: «Ya no disponible»."""
+
+
 class MessageOut(_Strict):
     message_id: str
     role: str
@@ -373,6 +398,7 @@ class MessageOut(_Strict):
     """Why it was cut: the owner's «Detener» (``cancelled``, «Respuesta detenida») or a turn
     lost halfway (``turn_interrupted``, «Respuesta interrumpida»). ``None`` when it was not
     cut, or for an answer stored before the code existed."""
+    attachments: list[MessageAttachmentOut] = []
 
 
 class ConversationDetail(_Strict):
@@ -490,6 +516,8 @@ class Services:
     tickets: TicketsDeps | None = None
     # Knowledge bases (D88); set in production once mango-api may use the Knowledge table.
     knowledge: KnowledgeDeps | None = None
+    # Files of the chat (D116): their records always; their bucket once mango-api may use it.
+    chat_files: ChatFilesDeps | None = None
     # Skills of instructions (D92); set in production once the Skills table exists.
     skills: SkillsDeps | None = None
     # The Playground's test harness (D91); set in production.
@@ -1089,6 +1117,25 @@ def build_services(settings: Settings) -> Services:
         tasks=tasks,
         task_tokens=task_tokens,
         task_queue=task_queue,
+        chat_files=ChatFilesDeps(
+            store=ChatFileStore(rls.for_user, settings.conversations_table),
+            storage=(
+                ChatFilesStorage(
+                    boto3.client("s3", region_name=region, config=CHAT_FILES_S3_CONFIG),
+                    settings.chat_files_bucket,
+                    region,
+                    _presign_sessions(settings),
+                )
+                if settings.chat_files_bucket
+                else None
+            ),
+            audit=audit,
+            uploads=limits.limiter("chat.uploads"),
+            upload_bytes=limits.limiter("chat.upload_bytes"),
+            checks=limits.limiter("chat.upload_checks"),
+            downloads=limits.limiter("chat.file_downloads"),
+            contents=limits.limiter("chat.file_contents"),
+        ),
         knowledge=(
             KnowledgeDeps(
                 store=knowledge_store,
@@ -1639,6 +1686,14 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         messages = await asyncio.to_thread(
             services.conversations.messages, user_id, conversation_id
         )
+        # Whether the files of its questions are still there (D116): one read of its records.
+        present = (
+            await asyncio.to_thread(
+                chat_files.present, services.chat_files, user_id, conversation_id
+            )
+            if any(m.attachments for m in messages)
+            else frozenset()
+        )
         # Only when some message asked to confirm a write tool call (D27).
         approvals = (
             await asyncio.to_thread(conversation_view, services.approvals, user_id, conversation_id)
@@ -1662,6 +1717,16 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                     remote_sources=m.remote_sources,
                     stopped=m.stopped,
                     stop_code=_stop_code(m.stop_code),
+                    attachments=[
+                        MessageAttachmentOut(
+                            file_id=a["file_id"],
+                            name=a["name"],
+                            kind=a["kind"],
+                            size_bytes=a["size"],
+                            gone=a["file_id"] not in present,
+                        )
+                        for a in m.attachments
+                    ],
                 )
                 for m in messages
             ],
@@ -2150,6 +2215,21 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             knowledge_sources_router(services.knowledge, current_user, require, knowledge_allowed)
         )
 
+    if services.chat_files is not None:
+
+        async def own_for_files(
+            caller: Caller, conversation_id: str, owner: str, read_only: bool
+        ) -> None:
+            await own_conversation(caller, conversation_id, owner, read_only=read_only)
+
+        def stored_owner(user_id: str, conversation_id: str) -> str | None:
+            summary = services.conversations.summary(user_id, conversation_id)
+            return summary[2] if summary is not None else None
+
+        app.include_router(
+            chat_files_router(services.chat_files, current_user, own_for_files, stored_owner)
+        )
+
     async def begin_turn(body: ChatRequest, caller: Caller) -> tuple[turns.ChatTurns, str, str]:
         """Validate, authorize and queue a turn (D121): what ``POST /api/chat`` and
         ``POST /api/chat/turns`` share. The conversation and the turn of it."""
@@ -2164,6 +2244,11 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             else await asyncio.to_thread(repo.conversation, user.user_id, conversation_id)
         )
         existing = None if is_new or record is None else record
+        if record is None and body.attachments:
+            # A new chat whose files were uploaded first names the conversation they were
+            # uploaded to (D116): it starts with this turn, which only takes files of that
+            # conversation and of this person (checked below).
+            record = ConversationRecord(sessions.SessionState(), None)
         if existing is not None:
             # A turn adds to the conversation: only its owner (TM-TW3), as its record says.
             await own_conversation(
@@ -2186,6 +2271,17 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         )
         agent = turns.admit(agent_id, agent, record, body.agent_id)
         checked = await asyncio.to_thread(turns.check_turn, services, caller, agent, body.model)
+        # The files of the question (D116, TM-CF9): uploaded to this conversation by this
+        # person and ready. A conversation the server names has none yet.
+        if body.attachments and is_new:
+            raise ApiError(422, "attachments_need_conversation", "name the conversation")
+        await asyncio.to_thread(
+            chat_files.turn_attachments,
+            services.chat_files,
+            user.user_id,
+            conversation_id,
+            body.attachments,
+        )
         # The turn runs in the turn worker (D121): it reserves, invokes and writes its events.
         chat_turns = services.chat_turns
         if chat_turns is None:  # set by create_app
@@ -2198,6 +2294,7 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                 conversation_id=conversation_id,
                 checked=checked,
                 message=body.message,
+                attachments=tuple(dict.fromkeys(body.attachments)),
             )
         )
         return chat_turns, conversation_id, turn_id

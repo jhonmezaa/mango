@@ -21,6 +21,7 @@ from mango_api import (
     activity,
     admin,
     approvals,
+    chat_files,
     connections,
     conversation_search,
     costs,
@@ -62,6 +63,7 @@ back-off (D120 (4)), so a few open chats never reach it."""
 
 MINUTE = 60
 HOUR = 3600
+DAY = 86400
 
 
 @dataclass(frozen=True)
@@ -189,6 +191,36 @@ LIMITS: dict[str, LimitSpec] = {
         HOUR,
         shared=True,
         why="Each change of a task writes to EventBridge Scheduler (D78).",
+    ),
+    "chat.uploads": LimitSpec(
+        chat_files.FILES_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Files a person announces to the chat (D116, TM-CF6): each one is scanned and stored.",
+    ),
+    "chat.upload_bytes": LimitSpec(
+        chat_files.UPLOAD_MB_PER_DAY,
+        DAY,
+        shared=True,
+        why="Megabytes a person announces to the chat per day (TM-CF6): the scan is paid per GB.",
+    ),
+    "chat.upload_checks": LimitSpec(
+        chat_files.CHECKS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="The composer following its files: reads of DynamoDB and, once, a copy in S3.",
+    ),
+    "chat.file_downloads": LimitSpec(
+        chat_files.DOWNLOADS_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Each «Descargar» issues a new presigned link to a file of the chat (D116 (5)).",
+    ),
+    "chat.file_contents": LimitSpec(
+        chat_files.CONTENTS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="Images of the chat read as blob: through mango-api, each one audited (D116 (5)).",
     ),
     "tasks.report_downloads": LimitSpec(
         task_reports.DOWNLOADS_PER_HOUR,

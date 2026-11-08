@@ -246,7 +246,10 @@ describe("reconciler function and schedule", () => {
     expect((resources[evalJudgeId]!.Metadata?.checkov?.skip ?? []).map((s: { id: string }) => s.id)).not.toContain(
       CHECKOV_EXCEPTIONS.lambdaDlq.id,
     );
+    const scanResultsId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-ChatFilesScanResults` });
+    expect(resources[scanResultsId]!.Properties.DeadLetterConfig).toBeDefined();
     const asynchronous = [
+      scanResultsId,
       functionId,
       budgetReconcilerId,
       anomalyConsumerId,

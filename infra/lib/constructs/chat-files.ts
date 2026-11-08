@@ -1,4 +1,4 @@
-import { Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { Aws, Duration, Fn, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as s3 from "aws-cdk-lib/aws-s3";
@@ -30,7 +30,11 @@ export const SCAN_VALIDATION_OBJECT = "malware-protection-resource-validation-ob
 export interface ChatFilesProps {
   readonly installation: Installation;
   readonly accessLogs: s3.IBucket;
+  /** The origin of the SPA: the only one the bucket's CORS lets post uploads (D116 (4)). */
+  readonly appOrigin: string;
 }
+
+const ACCESS_LOG_PREFIX = "chat-files/";
 
 /**
  * Files of the chat (D116; threat model `chat-files-threat-model.md`): what a person attaches
@@ -50,6 +54,7 @@ export class ChatFiles extends Construct {
   readonly key: kms.Key;
   /** ARN of the scanner's role, by its fixed name: the role is in a nested stack (D99). */
   readonly scannerRoleArn: string;
+  private readonly regionalDomain: string;
 
   constructor(scope: Construct, id: string, props: ChatFilesProps) {
     super(scope, id);
@@ -73,16 +78,24 @@ export class ChatFiles extends Construct {
       removalPolicy,
     });
 
+    // A name of its own, `mango-<ns>-chat-files-<8 hex of the stack id>`, as the documents of the
+    // knowledge bases (D88 (30), (31)): the CSP of the SPA names this bucket and its CORS names
+    // the SPA, so neither may refer to the other as a resource.
+    const stackSuffix = Fn.select(0, Fn.split("-", Fn.select(2, Fn.split("/", Aws.STACK_ID))));
+    const bucketName = Fn.join("", [`mango-${ns}-chat-files-`, stackSuffix]);
+    this.regionalDomain = Fn.join("", [bucketName, `.s3.${stack.region}.amazonaws.com`]);
     this.bucket = new s3.Bucket(this, "Bucket", {
+      bucketName,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: this.key,
       bucketKeyEnabled: true,
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
-      serverAccessLogsBucket: props.accessLogs,
-      serverAccessLogsPrefix: "chat-files/",
       versioned: true,
+      // The browser posts each attachment straight to S3 with a presigned POST (D116 (4)), only
+      // from the SPA. Nothing is read from the browser but through presigned links (D116 (5)).
+      cors: [{ allowedOrigins: [props.appOrigin], allowedMethods: [s3.HttpMethods.POST], allowedHeaders: [], maxAge: 600 }],
       // The scan plan turns the bucket's EventBridge notifications on by itself (its role may);
       // nothing in this template sets the bucket's notifications, so no update turns them off.
       lifecycleRules: [
@@ -99,6 +112,25 @@ export class ChatFiles extends Construct {
       removalPolicy,
       autoDeleteObjects: !cfg.retainData,
     });
+
+    // Server access logs, written by hand for the cycle of D88 (31): the policy of the shared
+    // access logs bucket names this bucket by its ARN, built from its name.
+    (this.bucket.node.defaultChild as s3.CfnBucket).loggingConfiguration = {
+      destinationBucketName: props.accessLogs.bucketName,
+      logFilePrefix: ACCESS_LOG_PREFIX,
+    };
+    props.accessLogs.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "ChatFilesAccessLogs",
+        principals: [new iam.ServicePrincipal("logging.s3.amazonaws.com")],
+        actions: ["s3:PutObject"],
+        resources: [props.accessLogs.arnForObjects(`${ACCESS_LOG_PREFIX}*`)],
+        conditions: {
+          ArnLike: { "aws:SourceArn": Fn.join("", ["arn:aws:s3:::", bucketName]) },
+          StringEquals: { "aws:SourceAccount": stack.account },
+        },
+      }),
+    );
 
     const objects = this.bucket.arnForObjects("*");
     const notScanner = { ArnNotEquals: { "aws:PrincipalArn": this.scannerRoleArn } };
@@ -152,5 +184,10 @@ export class ChatFiles extends Construct {
         conditions: { NumericGreaterThan: { "s3:signatureAge": CHAT_FILES_LINK_MS } },
       }),
     );
+  }
+
+  /** Where the browser posts attachments: the bucket's regional host, for the CSP of the SPA. */
+  get uploadOrigin(): string {
+    return `https://${this.regionalDomain}`;
   }
 }

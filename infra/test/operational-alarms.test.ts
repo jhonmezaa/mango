@@ -1,5 +1,6 @@
 import { CUR_RECONCILER_ALARMS } from "../lib/constructs/cur-reconciler.js";
 import { EVAL_JUDGE_ALARMS } from "../lib/constructs/eval-judge.js";
+import { CHAT_FILES_ALARMS } from "../lib/constructs/chat-files-scan.js";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -67,6 +68,9 @@ const PUBLICATION = [
   // The evaluator of the evals (D110), in its nested stack: evals.test.ts.
   "Evals-canary-failed",
   "Eval-judge-failed",
+  // The scan results of the chat files (D116 (11)), in the sandbox stack: code-sandbox.test.ts.
+  "ChatFiles-blocked",
+  "ChatFilesScanResults-failed",
 ];
 const operational = Object.fromEntries(
   Object.entries(alarms).filter(([name]) => !PUBLICATION.some((suffix) => name === `Mango-${ns}-${suffix}`)),
@@ -607,7 +611,11 @@ describe("dashboard", () => {
     expect(dashboards[0]![1].Properties.DashboardName).toBe(`Mango-${ns}-ops`);
     const body = JSON.stringify(dashboards[0]![1].Properties.DashboardBody);
     // Those of another nested stack by name (D99 (4)): CurReconciliation's (D104).
-    const nested = [...Object.values(CUR_RECONCILER_ALARMS), ...Object.values(EVAL_JUDGE_ALARMS)].map(
+    const nested = [
+      ...Object.values(CUR_RECONCILER_ALARMS),
+      ...Object.values(EVAL_JUDGE_ALARMS),
+      ...Object.values(CHAT_FILES_ALARMS),
+    ].map(
       (name) => `Mango-${ns}-${name}`,
     );
     for (const [id, alarm] of ofType(resources, "AWS::CloudWatch::Alarm")) {
