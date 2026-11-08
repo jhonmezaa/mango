@@ -19,6 +19,7 @@ import { handleApprovals } from './approvals.ts';
 import { handleAudit } from './audit.ts';
 import { handleBrains } from './brains.ts';
 import { handleChatApi } from './chat.ts';
+import { handleChatFiles, handleChatFilesS3 } from './chatFiles.ts';
 import { handleConnections, MOCK_GROUPS } from './connections.ts';
 import {
   MOCK_USER,
@@ -56,6 +57,7 @@ import { handleTickets } from './tickets.ts';
  */
 const API_HANDLERS: readonly ApiHandler[] = [
   handleChatApi,
+  handleChatFiles,
   handlePlayground,
   handleApprovals,
   handleTasks,
@@ -148,6 +150,9 @@ export function middleware(): Connect.NextHandleFunction {
       if (url.pathname === '/mock-cognito-idp' && req.method === 'POST') {
         await handleCognitoApi(req, res);
         return true;
+      }
+      if (url.pathname.startsWith('/mock-s3/chat/')) {
+        return handleChatFilesS3(req, res, url.pathname);
       }
       if (url.pathname.startsWith('/mock-s3/')) {
         return handleMockS3(req, res, url.pathname);

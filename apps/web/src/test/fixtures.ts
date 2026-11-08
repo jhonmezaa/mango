@@ -59,6 +59,7 @@ export function agentFixture(overrides: Partial<Agent> = {}): Agent {
     status: 'published',
     version: 1,
     lock_version: null,
+    capabilities: [],
     name: 'FinOps',
     description: 'Consulta el gasto de AWS de tu organización.',
     category: 'FinOps',

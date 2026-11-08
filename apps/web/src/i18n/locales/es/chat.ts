@@ -225,6 +225,36 @@ export const chat = {
     commandsLabel: 'Comandos con /',
     newLine: 'nueva línea',
   },
+  // Design round 40 (chat-run.jsx, D116): the files of a message.
+  attachments: {
+    uploading: 'Subiendo · {{percent}} %',
+    scanning: 'Revisando el archivo…',
+    blocked: 'Bloqueado por el escaneo',
+    unsupported: 'Tipo no permitido',
+    mismatch: 'El contenido no es del tipo que dice',
+    tooLarge: 'Supera 100 MB',
+    failed: 'No se pudo subir',
+    gone: 'Ya no disponible',
+    goneTitle: 'Los adjuntos se guardan 90 días.',
+    retry: 'Reintentar',
+    remove: 'Quitar {{name}}',
+    overflow_one: 'Puedes adjuntar hasta {{max}} archivos por mensaje. Uno se quedó fuera.',
+    overflow_other:
+      'Puedes adjuntar hasta {{max}} archivos por mensaje. {{count}} se quedaron fuera.',
+    waitBusy: 'Enviar se activa cuando terminen de subirse y revisarse los archivos.',
+    waitBad: 'Quita los archivos con problemas para enviar el mensaje.',
+    attachOff: 'Adjuntar archivos (no disponible)',
+    cannotTitle: '{{name}} no puede leer archivos: su versión no tiene «Ejecutar código».',
+    cannot:
+      '{{name}} no puede leer archivos: su versión no tiene «Ejecutar código». Quien lo administra puede activarlo en el Builder.',
+    dropTitle: 'Suelta los archivos para adjuntarlos',
+    dropHint:
+      'Hasta 20 archivos · 100 MB c/u · PDF, CSV, TXT, JSON, Excel, Word, PowerPoint, PNG, JPG',
+    dropCannot: '{{name}} no puede leer archivos',
+    dropCannotHint: 'Su versión no tiene «Ejecutar código».',
+    // A message that is only its files (design `(archivos adjuntos)`).
+    onlyFiles: '(archivos adjuntos)',
+  },
   tools: {
     listLabel: 'Herramientas del agente',
     count_one: '{{count}} herramienta',

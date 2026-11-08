@@ -254,6 +254,8 @@ def test_finops_is_served_once_seeded_and_published(env: Env) -> None:  # noqa: 
     assert (detail.status_code, detail.json()["name"]) == (200, "FinOps")
     listed = env.client.get("/api/agents", headers=_h("lead")).json()["items"]
     assert [a["id"] for a in listed] == ["finops"]
+    # The release FinOps does not run code: the composer offers no «Adjuntar» (D116 (12)).
+    assert detail.json()["capabilities"] == listed[0]["capabilities"] == []
 
 
 # --- What the chat says the agent may use (D92 (8)) ---------------------------------------
@@ -338,3 +340,15 @@ def test_without_skills_the_detail_says_so_and_a_broken_registry_does_not_fail_i
     env.deps.skills = _Skills(SKILLS, down=True)  # type: ignore[assignment]
     response = env.client.get(f"/api/agents/{with_skills}", headers=_h("member"))
     assert (response.status_code, response.json()["skills"]) == (200, None)
+
+
+def test_users_see_whether_the_served_version_runs_code(env: Env) -> None:  # noqa: F811
+    # D116 (12): the composer offers «Adjuntar» only to agents that can read files.
+    env.deps.code_interpreter = True
+    agent = _published(env, groups=["hr"], capabilities=["code_interpreter"])
+    detail = env.client.get(f"/api/agents/{agent['agent_id']}", headers=_h("member")).json()
+    listed = env.client.get("/api/agents", headers=_h("member")).json()["items"]
+    assert detail["capabilities"] == ["code_interpreter"]
+    assert [a["capabilities"] for a in listed if a["id"] == agent["agent_id"]] == [
+        ["code_interpreter"]
+    ]

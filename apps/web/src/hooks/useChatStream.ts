@@ -11,6 +11,7 @@ import {
 } from '../api/turnStream';
 import type { ChatApproval } from '../api/schemas';
 import { retryAtOf } from '../components/rateLimitWait';
+import type { MessageAttachment } from '../components/chat/attachments';
 import {
   CAP_STOP,
   chatReducer,
@@ -24,6 +25,13 @@ import { EMPTY_TURN, turnViewOf, type TurnView } from './turnView';
 export interface ChatTarget {
   agentId: string;
   model: string | null;
+  /** The ready files of the message (D116 (11)), shown with the question. */
+  attachments?: MessageAttachment[];
+  /**
+   * A new chat whose files were uploaded first names the conversation they went to (D116
+   * (11)); without files the API names it.
+   */
+  newConversationId?: string | null;
 }
 
 /** Design round 40: «Reconectado. La respuesta sigue donde iba.» stays this long. */
@@ -288,15 +296,19 @@ export function useChatStream({
         assistantId,
         text,
         sentAt: new Date().toISOString(),
+        ...(target.attachments?.length ? { attachments: target.attachments } : {}),
       });
       let created: { conversationId: string; turnId: string };
       try {
+        const files = target.attachments ?? [];
         created = await api.createTurn({
-          conversationId: state.conversationId,
+          conversationId:
+            state.conversationId ?? (files.length > 0 ? (target.newConversationId ?? null) : null),
           // The agent is only sent to start a conversation; afterwards the API keeps it.
           agentId: state.conversationId === null ? target.agentId : null,
           model: target.model,
           message: text,
+          attachments: files.map((file) => file.fileId),
         });
       } catch (error) {
         if (creatingRef.current !== creating) return;

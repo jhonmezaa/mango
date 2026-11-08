@@ -124,6 +124,12 @@ export function publishedVersion(agent: MockAgent): MockAgentVersion | null {
   return agent.status === 'published' ? versionOf(agent, agent.published_version) : null;
 }
 
+/**
+ * Agents whose version runs code (D114 (6)), so the chat lets their users attach files (D116):
+ * FinOps, as in the design (`CR_CODE_AGENTS`). The API has none until the capability exists.
+ */
+const CODE_AGENTS = new Set(['finops']);
+
 /** `Agent` of the contract (`AgentOut`): no prompt and no access lists. */
 export function agentOut(agent: MockAgent, version: MockAgentVersion) {
   const { definition } = version;
@@ -149,6 +155,7 @@ export function agentOut(agent: MockAgent, version: MockAgentVersion) {
     retire_reason: agent.retire_reason,
     is_mine: agent.created_by === MOCK_USER,
     cleanup: cleanupOf(agent),
+    capabilities: CODE_AGENTS.has(agent.agent_id) ? ['code_interpreter' as const] : [],
   };
 }
 

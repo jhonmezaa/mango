@@ -19,12 +19,20 @@ import { useAuth } from '../auth/useAuth';
 import { useSession } from '../auth/useSession';
 import { useToasts } from '../components/admin/useToasts';
 import { AgentHero } from '../components/chat/AgentHero';
+import type { ComposerAttachment } from '../components/chat/attachments';
 import { BlockedComposer, ChatBlocked, type ChatBlockedKind } from '../components/chat/ChatBlocked';
 import { ChatHeader } from '../components/chat/ChatHeader';
 import { ChatInput } from '../components/chat/ChatInput';
 import { ChatMessage } from '../components/chat/ChatMessage';
 import { ThreadList } from '../components/chat/ThreadList';
-import { ChevronDownIcon, CloseIcon, InfoIcon, RefreshIcon, WarnIcon } from '../components/icons';
+import {
+  ChevronDownIcon,
+  CloseIcon,
+  InfoIcon,
+  RefreshIcon,
+  UploadIcon,
+  WarnIcon,
+} from '../components/icons';
 import { RateWaitButton, RateWaitLine } from '../components/RateWait';
 import { retryAtOf } from '../components/rateLimitWait';
 import { fromApiMessage, type DisplayMessage, type ErrorKey } from '../hooks/chatState';
@@ -34,6 +42,7 @@ import {
   focusMessageFrom,
   isCurrentHistoryEntry,
 } from './chatFocus';
+import { apiUploader, useChatAttachments } from '../hooks/useChatAttachments';
 import { useChatStream } from '../hooks/useChatStream';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -310,10 +319,15 @@ export function ChatPage() {
     currentRouteRef.current = routeId;
   }, [routeId]);
   const resetRef = useRef<ReturnType<typeof useChatStream>['reset'] | null>(null);
+  // The files of the last message sent, and the composer's `restore`, for «otra pestaña».
+  const sentFilesRef = useRef<readonly ComposerAttachment[]>([]);
+  const restoreFilesRef = useRef<((files: readonly ComposerAttachment[]) => void) | null>(null);
   const onBusy = useCallback(
     (text: string) => {
       if (routeId === null) return;
       setBusy((current) => ({ text, key: (current?.key ?? 0) + 1, conversationId: routeId }));
+      // Its files go back to the composer too: they are still ready in Mango.
+      restoreFilesRef.current?.(sentFilesRef.current);
       // The turn of the other tab is shown live, after its question (R3b): the history is read
       // again, since this tab loaded it before that question was asked.
       fetchConversation(
@@ -345,6 +359,19 @@ export function ChatPage() {
   useEffect(() => {
     resetRef.current = reset;
   }, [reset]);
+
+  // The composer's files (D116): uploaded to the conversation on screen or, in a new chat, to
+  // the one its first turn will name. Another chat starts without them.
+  const uploader = useMemo(() => apiUploader(api), [api]);
+  const attachments = useChatAttachments({
+    uploader,
+    conversationId: state.conversationId,
+    scope: routeId ?? `new:${agentId ?? ''}`,
+  });
+  const restoreFiles = attachments.restore;
+  useEffect(() => {
+    restoreFilesRef.current = restoreFiles;
+  }, [restoreFiles]);
 
   // Reacts to navigation only. Reading the in-memory conversation through an effect event means
   // that a conversation created by the stream (state updated first, URL replaced afterwards) is
@@ -524,9 +551,13 @@ export function ChatPage() {
     notify(t('chat.toast.newChat'), 'info');
   }, [agentId, canChat, navigate, notify, t]);
 
+  // Design chat.jsx: only an agent whose version runs code has where to read files (D114 (6)).
+  const canAttach = agent?.capabilities.includes('code_interpreter') ?? false;
+  const composerFiles = canChat && canAttach ? attachments : null;
   const sendText = useCallback(
-    (text: string) => {
+    (text: string, files: readonly ComposerAttachment[] = []) => {
       if (!agentId || !canChat) return;
+      if (!text && files.length === 0) return;
       // Emptied first, so the same sentence is announced again after the next answer.
       setAnnouncement('');
       setBusy(null);
@@ -534,10 +565,35 @@ export function ChatPage() {
       awayRef.current = false;
       setAway(false);
       setNewBelow(false);
-      void send(text, { agentId, model });
+      sentFilesRef.current = files;
+      void send(text || t('chat.attachments.onlyFiles'), {
+        agentId,
+        model,
+        attachments: files.flatMap((file) =>
+          file.fileId
+            ? [{ fileId: file.fileId, name: file.name, size: file.size, gone: false }]
+            : [],
+        ),
+        newConversationId: files.length > 0 ? attachments.conversationId : null,
+      });
     },
-    [agentId, canChat, model, send],
+    [agentId, attachments.conversationId, canChat, model, send, t],
   );
+  // The composer and the hero send with the composer's files, once all of them are ready.
+  const { items: composerItems, gate: filesGate, clear: clearFiles } = attachments;
+  const sendWithFiles = useCallback(
+    (text: string) => {
+      const files = composerFiles ? composerItems : [];
+      if (files.length > 0 && filesGate) return;
+      sendText(text, files);
+      if (files.length > 0) clearFiles();
+    },
+    [clearFiles, composerFiles, composerItems, filesGate, sendText],
+  );
+
+  // Design chat.jsx `dragOver`: files dropped on the conversation go to the composer.
+  const [dragOver, setDragOver] = useState(false);
+  const canDrop = canChat;
 
   // "Observar" (design: chat.jsx): live tool calls start expanded. Session-only UI state.
   const [observe, setObserve] = useState(false);
@@ -617,7 +673,41 @@ export function ChatPage() {
           </aside>
         </div>
       )}
-      <div className="chat-main">
+      <div
+        className="chat-main"
+        onDragOver={(event) => {
+          if (!canDrop || !event.dataTransfer.types.includes('Files')) return;
+          event.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget === event.target) setDragOver(false);
+        }}
+        onDrop={(event) => {
+          if (!canDrop) return;
+          event.preventDefault();
+          setDragOver(false);
+          if (composerFiles) composerFiles.add(Array.from(event.dataTransfer.files));
+        }}
+      >
+        {dragOver && agent && (
+          <div className="chat-drop" aria-hidden="true">
+            <UploadIcon size={22} />
+            {composerFiles ? (
+              <>
+                <div className="chat-drop-title">{t('chat.attachments.dropTitle')}</div>
+                <div className="chat-drop-hint">{t('chat.attachments.dropHint')}</div>
+              </>
+            ) : (
+              <>
+                <div className="chat-drop-title">
+                  {t('chat.attachments.dropCannot', { name: agent.name })}
+                </div>
+                <div className="chat-drop-hint">{t('chat.attachments.dropCannotHint')}</div>
+              </>
+            )}
+          </div>
+        )}
         <ChatHeader
           agent={agent}
           model={model}
@@ -648,7 +738,7 @@ export function ChatPage() {
         )}
         <div ref={scrollRef} className="chat-scroll" onScroll={onConversationScroll}>
           {isEmpty && agent && canChat && (
-            <AgentHero agent={agent} disabled={isStreaming} onPrompt={sendText} />
+            <AgentHero agent={agent} disabled={isStreaming} onPrompt={sendWithFiles} />
           )}
           {isEmpty && agentPending && CONVERSATION_SKELETON}
           {isEmpty && blocked && <ChatBlocked kind={blocked} />}
@@ -792,9 +882,11 @@ export function ChatPage() {
             agentName={agentName}
             disabled={!canChat}
             isStreaming={isStreaming}
-            onSend={sendText}
+            onSend={sendWithFiles}
             onStop={stop}
             restore={busy}
+            files={composerFiles}
+            canAttach={canAttach}
           />
         )}
       </div>

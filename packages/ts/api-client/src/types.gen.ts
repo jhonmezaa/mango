@@ -503,6 +503,10 @@ export type AgentOut = {
      */
     allowed_models: Array<string>;
     /**
+     * Capabilities
+     */
+    capabilities?: Array<'code_interpreter'>;
+    /**
      * Category
      */
     category: string;

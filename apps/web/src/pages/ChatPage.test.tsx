@@ -120,14 +120,13 @@ describe('ChatPage', () => {
     // Design (closing round): no «En línea» dot, like the hero; the API has no such status.
     expect(topbar()).not.toHaveTextContent('En línea');
     expect(topbar().querySelector('.dot')).toBeNull();
-    for (const label of [
-      'Costo de la conversación',
-      'Más opciones',
-      'Adjuntar archivos',
-      'Comandos con /',
-    ]) {
+    for (const label of ['Costo de la conversación', 'Más opciones', 'Comandos con /']) {
       expect(screen.getByText(`${label}, próximamente`)).toBeInTheDocument();
     }
+    // Design round 40 (D116): an agent whose version does not run code cannot read files.
+    expect(
+      screen.getByRole('button', { name: 'Adjuntar archivos (no disponible)' }),
+    ).toHaveAttribute('aria-disabled', 'true');
     // Round 23: no «Skill» button in the composer, a skill cannot be forced.
     expect(screen.queryByText('Skill, próximamente')).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Mensaje a FinOps' })).toHaveAttribute(

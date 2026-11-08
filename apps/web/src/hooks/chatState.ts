@@ -1,5 +1,6 @@
 import type { ChatEvent } from '../api/chatEvents';
 import type { ChatApproval, Message, ToolCall, ToolStatus } from '../api/schemas';
+import type { MessageAttachment } from '../components/chat/attachments';
 import type { TurnView } from './turnView';
 
 /**
@@ -179,6 +180,8 @@ export interface DisplayMessage {
    * when this tab's message was refused because of it.
    */
   fromOtherTab?: boolean;
+  /** The files of a question (D116): what was sent, or what the history says of them. */
+  attachments?: MessageAttachment[];
   /** ISO timestamp: `created_at` for loaded history, the client clock for messages sent now. */
   createdAt?: string;
   errorKey?: ErrorKey;
@@ -239,7 +242,14 @@ export function errorKeyForCode(code: string, status?: number): ErrorKey {
 
 export type ChatAction =
   | { type: 'reset'; conversationId: string | null; messages: DisplayMessage[] }
-  | { type: 'send'; userId: string; assistantId: string; text: string; sentAt?: string }
+  | {
+      type: 'send';
+      userId: string;
+      assistantId: string;
+      text: string;
+      sentAt?: string;
+      attachments?: MessageAttachment[];
+    }
   | {
       type: 'event';
       assistantId: string;
@@ -310,6 +320,16 @@ export function fromApiMessage(
           ? 'interrupted'
           : 'done',
     createdAt: message.created_at,
+    ...(message.attachments?.length
+      ? {
+          attachments: message.attachments.map((file) => ({
+            fileId: file.file_id,
+            name: file.name,
+            size: file.size_bytes,
+            gone: file.gone,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -503,6 +523,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
             tools: [],
             status: 'done',
             ...(action.sentAt ? { createdAt: action.sentAt } : {}),
+            ...(action.attachments?.length ? { attachments: action.attachments } : {}),
           },
           {
             id: action.assistantId,

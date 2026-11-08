@@ -202,6 +202,42 @@ describe('fromApiMessage · how a cut answer ended (R3b)', () => {
   });
 });
 
+describe('fromApiMessage · the files of a question (D116)', () => {
+  it('keeps id, name and size, and says which ones are gone', () => {
+    const message = fromApiMessage({
+      message_id: 'm1',
+      role: 'user',
+      content: '(archivos adjuntos)',
+      created_at: '2026-11-07T12:00:00Z',
+      tools: [],
+      attachments: [
+        {
+          file_id: '01HZZZZZZZZZZZZZZZZZZZZZ01',
+          name: 'a.csv',
+          kind: 'csv',
+          size_bytes: 9,
+          gone: true,
+        },
+      ],
+    });
+    expect(message.attachments).toEqual([
+      { fileId: '01HZZZZZZZZZZZZZZZZZZZZZ01', name: 'a.csv', size: 9, gone: true },
+    ]);
+  });
+
+  it('a question sent with files shows them', () => {
+    const files = [{ fileId: 'f1', name: 'a.csv', size: 9, gone: false }];
+    const state = chatReducer(initialChatState, {
+      type: 'send',
+      userId: 'u1',
+      assistantId: 'a1',
+      text: 'Hola',
+      attachments: files,
+    });
+    expect(state.messages[0]?.attachments).toEqual(files);
+  });
+});
+
 describe('chatReducer · a turn in flight read again (round 40)', () => {
   const question = {
     id: 'q',

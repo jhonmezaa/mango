@@ -93,6 +93,19 @@ export const messageSchema = z.object({
    * bounded string so a reason added later does not break the conversation: unknown is none.
    */
   stop_code: z.string().max(64).nullable().optional(),
+  /** The files of a question (D116 (11)): id, name, type and size; `gone` after 90 days. */
+  attachments: z
+    .array(
+      z.object({
+        file_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+        name: z.string().max(1024),
+        kind: z.string().max(16),
+        size_bytes: z.number().int().nonnegative(),
+        gone: z.boolean(),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 export type Message = z.infer<typeof messageSchema>;
 

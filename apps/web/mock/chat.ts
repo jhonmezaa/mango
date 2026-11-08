@@ -9,6 +9,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { agents, versionOf } from './agents.ts';
 import { approvalsOfConversation, requestFromChat, requestToolFromChat } from './approvals.ts';
 import { recordAudit } from './audit.ts';
+import { turnAttachments, type StoredAttachment } from './chatFiles.ts';
 import { bearerOf, firstUsableRemote, isConnected, markConsentPending } from './connections.ts';
 import { newId, readBody, sendError, sendJson, type ApiHandler } from './http.ts';
 import { demoTicket } from './tickets.ts';
@@ -40,6 +41,8 @@ interface StoredMessage {
   /** Why a stored answer was cut (R3b): «Detener», or Mango lost the turn. */
   stopped?: boolean;
   stop_code?: 'cancelled' | 'turn_interrupted';
+  /** The files of a question (D116 (11)); `gone` after 90 days. */
+  attachments?: StoredAttachment[];
 }
 
 interface StoredConversation {
@@ -114,13 +117,21 @@ function seedConversations(): void {
       agent.status === 'published' &&
       versionOf(agent, agent.published_version)?.definition.name === 'Savings Plans',
   );
-  const seeds: [title: string, hoursAgo: number, agentId: string][] = [
+  // Design round 40: a file of the history that is no longer there («Ya no disponible»).
+  const gone: StoredAttachment = {
+    file_id: newId(),
+    name: 'cobertura_julio_2026.csv',
+    kind: 'csv',
+    size_bytes: 482_133,
+    gone: true,
+  };
+  const seeds: [title: string, hoursAgo: number, agentId: string, files?: StoredAttachment[]][] = [
     ['Gasto de EC2 del mes', 1, RELEASE_AGENT],
     ['Pronóstico de fin de mes', 26, RELEASE_AGENT],
     ['Anomalías <b>de la semana</b>', 4 * 24, RELEASE_AGENT],
-    ['Savings Plans de agosto', 20 * 24, savingsPlans?.agent_id ?? RELEASE_AGENT],
+    ['Savings Plans de agosto', 20 * 24, savingsPlans?.agent_id ?? RELEASE_AGENT, [gone]],
   ];
-  for (const [title, hoursAgo, agentId] of seeds) {
+  for (const [title, hoursAgo, agentId, files] of seeds) {
     const updatedAt = new Date(Date.now() - hoursAgo * HOUR_MS).toISOString();
     const conversationId = newConversationId();
     conversations.set(conversationId, {
@@ -135,6 +146,7 @@ function seedConversations(): void {
           content: `${title}?`,
           created_at: updatedAt,
           tools: [],
+          ...(files ? { attachments: files } : {}),
         },
         {
           message_id: newId(),
@@ -205,12 +217,6 @@ async function admitTurn(req: IncomingMessage, res: ServerResponse): Promise<Adm
     sendError(res, 422, 'invalid_request', 'Invalid chat request');
     return null;
   }
-  // D116 (11): the files of a question. The mock keeps no uploads: any id is not of the
-  // conversation, as the API answers for one it does not find.
-  if (Array.isArray(attachments) && attachments.length > 0) {
-    sendError(res, 404, 'unknown_attachment', 'an attachment is not of this conversation');
-    return null;
-  }
   if (/presupuesto agotado/i.test(message)) {
     sendError(res, 402, 'budget_exceeded', 'Budget exceeded');
     return null;
@@ -218,9 +224,29 @@ async function admitTurn(req: IncomingMessage, res: ServerResponse): Promise<Adm
 
   let conversation =
     typeof conversationId === 'string' ? conversations.get(conversationId) : undefined;
-  if (typeof conversationId === 'string' && !conversation) {
+  const files = Array.isArray(attachments) ? (attachments as unknown[]) : [];
+  // D116 (11): a new chat whose files were uploaded first names the conversation they went to.
+  const startsWithFiles =
+    typeof conversationId === 'string' &&
+    !conversation &&
+    /^[0-9a-f]{32}$/.test(conversationId) &&
+    files.length > 0;
+  if (typeof conversationId === 'string' && !conversation && !startsWithFiles) {
     sendError(res, 404, 'not_found', 'Conversation not found');
     return null;
+  }
+  let attached: StoredAttachment[] = [];
+  if (files.length > 0) {
+    if (typeof conversationId !== 'string') {
+      sendError(res, 422, 'attachments_need_conversation', 'name the conversation');
+      return null;
+    }
+    const checked = turnAttachments(conversationId, files);
+    if (!Array.isArray(checked)) {
+      sendError(res, checked.status, checked.code, 'an attachment is not usable');
+      return null;
+    }
+    attached = checked;
   }
   // A conversation keeps the agent of its first turn; the agent must be published and the
   // model one of the version's allowed models (same answers as the API).
@@ -247,7 +273,7 @@ async function admitTurn(req: IncomingMessage, res: ServerResponse): Promise<Adm
   }
   if (!conversation) {
     conversation = {
-      conversation_id: newConversationId(),
+      conversation_id: startsWithFiles ? conversationId : newConversationId(),
       agent_id: chatAgent,
       title: message.slice(0, 60),
       updated_at: '',
@@ -263,6 +289,7 @@ async function admitTurn(req: IncomingMessage, res: ServerResponse): Promise<Adm
     content: message,
     created_at: now,
     tools: [],
+    ...(attached.length > 0 ? { attachments: attached } : {}),
   });
   // Same events as the API: the turn's `UseAgent` decision, `agent.invoke`, then
   // `agent.completed` with the settled cost and the turn's authorization.

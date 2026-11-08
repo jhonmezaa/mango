@@ -1053,6 +1053,101 @@
     font-size: 12px;
     color: var(--red);
   }
+  /* Design round 40 (styles.css `.cr-*`, chat.jsx ChatInput): the files of a message. */
+  .cr-att {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .cr-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    padding: 5px 8px;
+    font-size: 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .cr-chip > svg {
+    flex-shrink: 0;
+    color: var(--accent-ink);
+  }
+  .cr-chip-n {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cr-chip-m {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .cr-chip-x {
+    display: flex;
+    color: var(--text-muted);
+  }
+  .cr-chip.is-bad {
+    background: var(--red-soft);
+    border-color: color-mix(in oklab, var(--red) 35%, transparent);
+  }
+  .cr-chip.is-bad > svg,
+  .cr-chip.is-bad .cr-chip-m {
+    color: var(--red);
+  }
+  .cr-chip.is-gone {
+    opacity: 0.7;
+  }
+  .cr-chip.is-gone .cr-chip-n {
+    text-decoration: line-through;
+  }
+  .composer-attachments {
+    margin-bottom: 8px;
+  }
+  .composer-att-note {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--amber);
+  }
+  .composer-attach-off {
+    opacity: 0.45;
+  }
+  .composer-why,
+  .composer-gate {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .composer-gate.is-bad {
+    color: var(--red);
+  }
+  /* Design chat.jsx `dragOver`: the drop target over the conversation. */
+  .chat-drop {
+    position: absolute;
+    inset: 12px;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: color-mix(in oklab, var(--bg) 85%, transparent);
+    border: 2px dashed var(--accent);
+    border-radius: 12px;
+    pointer-events: none;
+  }
+  .chat-drop > svg {
+    color: var(--accent-ink);
+  }
+  .chat-drop-title {
+    font-size: 14px;
+  }
+  .chat-drop-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
   .composer-row {
     display: flex;
     align-items: center;

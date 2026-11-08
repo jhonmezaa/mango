@@ -381,6 +381,10 @@ class AgentOut(_Strict):
     skills: list[AgentSkillOut] | None = None
     """Only in the detail: the approved skills of the served version, in its order (D92 (8),
     the chat's «Qué puede usar»). ``None`` in the list and when the registry cannot be read."""
+    capabilities: list[Capability] = []
+    """What the version may do besides its tools (D114 (6)): ``code_interpreter`` runs code and
+    reads the chat's attachments, so the composer offers «Adjuntar» (D116 (12)). Only a hint for
+    the UI: the turn checks the files itself."""
 
 
 class AgentList(_Strict):
@@ -952,6 +956,7 @@ def _agent_out(
         is_mine=is_mine,
         cleanup=cleanup,
         skills=skills,
+        capabilities=list(d.capabilities),
     )
 
 

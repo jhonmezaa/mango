@@ -197,6 +197,7 @@ export const zAgentSkillOutSchema = z.object({
  */
 export const zAgentOutSchema = z.object({
     allowed_models: z.array(z.string()),
+    capabilities: z.array(z.literal('code_interpreter')).optional().default([]),
     category: z.string(),
     cleanup: z.enum([
         'running',

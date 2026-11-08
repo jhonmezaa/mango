@@ -15,6 +15,7 @@ function agent(overrides: Partial<Agent> & { id: string; name: string }): Agent 
     status: 'published',
     version: 2,
     lock_version: null,
+    capabilities: [],
     description: '',
     category: 'Finanzas',
     icon: 'Money',

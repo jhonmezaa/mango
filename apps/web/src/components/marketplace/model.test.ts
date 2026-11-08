@@ -24,6 +24,7 @@ function agent(overrides: Partial<Agent> & { id: string }): Agent {
     status: 'published',
     version: 1,
     lock_version: null,
+    capabilities: [],
     name: overrides.id,
     description: '',
     category: 'Finanzas',

@@ -167,6 +167,10 @@ Construido en `mango-api` con tests (moto), sin web y sin ver en una instalació
 
 Nuevo: el rol de `Mango-<ns>-ChatFilesScanResults` solo actualiza los atributos del escaneo (`dynamodb:Attributes`) en particiones `USER#*` de `Conversations` y no lee nada; un evento falso en el bus por defecto no puede abrir un archivo, porque además de su registro la política del bucket sigue negando la lectura sin la etiqueta limpia.
 
+## Estado tras U1-web (2026-11-08)
+
+El compositor de la SPA (D116 (12)) no cambia ninguna frontera: el navegador sube cada archivo solo a la URL `https` firmada que devuelve `mango-api` (o al propio origen del mock), sin credenciales ni la cabecera `Authorization`, y `connect-src` solo nombra el bucket. Los nombres de archivo se pintan como texto; no hay vista previa de ningún archivo en el compositor ni en el historial (las imágenes por `blob:` son de W1). El tipo, el tamaño y el escaneo los decide el servidor: la web solo corta en 20 archivos por mensaje. `AgentOut.capabilities` es una pista para la interfaz: el turno vuelve a comprobar cada archivo (TM-CF9).
+
 ## Supuestos validados
 
 Confirmados el 2026-11-07, por menú, por el agente que lanzó este trabajo: al dar de baja a una persona o borrar una conversación (cuando exista esa ruta) se borran sus archivos y su sesión del Code Interpreter («Borrar con la conversación (Recomendada)»). El tamaño (20 × 100 MB, 90 días) y el escaneo de subidas y generados los decidió el dueño el 2026-11-07 (decisiones 6 y 7 del plan).

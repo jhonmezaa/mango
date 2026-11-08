@@ -311,6 +311,8 @@ describe('mock agents', () => {
       // Only a flag: who created the agent is never part of the answer.
       is_mine: false,
       cleanup: null,
+      // FinOps runs code in the mock, so its chat takes attachments (D116).
+      capabilities: ['code_interpreter'],
       // Only the detail carries the skills of the version (D95); FinOps has none.
       skills: [],
     });

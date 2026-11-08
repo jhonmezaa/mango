@@ -974,6 +974,15 @@
             "title": "Allowed Models",
             "type": "array"
           },
+          "capabilities": {
+            "default": [],
+            "items": {
+              "const": "code_interpreter",
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
           "category": {
             "title": "Category",
             "type": "string"

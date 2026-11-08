@@ -51,6 +51,8 @@ export interface CreateTurnRequest {
   /** One of the agent's allowed models; the API rejects any other (D22). */
   model?: string | null;
   message: string;
+  /** Ids of the ready files of the question (D116 (11)); the API checks each one. */
+  attachments?: readonly string[];
 }
 
 /** Highest `after` the API accepts (`MAX_STREAM_OFFSET`). */
@@ -332,6 +334,7 @@ export function createApiClient(options: ApiClientOptions) {
           message,
           ...(request.agentId ? { agent_id: agentIdSchema.parse(request.agentId) } : {}),
           ...(request.model ? { model: modelIdSchema.parse(request.model) } : {}),
+          ...(request.attachments?.length ? { attachments: [...request.attachments] } : {}),
         },
       });
       return {

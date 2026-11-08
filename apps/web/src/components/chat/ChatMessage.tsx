@@ -35,6 +35,7 @@ import { ReadMark } from '../../pages/connections/ReadMark';
 import type { RemoteLinkSource } from '../../security/remoteLinks';
 import { RateWaitButton, RateWaitLine } from '../RateWait';
 import { Soon } from '../Soon';
+import { AttachmentChips } from './AttachmentChips';
 import { formatMessageTime } from './threadGroups';
 import { KnowledgeCitations, KnowledgeSteps } from './KnowledgeCitations';
 import { ToolGroup } from './ToolGroup';
@@ -300,6 +301,9 @@ export const ChatMessage = memo(function ChatMessage({
         <div className="msg-user-inner">
           {message.fromOtherTab && (
             <span className="msg-user-origin">{t('chat.fromOtherTab')}</span>
+          )}
+          {message.attachments && message.attachments.length > 0 && (
+            <AttachmentChips files={message.attachments} />
           )}
           {/* User text is shown verbatim (escaped by React), never interpreted as markdown. */}
           <p className="msg-user-bubble">{message.content}</p>
