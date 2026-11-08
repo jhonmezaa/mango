@@ -1451,3 +1451,52 @@ Archivos: `chat-run.jsx` (nuevo: bloque «Analizando», figuras, tarjeta de arch
 ### 4. Decisiones de diseño (por confirmar con el producto)
 - **Enviar espera a que todos los adjuntos estén listos.** Mientras alguno sube o se revisa, «Enviar» queda desactivado con «Enviar se activa cuando terminen de subirse y revisarse los archivos.». Con alguno con problemas: «Quita los archivos con problemas para enviar el mensaje.». Motivo: si el mensaje sale antes, el agente puede responder sin el archivo y el turno se cobra igual.
 - **«Adjuntar» en un agente sin «Ejecutar código»: deshabilitado con su motivo**, no oculto, para que se sepa que existe. Al pulsarlo: «{agente} no puede leer archivos: su versión no tiene «Ejecutar código». Quien lo administra puede activarlo en el Builder.». Al arrastrar: «{agente} no puede leer archivos». En el prototipo tienen la capacidad FinOps, Data y Ops (`CR_CODE_AGENTS`, o `agent.code`).
+
+
+## Memoria, Canvas, MCP Apps y lo que dejó la ronda 40 (2026-11-08, D122–D125)
+Archivos nuevos: `memory.jsx` (pantalla Memoria, indicador del turno, fila del popover, `RvCaps` de la Revisión, iconos nuevos, skills de Mango, figura de matplotlib), `canvas.jsx`, `mcp-apps.jsx`, `caps.css` (`mm-`, `cv-`, `ap-`). Tocados: `chat.jsx`, `chat-run.jsx`, `admin.jsx`, `agent-review.jsx`, `lifecycle.js` (diff), `people.jsx`, `skills.jsx`, `shell.jsx`, `store.js`, `i18n.js`, `app.jsx`.
+
+### 1. Memoria (D122)
+- **Dónde vive (decisión, por confirmar):** página propia `#memory`, desde el menú de la cuenta («Memoria», sobre «Ajustes»). La ve toda persona con sesión (`canView('memory')` siempre) y solo muestra lo suyo. No va en Ajustes porque Ajustes es de administradores.
+- **Pantalla:** «Lo que los agentes recuerdan de ti entre conversaciones…» · filtro por agente · tipo (Todos, Preferencias, Hechos, Resúmenes) · «{n} recuerdos» · «Borrar todo…». Cada fila: tipo (insignia), agente · fecha, texto **en texto plano** (`white-space: pre-wrap`, nunca HTML). Recortado: «…» al final y «Texto recortado: el recuerdo completo es más largo.».
+- **Borrar uno:** confirmación en la misma fila («{agente} dejará de recordarlo. No se puede deshacer.» · Cancelar · Borrar) → aviso «Recuerdo borrado.».
+- **Borrar todo:** modal «Borrar toda tu memoria» · «Todos los agentes dejarán de recordar lo que saben de ti: {n} recuerdos[, también los que no se ven en la lista], y lo que guardaron tus tareas. No se puede deshacer.» → aviso «Se borraron {n} recuerdos y {m} eventos.» (los dos números de la respuesta).
+- **Más de 300:** «Se muestran tus 300 recuerdos más recientes de {n}. «Borrar todo» también borra los que no se ven.».
+- **Estados:** apagada (`enabled: false`) «La memoria está apagada en esta instalación» · sin recuerdos «Ningún agente recuerda nada de ti» · cargando (esqueleto) · 503 «La memoria no está disponible ahora» + Reintentar · 429 «Demasiadas solicitudes. Puedes pedir tu memoria hasta 30 veces por minuto.» con la cuenta atrás de `Retry-After` (`RateWait`).
+- **Pie:** de dónde salen los recuerdos y que solo se usan en el chat.
+- **Editar un recuerdo:** no se dibuja (no hay ruta). Cuando exista, va un lápiz junto a la papelera de la fila.
+- **Chat:** fila «Memoria» en «Qué puede usar» (sin memoria / con memoria pero apagada en la instalación / encendida, con enlace a Memoria). Indicador del turno bajo la respuesta: «Usó lo que recuerda de ti · Ver memoria» (`msg.memory`), solo si la prueba en AWS confirma que se puede saber por turno.
+- **Builder:** sección «Memoria» tras «Ejecutar código», casilla «Recuerda entre conversaciones» (`snap.memory`, apagada por defecto). No va como Próximamente: está construida. Con la instalación apagada: «La memoria está apagada en esta instalación: la casilla se guarda en la versión, pero el agente no recordará nada hasta que se encienda.».
+- **Revisión (TM-ME6):** bloque nuevo «capacidades» tras Knowledge bases, con «Ejecutar código» y «Memoria». Agente nuevo: las dos con «Encendida»/«Apagada». Cambio: solo lo que cambió, «+ Se enciende» / «− Se apaga»; sin cambios: «Ejecutar código: sí/no · Memoria: sí/no». `Lifecycle.diff` trae `code` y `memory` y cuentan en «{n} cambios». Esto cierra el pendiente de la ronda 40 («Ejecutar código» en el diff).
+- **Personas › Deshabilitar:** el texto de la acción dice que se borra lo que los agentes recuerdan de esa persona (ahora y otra vez al día siguiente), sin ver el contenido, y que rehabilitarla antes cancela el segundo borrado. Si no se puede dejar el borrado en marcha, se usa el error de directorio no disponible de hoy (sin texto nuevo).
+- *Para el producto:* el contexto dice a la vez que las tareas no usan memoria y que «Borrar todo» borra lo que guardaron las tareas. El diseño repite las dos frases; confirmar cuál vale.
+
+### 2. Canvas (D124) · fase posterior
+- Sustituye al `ArtifactPanel` «Próximamente» (`CanvasPanel`, 520 px a la derecha; ≤1200 px flota sobre el chat). La tarjeta «artifact» de la respuesta abre el Canvas; con código lleva el ícono de terminal.
+- **Cabecera:** título · «Canvas · Documento | Código · Python · v{n} de {m} · de {agente} | editada por ti» · Historial · Exportar · Cerrar.
+- **Barra:** (código) pestañas Código / Vista previa · «Mostrar cambios» (contra la versión anterior; desactivado en v1) · «Editar» → área de texto + «Descartar» / «Guardar versión» (crea v{n+1} «Editado por ti»).
+- **Versiones:** panel lateral con cada versión (nota, hora, autor, «Actual»). Ver una anterior pone el aviso «Estás viendo v{n} · {hora} · {autor}.» + «Ir a la actual» / «Restaurar esta versión» (crea una versión nueva «Restaurada de v{n}», no borra nada). Pie: «Las versiones viven lo que vive la conversación.».
+- **Comentarios (decisión, por confirmar): solo los escribe el agente.** El texto citado se marca en ámbar en el documento; cada comentario trae la cita, el texto, «Resolver» (lo quita de la vista) y «Responder en el chat» (deja «Sobre «{cita}» en el Canvas: » en el cuadro de texto). Motivo: el agente solo lee el chat; un comentario de la persona dentro del Canvas no le llegaría sin un turno.
+- **Exportar:** documento → .md (se descarga al momento), Word (.docx) y PDF (se generan en el servidor y llegan a la conversación como tarjeta de archivo, con los estados de la ronda 40); código → .py. Aviso: «Generando {tipo}. Aparecerá en la conversación.».
+- **Vista previa (D123):** etiqueta pintada por Mango **fuera** del marco: «Vista previa · contenido del agente, no de Mango» (candado). *El texto exacto venía cortado en el contexto («cgente»); ajustar si el producto ya tiene uno.* A la derecha, el estado que Mango sabe: Preparando · Ejecutando · Lista · Error en el código · No arrancó a tiempo · Tiempo agotado, y «Ejecutar de nuevo». El marco tiene borde de 2 px y fondo blanco para que no se confunda con la interfaz. Dentro (lo pinta el marco): «Preparando Python… La primera vez descarga Python, numpy, pandas y matplotlib (decenas de MB). Tiene 20 s para arrancar.», «Ejecutando… Tope de 50 s por ejecución.», traza de error (p. ej. import no disponible), salida de texto y figuras. Pie: corre en el navegador, aislado, sin red y sin costo de modelo; dentro no funcionan formularios, ventanas, diálogos, descargas ni enlaces.
+- Demo: «Chat · Canvas» › «Abrir Canvas de código»; el documento es «Análisis de costos» en la conversación t1. «Canvas · vista previa» para cada estado.
+
+### 3. MCP Apps (D125) · fase posterior
+- Va bajo el texto de la respuesta (`msg.app`). Cabecera fuera del marco: etiqueta «app de {MCP}» (candado, misma pieza que Canvas) · tool en mono · Pantalla completa · Ventana flotante · Cerrar. Marco aislado con borde de 2 px.
+- **Modos:** en la respuesta (máx. 340 px de alto) · pantalla completa (capa sobre todo, Esc o «Volver a la respuesta») · ventana flotante abajo a la derecha (420 × 300). Fuera de la respuesta deja «La app está en pantalla completa | en una ventana flotante.» + «Traer aquí». La app pide el modo («Ver en grande» dentro del marco) y Mango lo concede.
+- **Pie:** «{n} de 20 llamadas en este turno · Solo lectura. Cada llamada pasa por Mango con tus permisos y tu presupuesto, y queda en Auditoría.» (20 es de ejemplo: el tope lo fija el producto).
+- **Estados:** cargando · lista · «La app no arrancó a tiempo.» + Reintentar · conexión pendiente («Conecta tu cuenta de Azure DevOps para usar esta app» + Conectar, el flujo de `remote-core.jsx`) · error de una llamada, en el pie y en rojo: «La app pidió {tool} y Mango no la hizo: permiso denegado… | sin presupuesto… | llegó al tope de {n} llamadas… | {MCP} no responde ahora.» · cerrada («Cerraste la app.» + «Abrir de nuevo»).
+- Una tool sin interfaz sigue siendo un paso del turno, como hoy.
+- Demo: «Chat · app de MCP» › «Insertar app de Azure DevOps» y «App de MCP · estado».
+
+### 4. Lo que dejó la ronda 40
+- **Celda en curso:** ya no se muestra su código. Mientras corre: «El código se ve cuando termine la celda y pase la revisión de seguridad.» (TM-CI5).
+- **Turno perdido sin escribir nada:** error del agente «El agente no pudo responder · Mango perdió el turno antes de que el agente escribiera nada.» + Reintentar (vuelve a enviar). Con texto, sigue «Respuesta interrumpida» sin Reintentar. Demo: «Chat · progreso del turno» › «Se pierde sin escribir».
+- **Figuras:** el marcador con nombre y tamaño pasa a una figura de matplotlib dibujada (`MplFigure`, fondo blanco, estilo por defecto) en la respuesta, en el modal y en la vista previa de Canvas. En el producto es la imagen PNG.
+- **Aceptado sin cambio de diseño:** Playground y evals ejecutan código sin bloque «Analizando»; la sesión que termina al reconectar se ve en el ingreso con el texto de hoy; el turno de otra pestaña en cola se ve sin su pregunta hasta reabrir; el spinner `.spinner` del producto en lugar de `mango-spinner`.
+- **Skills de Mango:** PDF, Word, Excel y PowerPoint salen en Skills (los dos modos) con la insignia «De Mango · con «Ejecutar código»», de solo lectura (sin «Editar»). Crear una con esos nombres da «Ya existe una skill con ese nombre». *El final de esa frase venía cortado en el contexto; si el producto no las muestra en el catálogo, se quitan con `window.MANGO_SKILLS = []`.*
+
+### 5. Por confirmar
+- Comentarios del Canvas solo del agente (arriba, §2).
+- Memoria como página propia desde el menú de la cuenta (arriba, §1).
+- La frase de las tareas en «Borrar todo» (arriba, §1).

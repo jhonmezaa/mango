@@ -214,6 +214,7 @@ function ReviewDetail({ r, agents, setView }) {
           </div>
 
           {window.RvKbs && <window.RvKbs r={r} d={d} isNew={isNew} />}
+          {window.RvCaps && <window.RvCaps r={r} d={d} isNew={isNew} />}
           {window.RvSkills && <window.RvSkills r={r} d={d} isNew={isNew} />}
 
           <div>

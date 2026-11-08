@@ -30,7 +30,7 @@ const skVars = (txt) => [...new Set([...(txt || '').matchAll(/\{\{\s*([^}]+?)\s*
 
 function SkillsCatalog({ agents }) {
   const I = window.Icons; const S = window.MangoStore; const L = window.Lifecycle;
-  const allSkills = window.useMango(s => s.skills) || [];
+  const allSkills = [...(window.MANGO_SKILLS || []), ...(window.useMango(s => s.skills) || [])];
   const availMode = window.useMango(s => s.avail);
   const sim = window.useMango(s => s.simSk) || null;
   const skills = availMode ? allSkills.filter(s => !s.bundled) : allSkills;
@@ -82,7 +82,7 @@ function SkillsCatalog({ agents }) {
                 <button key={s.id} className={'sk-tr' + (m.ok ? '' : ' is-warn')} onClick={() => setSel(s.id)}>
                   <span className="row gap-3" style={{ minWidth: 0 }}>
                     <span className="mc-ic"><Ic size={14} /></span>
-                    <span style={{ minWidth: 0 }}><span className="mk-name" style={{ display: 'block' }}>{s.name}{s.bundled && <span className="badge" style={{ marginLeft: 6 }}>Incluida con Mango</span>}{skPending(s.id) && <span className="badge badge-amber" style={{ marginLeft: 6 }}>v{s.version + 1} en aprobación</span>}</span><span className="mk-meta" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.cat} · {s.desc}</span></span>
+                    <span style={{ minWidth: 0 }}><span className="mk-name" style={{ display: 'block' }}>{s.name}{s.bundled && <span className="badge" style={{ marginLeft: 6 }}>Incluida con Mango</span>}{s.mango && <span className="badge" style={{ marginLeft: 6 }} title="La reciben todos los agentes con «Ejecutar código». No se edita.">De Mango · con «Ejecutar código»</span>}{skPending(s.id) && <span className="badge badge-amber" style={{ marginLeft: 6 }}>v{s.version + 1} en aprobación</span>}</span><span className="mk-meta" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.cat} · {s.desc}</span></span>
                   </span>
                   <span className="row gap-1" style={{ flexWrap: 'wrap', minWidth: 0 }}>{m.servers.map(x => <span key={x.id} className={'sk-mcp' + (x.s?.status === 'enabled' ? '' : ' off')} title={x.s ? window.Lifecycle.MCP_STATUS[x.s.status][0] : 'No existe en el catálogo'}><span className={'dot dot-' + (x.s?.status === 'enabled' ? 'green' : 'red')} />{x.s?.name || x.id}</span>)}</span>
                   <span className="row gap-1" style={{ flexWrap: 'wrap' }}><McpLevel level={m.level} />{m.writes && m.level !== 'write' && <span className="badge badge-amber" title="Incluye tools de escritura: confirmación o aprobación en cada uso">+ escritura</span>}</span>
@@ -98,7 +98,7 @@ function SkillsCatalog({ agents }) {
         </div>
         </>}
       </div>
-      {selected && <SkillDetail s={selected} agents={agents} canEdit={canEdit} onClose={() => setSel(null)} onEdit={() => { setEdit({ ...selected }); }} />}
+      {selected && <SkillDetail s={selected} agents={agents} canEdit={canEdit && !selected.mango} onClose={() => setSel(null)} onEdit={() => { setEdit({ ...selected }); }} />}
       {edit && <SkillEditor s={edit} agents={agents} onClose={() => setEdit(null)} onSaved={(id) => { setEdit(null); setSel(id); }} />}
     </>
   );
@@ -188,7 +188,7 @@ function SkillEditor({ s, agents, onClose, onSaved }) {
   const m = skMeta(f);
   const users = (s.usedBy || []).length;
   const idOf = (n) => n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-  const errs = [!f.name.trim() && 'Escribe un nombre', !f.instructions.trim() && 'Escribe las instrucciones', secret && 'Hay un posible secreto en las instrucciones', !f.tools.length && 'Elige al menos un MCP', f.tools.length > 10 && 'Hasta 10 MCP', f.outputs.length > 10 && 'Hasta 10 entregas', f.instructions.length > 20000 && 'Las instrucciones pasan de 20.000 caracteres', m.off.length && 'Hay MCP que no están habilitados', s.isNew && S.get().skills.some(x => x.id === idOf(f.name)) && 'Ya existe una skill con ese nombre', !reason.trim() && 'Escribe el motivo'].filter(Boolean);
+  const errs = [!f.name.trim() && 'Escribe un nombre', !f.instructions.trim() && 'Escribe las instrucciones', secret && 'Hay un posible secreto en las instrucciones', !f.tools.length && 'Elige al menos un MCP', f.tools.length > 10 && 'Hasta 10 MCP', f.outputs.length > 10 && 'Hasta 10 entregas', f.instructions.length > 20000 && 'Las instrucciones pasan de 20.000 caracteres', m.off.length && 'Hay MCP que no están habilitados', s.isNew && [...(window.MANGO_SKILLS || []), ...S.get().skills].some(x => x.id === idOf(f.name)) && 'Ya existe una skill con ese nombre', !reason.trim() && 'Escribe el motivo'].filter(Boolean);
   useEffect(() => { const h = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', h); return () => document.removeEventListener('keydown', h); }, []);
   const save = () => {
     setTried(true); setSrvErr(null); if (errs.length) return;

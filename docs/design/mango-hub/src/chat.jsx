@@ -177,6 +177,11 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
     if (activeThreadId && window.MangoStore.get().simChat === 'inflight') { const tm = setTimeout(() => { setMessages(m => [...m, { type: 'user_message', text: '¿Y cómo viene el pronóstico para el trimestre?', time: 'hace 2 min' }]); setStreaming(true); runTurn('pronóstico'); }, 50); return () => clearTimeout(tm); }
   }, [activeThreadId, activeAgentId]);
 
+  // Demo: Canvas de código y app de MCP.
+  const cvDemo = window.useMango(s => s.canvasDemo); const appDemo = window.useMango(s => s.appDemo);
+  useEffect(() => { if (!cvDemo) return; const a = { id: 'art-code-' + cvDemo, kind: 'code', title: 'Costo por servicio', preview: 'Python · pandas y matplotlib · la vista previa corre en tu navegador' }; setMessages(m => [...m, { type: 'user_message', text: 'Arma un script para ver el cambio por servicio, con una gráfica.', time: 'ahora' }, { type: 'agent_response', text: 'Te dejé el script en el Canvas. La vista previa corre en tu navegador: puedes editarlo y volver a ejecutarlo.', artifact: a }]); setArtifact(a); }, [cvDemo]);
+  useEffect(() => { if (!appDemo) return; setMessages(m => [...m, { type: 'user_message', text: '¿Qué work items del sprint siguen abiertos?', time: 'ahora' }, { type: 'tool_call', tool: 'azure-devops.list_work_items', params: { sprint: 46, state: 'open' }, ms: 640, measured: true, status: 'ok' }, { type: 'agent_response', text: 'Hay **5 elementos abiertos** en el sprint 46; dos son bugs. Los ves abajo, en la app de Azure DevOps.', app: { mcp: 'Azure DevOps', tool: 'list_work_items' } }]); }, [appDemo]);
+
   // Subir a leer: la conversación solo baja sola si la persona ya estaba al final (a menos de 80 px). Si subió, aparece «Ir al final».
   const [away, setAway] = useState(false); const [newBelow, setNewBelow] = useState(false);
   const atEnd = () => { const el = scrollRef.current; return !el || el.scrollHeight - el.scrollTop - el.clientHeight <= 80; };
@@ -270,6 +275,8 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
         : { type: 'error', title: 'Demasiadas solicitudes', text: 'Llegaron muchas solicitudes desde tu red. Tu mensaje no se envió.', retry: true, again: text, retryAt: Date.now() + 178000 }]); }, 900)];
       return;
     }
+    // Turno perdido antes de escribir nada: error del agente con «Reintentar» (si ya había escrito algo, es «Respuesta interrumpida»).
+    if (sim === 'interrupted-empty') { setStreamPhase({ k: 'think' }); streamTimers.current = [setTimeout(() => { setStreaming(false); setStreamPhase(null); setMessages(m => [...m, { type: 'error', title: 'El agente no pudo responder', text: 'Mango perdió el turno antes de que el agente escribiera nada.', retry: true, again: text }]); }, 1100)]; return; }
     const cutKind = sim === 'maxtokens' ? 'tokens' : sim === 'tooltrunc' ? 'tool' : sim === 'timeout' ? 'timeout' : null;
     const at = (ms, fn) => { t += ms; timers.push(setTimeout(fn, t)); };
     const push = (s) => { steps = [...steps, s]; setStreamSteps(steps); };
@@ -354,7 +361,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
 
   const retryError = (idx) => {
     const e = messages[idx];
-    if (e && e.again) { const S = window.MangoStore; if (['quota', '429'].includes(S.get().simProgress)) S.set({ simProgress: null }); setMessages(m => m.filter((_, i) => i !== idx)); setStreaming(true); setTimeout(() => runTurn(e.again), 0); return; }
+    if (e && e.again) { const S = window.MangoStore; if (['quota', '429', 'interrupted-empty'].includes(S.get().simProgress)) S.set({ simProgress: null }); setMessages(m => m.filter((_, i) => i !== idx)); setStreaming(true); setTimeout(() => runTurn(e.again), 0); return; }
     if (simChat === 'outage') { window.MangoStore.set({ simChat: null }); setMessages(m => m.filter((_, i) => i !== idx)); return; }
     setMessages(m => m.map((msg, i) => i === idx ? { ...msg, retrying: true } : msg));
     setTimeout(() => {
@@ -431,7 +438,7 @@ function Chat({ agents, activeAgentId, setActiveAgentId, threads: allThreads, ac
             : <ChatInput value={input} setValue={setInput} onSend={sendMessage} onCancel={cancelStream} streaming={streaming} agent={agent} attachments={attachments} setAttachments={setAttachments} addFiles={addFiles} attNote={attNote} setAttNote={setAttNote} canAttach={window.crCanCode(agent)} />}
         </div>
       </div>
-      {artifact && <ArtifactPanel artifact={artifact} onClose={() => setArtifact(null)} agent={agent} />}
+      {artifact && (window.CanvasPanel ? <window.CanvasPanel artifact={artifact} onClose={() => setArtifact(null)} agent={agent} onAsk={(t) => setInput(t)} onExport={(file) => { const th = allThreads.find(x => x.id === activeThreadId); setMessages(m => [...m, { type: 'agent_response', text: '', canvasExport: true, outputs: [{ type: 'file', file: { ...file, thread: th ? (th.title || th.name) : 'Conversación nueva' } }] }]); }} /> : <ArtifactPanel artifact={artifact} onClose={() => setArtifact(null)} agent={agent} />)}
       <window.Modal open={!!extUrl} onClose={() => setExtUrl(null)} title="Abrir enlace externo" width={extRemote ? 480 : 440}>
         {extRemote && window.RemoteLinkBody ? <window.RemoteLinkBody pid={extRemote} url={extUrl} onClose={() => setExtUrl(null)} /> : <>
         <p style={{margin:'0 0 10px', fontSize: 13.5, color:'var(--text-muted)', lineHeight: 1.55}}>Este enlace lo escribió el agente y te lleva fuera de Mango. Revisa la dirección completa antes de abrirla.</p>
@@ -774,6 +781,7 @@ function ChatHeader({ agent, onNewChat, newDisabled, observe, setObserve, messag
                   </div>
                 ))}
               </div>
+              {window.MemoryPopRow && <window.MemoryPopRow agent={agent} />}
               </>}
             </div>
           )}
@@ -791,6 +799,7 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
   const I = window.Icons;
   const soon = window.useSoon();
   const [expanded, setExpanded] = useState(msg.expanded === true);
+  const simMem = window.useMango(s => s.simChatMemory);
   if (msg.type === "user_message") {
     return (
       <div className="msg-hover" style={{display:'flex', justifyContent:'flex-end', marginBottom: 22}}>
@@ -815,6 +824,8 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
              dangerouslySetInnerHTML={{__html: window.renderMarkdown(msg.text)}} />}
         {msg.cites?.length > 0 && window.KbCitations && <window.KbCitations cites={msg.cites} />}
         {msg.outputs?.length > 0 && <window.CrOutputs items={msg.outputs} />}
+        {msg.app && window.McpApp && <window.McpApp app={msg.app} />}
+        {(msg.memory || simMem === 'used') && msg.text && !msg.stopped && window.agentMemory?.(agent) && window.memOn?.() && <window.MemoryUsed />}
         {msg.interrupted && <div className="mc-alert amber" role="status" style={{ marginTop: 10 }}><I.Warn size={14} /><div><b>Respuesta interrumpida.</b> Mango perdió el turno a mitad. Lo de arriba es lo que alcanzó a escribir; el turno se cobra entero. Puedes volver a preguntar: el agente solo recordará lo que se ve aquí.</div></div>}
         {msg.away && <div className="row gap-2" style={{ marginTop: 10, fontSize: 12.5, color: 'var(--text-muted)' }}><span className="mango-spinner" aria-hidden="true" /> La respuesta sigue en Mango. La verás completa al volver a entrar.</div>}
         {msg.truncated && <div className="mc-alert" role="status" style={{ marginTop: 10 }}><I.Info size={14} /><div><b>Respuesta incompleta.</b> {msg.truncated === 'tool' ? <>El agente llegó a su largo máximo mientras preparaba una consulta a <span className="mono">{msg.truncTool}</span>, y la consulta no se hizo.</> : msg.truncated === 'timeout' ? 'El turno llegó a su límite de tiempo antes de terminar.' : 'El agente llegó a su largo máximo de respuesta.'} Lo de arriba es lo que alcanzó a escribir. Si necesitas el resto, pídelo en un mensaje nuevo; por ejemplo, «sigue desde donde quedaste».</div></div>}
@@ -822,7 +833,7 @@ function Message({ msg, idx, onRetry, onEdit, agent, onOpenArtifact }) {
         {msg.artifact && (
           <window.Soon on={soon} block style={{marginTop: 14}}><button onClick={() => onOpenArtifact(msg.artifact)} className="card" style={{marginTop: 14, padding: 12, display:'flex', gap: 10, alignItems:'center', width:'100%', textAlign:'left', cursor:'pointer'}}>
             <div style={{width: 36, height: 36, borderRadius: 7, background:'var(--accent-soft)', color:'var(--accent-ink)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink: 0}}>
-              <I.Document size={16} />
+              {msg.artifact.kind === 'code' ? <I.Terminal size={16} /> : <I.Document size={16} />}
             </div>
             <div style={{flex: 1, minWidth: 0}}>
               <div style={{fontSize: 13, fontWeight: 500, marginBottom: 2}}>{msg.artifact.title}</div>

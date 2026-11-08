@@ -92,7 +92,7 @@ function CodeBlock({ block }) {
         {cells.map((c, i) => <div key={i} className="cr-cell">
           <div className="cr-cell-h"><span className="mono">Celda {i + 1}</span>{c.run && st === 'run' ? <span className="row gap-1"><span className="mango-spinner" aria-hidden="true" /> corriendo</span> : c.run && st === 'paused' ? <span>sin terminar</span> : c.ms ? <span className="mono">{window.fmtDur ? window.fmtDur(c.ms) : c.ms + ' ms'}</span> : null}</div>
           {c.blocked ? <div className="cr-cell-blk"><I.Lock size={12} /> Mango no muestra el código ni la salida de esta celda: infringían una regla de seguridad.</div> : <>
-            <pre className="cr-pre mono">{c.code}</pre>
+            {c.run && st === 'run' ? <div className="cr-note"><I.Info size={11} /> El código se ve cuando termine la celda y pase la revisión de seguridad.</div> : <pre className="cr-pre mono">{c.code}</pre>}
             {(c.out || []).map((o, j) => <div key={j} className={'cr-out is-' + o.k}><span className="cr-out-k mono">{o.k === 'stderr' ? 'STDERR' : 'STDOUT'}</span><pre className="mono">{o.t}</pre></div>)}
             {c.trunc && <div className="cr-note"><I.Info size={11} /> Salida recortada: se muestran los primeros 20.000 caracteres.</div>}
             {c.exc && <div className="cr-exc"><span className="cr-out-k mono">{c.timeout ? 'TIEMPO' : 'EXCEPCIÓN'}</span><pre className="mono">{c.exc}</pre></div>}
@@ -112,7 +112,7 @@ function CrFigure({ fig }) {
   const [loading, setLoading] = React.useState(true);
   React.useEffect(() => { setLoading(true); const t = setTimeout(() => setLoading(false), 900); return () => clearTimeout(t); }, [retry, sim]);
   const st = sim === 'loading' || loading ? 'loading' : sim === 'error' && !retry ? 'error' : 'ok';
-  const ph = (big) => <div className={'cr-fig-img' + (big ? ' big' : '')} style={{ aspectRatio: fig.w + ' / ' + fig.h }}><span className="mono">{fig.name}</span><span className="mono">{fig.w} × {fig.h}</span></div>;
+  const ph = (big) => <div className={'cr-fig-img is-real' + (big ? ' big' : '')} style={{ aspectRatio: fig.w + ' / ' + fig.h }}>{window.MplFigure ? <window.MplFigure /> : <span className="mono">{fig.name}</span>}</div>;
   return (
     <figure className="cr-fig">
       {st === 'loading' ? <div className="cr-fig-img is-load" role="status" aria-label="Cargando la figura" style={{ aspectRatio: fig.w + ' / ' + fig.h }}><span className="mango-spinner" /></div>

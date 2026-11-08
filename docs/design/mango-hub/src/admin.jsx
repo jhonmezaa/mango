@@ -18,7 +18,7 @@ const AB_TEMPLATES = [
 ];
 const AB_SECTIONS = [
   { id: 'identity', label: 'Información básica' }, { id: 'org', label: 'Organización' }, { id: 'brain', label: 'Modelo e instrucciones' },
-  { id: 'tools', label: 'Tools' }, { id: 'kbs', label: 'Knowledge bases' }, { id: 'code', label: 'Ejecutar código' }, { id: 'skills', label: 'Skills' }, { id: 'limits', label: 'Límites y presupuesto' }, { id: 'access', label: 'Acceso' },
+  { id: 'tools', label: 'Tools' }, { id: 'kbs', label: 'Knowledge bases' }, { id: 'code', label: 'Ejecutar código' }, { id: 'memory', label: 'Memoria' }, { id: 'skills', label: 'Skills' }, { id: 'limits', label: 'Límites y presupuesto' }, { id: 'access', label: 'Acceso' },
 ];
 const AB_SERVER_ERR = {
   cycle: ['org', 'El supervisor elegido reporta, directa o indirectamente, a este agente. Elige otro para no crear un ciclo.'],
@@ -330,6 +330,14 @@ function AgentAdmin({ agents, models, setView, routeId }) {
                   <span className="ab-check">{snap.code && <I.Check size={10} />}</span>
                   <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 12.5, fontWeight: 500 }}>Puede ejecutar código</span><span className="ab-sub">Analiza datos y genera gráficas, tablas y archivos (CSV, Excel, Word, PowerPoint, PDF, imágenes). Trae pandas, matplotlib, openpyxl, python-docx, python-pptx, ReportLab y otros. Cada celda tiene un tope de 300 s. Sin esto, el agente no puede leer archivos adjuntos en el chat.</span></span>
                 </button></window.Soon>
+              </ABSection>
+
+              <ABSection id="memory" title="Memoria" desc="Recuerda a cada persona entre conversaciones. Es parte de la versión: se aprueba como el resto.">
+                <button type="button" className={'ab-item' + (snap.memory ? ' is-on' : '')} aria-pressed={!!snap.memory} onClick={() => set({ memory: !snap.memory })}>
+                  <span className="ab-check">{snap.memory && <I.Check size={10} />}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontSize: 12.5, fontWeight: 500 }}>Recuerda entre conversaciones</span><span className="ab-sub">El servicio de AWS guarda preferencias, hechos y resúmenes de lo que cada persona habla con este agente. Lo de una persona solo lo ve ella, y lo borra en Memoria: ni otros agentes, ni quien creó el agente, ni los administradores. Solo en el chat: las tareas programadas, las evals y el Playground no lo usan.</span></span>
+                </button>
+                {snap.memory && window.memOn && !window.memOn() && <div className="mk-meta" style={{ marginTop: 8 }}>La memoria está apagada en esta instalación: la casilla se guarda en la versión, pero el agente no recordará nada hasta que se encienda.</div>}
               </ABSection>
 
               <ABSection id="skills" title="Skills" desc="Playbooks que el agente carga cuando le sirven. Cada una queda fijada en una versión aprobada; una versión nueva de la skill llega al agente con su siguiente aprobación.">

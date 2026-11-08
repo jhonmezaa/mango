@@ -122,7 +122,7 @@
     { id: 'CHG-10', kind: 'auth', key: 'idp', from: 'none', to: 'sso', by: 'Usuario 1', at: ago(5000), reason: 'Entrar con la cuenta corporativa.', status: 'rejected', decidedBy: 'Usuario 6', decidedAt: ago(4900), note: 'Falta el metadata del IdP.' },
   ];
   const CHG_PREFIX = { member: 'directory.member_', mfa_reset: 'account.mfa_reset_', share: 'agent.share_', group: 'group.', skill: 'skill.', policy: 'policy.', auth: 'settings.' };
-  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp', 'schedules', 'inbox', 'knowledge', 'governance', 'activity', 'playground', 'skills', 'search', 'costs', 'observability', 'evals', 'tickets'];
+  const AVAILABLE = ['chat', 'approvals', 'budgets', 'audit', 'settings', 'login', 'marketplace', 'admin', 'review', 'org', 'models', 'mcp', 'schedules', 'inbox', 'knowledge', 'governance', 'activity', 'playground', 'skills', 'search', 'costs', 'observability', 'evals', 'tickets', 'memory'];
 
   let state = {
     avail: ls('mango-avail4', false),
@@ -206,7 +206,7 @@
       if (store.onDecide[c.kind]) store.onDecide[c.kind](c, 'withdrawn');
       store.log((CHG_PREFIX[c.kind] || 'settings.') + 'withdraw', c.target || c.key, 'Retiró la propuesta ' + c.id);
     },
-    canView: (view, role = state.role) => { const R = ROLES[role] || {}; if (view === 'costs') return !!(R.admin || R.central); if (view === 'observability') return !!R.admin; if (view === 'evals') return !!(R.admin || R.central || R.creator); if (state.avail && view === 'budgets' && role !== 'admin') return false; if (view === 'knowledge' || (state.avail && (view === 'skills' || view === 'playground'))) return !!(ROLES[role] && (ROLES[role].creator || ROLES[role].admin)); if (view === 'governance') return !!(ROLES[role] && (ROLES[role].admin || ROLES[role].central)); const p = PERMS[role]; return p.views === '*' || p.views.includes(view); },
+    canView: (view, role = state.role) => { const R = ROLES[role] || {}; if (view === 'memory') return true; if (view === 'costs') return !!(R.admin || R.central); if (view === 'observability') return !!R.admin; if (view === 'evals') return !!(R.admin || R.central || R.creator); if (state.avail && view === 'budgets' && role !== 'admin') return false; if (view === 'knowledge' || (state.avail && (view === 'skills' || view === 'playground'))) return !!(ROLES[role] && (ROLES[role].creator || ROLES[role].admin)); if (view === 'governance') return !!(ROLES[role] && (ROLES[role].admin || ROLES[role].central)); const p = PERMS[role]; return p.views === '*' || p.views.includes(view); },
     can: (action, role = state.role) => { const p = PERMS[role]; return p.actions === '*' || p.actions.includes(action); },
     actorEmail: () => 'usuario' + (store.actor().match(/\d+/) || ['1'])[0] + '@empresa.com',
     emailOf: (n) => !n ? null : String(n).includes('@') ? n : /\d+/.test(n) ? 'usuario' + String(n).match(/\d+/)[0] + '@empresa.com' : null,

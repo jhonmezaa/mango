@@ -143,6 +143,7 @@ function Sidebar({ view, setView, agents, user, collapsed, setCollapsed, pinnedI
                 <div className="sb-menu-sep" />
                 <button role="menuitem" className="row gap-2 sb-menu-item" onClick={() => { setMenuOpen(false); window.dispatchEvent(new CustomEvent('mango:toggle-theme')); }}><I.Moon size={14} /> Cambiar tema</button>
                 <div className="row between sb-menu-item" style={{ cursor: 'default' }} aria-disabled="true"><span className="row gap-2" style={{ opacity: .55 }}><I.BookOpen size={14} /> {t('sb.tour')}</span><window.SoonTag /></div>
+                <button role="menuitem" className="row gap-2 sb-menu-item" onClick={() => { setMenuOpen(false); go('memory'); }}><I.Memory size={14} /> Memoria</button>
                 {S.canView('settings') && <button role="menuitem" className="row gap-2 sb-menu-item" onClick={() => { setMenuOpen(false); go('settings'); }}><I.Settings size={14} /> {t('nav.settings')}</button>}
                 <div className="sb-menu-sep" />
                 <button role="menuitem" className="row gap-2 sb-menu-item danger" onClick={logout}><I.ArrowRight size={14} /> Cerrar sesión</button>

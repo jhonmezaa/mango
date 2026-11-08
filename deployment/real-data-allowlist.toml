@@ -23,6 +23,9 @@ allowed = [
   "666666666666",
   "777777777777",
   "999999999999",
+  # Ones with a final digit: example accounts of the design (memory and MCP Apps, round 41).
+  "111111111112",
+  "111111111115",
   # A countdown behind a counter: accounts of the organization in tests and in the mock.
   "210987654321",
   "310987654321",
