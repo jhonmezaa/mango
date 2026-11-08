@@ -18,7 +18,8 @@ jobs:
   python:
     name: Python (ruff, mypy, pytest)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The suite reached 14 min on slow runners (2026-11-08): room before a cut, not a target.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,7 +34,8 @@ jobs:
   typescript:
     name: TypeScript (web, infra, cdk-nag, cfn-guard, checkov)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Cut at 25 min on main and on PRs on slow runners (2026-11-08), with every test green.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
