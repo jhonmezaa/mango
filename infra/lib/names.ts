@@ -37,6 +37,7 @@ export const roleNames = {
   uninstallGuard: (ns: string) => mangoName(ns, "UninstallGuard"),
   /** Gives the stack's tags to what CloudFormation cannot tag (D77). */
   stackTagger: (ns: string) => mangoName(ns, "StackTagger"),
+  harnessLogs: (ns: string) => mangoName(ns, "HarnessLogs"),
   /** Lambda behind the Gateway that runs approved write tools (D27). */
   approvalExecutor: (ns: string) => mangoName(ns, "ApprovalExecutor"),
   /** Broker to the write roles; only the approval executor may assume it (§4.10). */

@@ -46,6 +46,7 @@ def test_creates_the_evals_harness_with_content_and_its_own_log_key(lab: Lab) ->
     assert not set(REDACT_GENAI_CONTENT) - {"OTEL_PYTHON_DISABLED_INSTRUMENTATIONS"} & set(env)
     assert "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT" not in env
     assert "OTEL_SEMCONV_STABILITY_OPT_IN" not in env
+    assert "AWS_REDACT_SPAN_ATTRIBUTES" not in env
     # D110 (8): spans with their content to its own log group, never to aws/spans.
     assert env["UNIFIED_TRACES_DESTINATION_ENABLED"] == "true"
     assert env["MANGO_AGENT_ID"] == "evals"

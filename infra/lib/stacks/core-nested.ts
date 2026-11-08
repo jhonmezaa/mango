@@ -15,6 +15,7 @@ import { acknowledge, arnWildcardFinding } from "../nag.js";
 import { CodeSandbox, CodeSandboxProps } from "../constructs/code-sandbox.js";
 import { CurReconciler, CurReconcilerProps } from "../constructs/cur-reconciler.js";
 import { EvalJudge, EvalJudgeProps } from "../constructs/eval-judge.js";
+import { HarnessLogsGovernor, HarnessLogsGovernorProps } from "../constructs/harness-logs.js";
 import { platformPolicies } from "../constructs/governance.js";
 import { OperationalAlarms, OperationalAlarmsProps } from "../constructs/operational-alarms.js";
 import { RemoteMcpApi } from "../constructs/remote-mcp-api.js";
@@ -166,20 +167,42 @@ export class CurReconciliationStack extends CoreNestedStack {
   }
 }
 
+export interface ObservabilityStackProps extends TraceReaderProps {
+  /** What the harness log governor needs (D16, precised 2026-11-08). */
+  readonly harnessLogs: Omit<HarnessLogsGovernorProps, "installation" | "configKey">;
+}
+
 /**
  * The trace reader of the Observability view (D108 (b)): the function `Mango-<ns>-TraceReader`,
- * its role and mango-api's policy to invoke it (`Mango-<ns>-ApiObservability`). Nothing here holds
- * data. mango-api reads the function by its name, never by an output of this stack.
+ * its role and mango-api's policy to invoke it (`Mango-<ns>-ApiObservability`). Also the harness
+ * log governor (`Mango-<ns>-HarnessLogs`, D16, precised 2026-11-08), which gives the log groups of
+ * the published harnesses their key and 7 days on every update. Nothing here holds data: the key
+ * stays in Core and reaches this stack as a parameter. mango-api reads the function by its name,
+ * never by an output of this stack.
  */
 export class ObservabilityStack extends CoreNestedStack {
   readonly reader: TraceReader;
+  readonly harnessLogs: HarnessLogsGovernor;
 
-  constructor(scope: Construct, id: string, props: TraceReaderProps) {
+  constructor(scope: Construct, id: string, props: ObservabilityStackProps) {
     super(scope, id, "observability traces");
+    const installation = this.namespaceOf(props.installation);
     this.reader = new TraceReader(this, "TraceReader", {
-      ...props,
-      installation: this.namespaceOf(props.installation),
+      installation,
+      configKey: props.configKey,
+      apiTaskRole: props.apiTaskRole,
       coreNamespace: props.installation.namespace,
+    });
+    // The label of the release reaches this template as a parameter, never in its text: the
+    // template stays the same between two releases of the same code (named by content, D69), and
+    // a new value still updates the custom resource, so it runs on every version.
+    const release = new CfnParameter(this, "Release", { type: "String", description: "Label of the release" });
+    this.setParameter("Release", props.harnessLogs.release);
+    this.harnessLogs = new HarnessLogsGovernor(this, "HarnessLogs", {
+      ...props.harnessLogs,
+      release: release.valueAsString,
+      installation,
+      configKey: props.configKey,
     });
   }
 }

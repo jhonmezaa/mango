@@ -21,7 +21,10 @@ ENDPOINT_LIVE = "live"
 """Harness endpoint mango-api invokes; the provisioner moves it to the published version."""
 ENDPOINT_DEFAULT = "DEFAULT"
 ROLE_POLICY_NAME = "agent"
-RUNTIME_LOG_RETENTION_DAYS = 30  # D16
+RUNTIME_LOG_RETENTION_DAYS = 30
+"""Log groups of the evals harness (D110 (3)) and of the MCP pack runtimes (D16)."""
+HARNESS_LOG_RETENTION_DAYS = 7
+"""Log groups of the agents' and the Playground's harnesses: content (D16, precised 2026-11-08)."""
 _LOG_GROUP_PREFIX = "/aws/bedrock-agentcore/runtimes/"
 
 _NAMESPACE_RE = re.compile(r"^[a-z0-9]{3,8}$")
@@ -134,7 +137,9 @@ class Settings:
     gateway_url: str
     guardrail_id: str
     guardrail_version: str
-    runtime_logs_key_arn: str
+    harness_logs_key_arn: str
+    """``alias/Mango-<ns>-harness-runtime-logs``: the log groups of every harness but the evals
+    one (D16, precised 2026-11-08)."""
     connectors: Mapping[str, Connector]
     release_agents: Mapping[str, str]
     """Agent id -> content hash of the versions the release ships approved (D34, TM-M16)."""
@@ -176,7 +181,7 @@ class Settings:
                 guardrail_version=_match(
                     _GUARDRAIL_VERSION_RE, "GUARDRAIL_VERSION", env["GUARDRAIL_VERSION"]
                 ),
-                runtime_logs_key_arn=env["RUNTIME_LOGS_KEY_ARN"],
+                harness_logs_key_arn=env["HARNESS_LOGS_KEY_ARN"],
                 connectors=_connector_catalog(env["CONNECTOR_CATALOG"]),
                 release_agents=_release_agents(env["RELEASE_AGENTS"]),
                 session_idle_seconds=_seconds("AGENT_SESSION_IDLE_SECONDS", env),

@@ -288,9 +288,10 @@ describe("pack permissions boundary", () => {
 
   it("allows only the listed data actions, the broker and what the runtime needs for itself", () => {
     expect(actions(bySid(statements, "PackData"))).toEqual(PACK_DATA_ACTIONS);
-    // Plus the evals content Deny every boundary carries (D110 (8), evals.test.ts).
+    // Plus the content Deny every boundary carries (D110 (8), evals.test.ts; D16, harness-logs.test.ts).
     expect(statements.map((s) => s.Sid).sort()).toEqual([
-      "AssumeBroker", "Metrics", "NoAccountWideLogExport", "NoEvalsContent", "NoEvalsKeyRemoval", "PackData", "RuntimeLogs", "Tracing",
+      "AssumeBroker", "Metrics", "NoAccountWideLogExport", "NoEvalsContent", "NoEvalsKeyRemoval",
+      "NoHarnessLogsKeyRemoval", "NoHarnessRuntimeContent", "PackData", "RuntimeLogs", "Tracing",
     ]);
     const allowed = statements.filter((s) => s.Effect === "Allow");
     const services = new Set(allowed.flatMap(actions).map((a) => a.split(":")[0]));
@@ -736,7 +737,7 @@ describe("release packs (D36): only what the release key signed", () => {
 
   const raw = JSON.parse(readFileSync(examplePath, "utf8")) as Record<string, unknown>;
 
-  it("keeps Core under its budget of 458 resources with packs, of the 500 CloudFormation allows (D99)", () => {
+  it("keeps Core under its budget of 470 resources with packs, of the 500 CloudFormation allows (D99)", () => {
     const release = signedRelease({ also: [{ id: "aws-billing" }] });
     const lab = installationSchema.parse({
       ...raw,
@@ -752,7 +753,8 @@ describe("release packs (D36): only what the release key signed", () => {
     // 455 since the chat files and the code sandbox (D114, D116, precision of D99 of 2026-11-07).
     // 458 since the agents' memory, its key and alias (D122: data, so in Core, D99 (2)).
     // 468 since the second origin (D123 (9), precision of D99 of 2026-11-08).
-    expect(Object.keys(own).length).toBeLessThanOrEqual(468);
+    // 470 since the key of the harnesses' runtime logs and its alias (D16, 2026-11-08).
+    expect(Object.keys(own).length).toBeLessThanOrEqual(470);
   });
 
   it("ships the pack to the bucket and the catalog to the provisioner", () => {

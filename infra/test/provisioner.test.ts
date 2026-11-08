@@ -425,7 +425,14 @@ describe("agent permissions boundary", () => {
   const granted = statements.flatMap(actions);
 
   it("only allows what an agent runtime needs", () => {
-    expect(all.filter((s) => s.Effect !== "Allow").map((s) => s.Sid)).toEqual(["NoEvalsContent", "NoEvalsKeyRemoval", "NoAccountWideLogExport"]);
+    expect(all.filter((s) => s.Effect !== "Allow").map((s) => s.Sid)).toEqual([
+      "NoEvalsContent",
+      "NoEvalsKeyRemoval",
+      "NoAccountWideLogExport",
+      // D16, 2026-11-08: the harnesses' runtime logs are content too.
+      "NoHarnessRuntimeContent",
+      "NoHarnessLogsKeyRemoval",
+    ]);
     expect(granted.sort()).toEqual([
       "bedrock-agentcore:GetWorkloadAccessToken",
       "bedrock-agentcore:GetWorkloadAccessTokenForJWT",
@@ -665,11 +672,11 @@ describe("provisioner function and state machine", () => {
       "GATEWAY_URL",
       "GUARDRAIL_ID",
       "GUARDRAIL_VERSION",
+      "HARNESS_LOGS_KEY_ARN",
       "MANGO_ACCOUNT_ID",
       "MANGO_NAMESPACE",
       "MANGO_STACK_ID",
       "RELEASE_AGENTS",
-      "RUNTIME_LOGS_KEY_ARN",
       "SETTINGS_TABLE",
       "SKILLS_BUCKET",
       "SKILLS_KEY_ARN",

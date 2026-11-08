@@ -82,13 +82,14 @@ def test_first_publication_creates_role_harness_endpoint_and_marks_published(lab
 
 
 def test_runtime_log_groups_get_the_key_and_retention(lab: Lab) -> None:
+    """D16, precised 2026-11-08: the runtime log of a harness is content, 7 days."""
     lab.run(lab.approve(make_definition()))
     runtime_id = lab.agentcore.only()["runtime_id"]
     prefix = f"/aws/bedrock-agentcore/runtimes/{runtime_id}-"
     assert set(lab.logs.groups) == {prefix + "DEFAULT", prefix + "live"}
     for group in lab.logs.groups.values():
         assert group["kms"] == LOGS_KEY_ARN
-        assert group["retention"] == 30
+        assert group["retention"] == 7
 
 
 def test_log_groups_agentcore_already_created_are_adopted(lab: Lab) -> None:
@@ -113,7 +114,7 @@ def test_log_groups_agentcore_already_created_are_adopted(lab: Lab) -> None:
 
     lab.agentcore.create_harness_endpoint = create_with_group  # type: ignore[method-assign]
     lab.run(request, execution="exec-2")
-    assert all(g["kms"] == LOGS_KEY_ARN and g["retention"] == 30 for g in lab.logs.groups.values())
+    assert all(g["kms"] == LOGS_KEY_ARN and g["retention"] == 7 for g in lab.logs.groups.values())
 
 
 def test_harness_stores_the_approved_definition_and_the_d16_environment(lab: Lab) -> None:
@@ -132,6 +133,11 @@ def test_harness_stores_the_approved_definition_and_the_d16_environment(lab: Lab
     assert env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "false"
     assert env["OTEL_SEMCONV_STABILITY_OPT_IN"] == "gen_ai_unredacted_attributes="
     assert env["OTEL_PYTHON_DISABLED_INSTRUMENTATIONS"] == "urllib3,aws_mcp"
+    # D16, precised 2026-11-08: also Strands' memory events, on spans and on the runtime's log.
+    redacted = env["AWS_REDACT_SPAN_ATTRIBUTES"].split(",")
+    assert {"content", "message", "tool.result", "gen_ai.input.messages"} <= set(redacted)
+    # Exact names only: never a pattern that would take the attributes the trace readers keep.
+    assert not [a for a in redacted if "*" in a or a.startswith(("gen_ai.usage", "gen_ai.request"))]
     assert env["MANGO_CONTENT_HASH"] == request["content_hash"]
     assert env["MANGO_AGENT_VERSION"] == "1"
 

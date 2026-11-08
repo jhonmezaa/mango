@@ -5,7 +5,7 @@ import { CfnResource, RemovalPolicy, Stack } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { CHECKOV_EXCEPTIONS, suppressCheckov } from "../checkov.js";
 import { Installation } from "../config/schema.js";
-import { agentNames } from "../names.js";
+import { agentNames, roleNames } from "../names.js";
 import { acknowledge } from "../nag.js";
 import { AgentMemory } from "./agent-memory.js";
 
@@ -36,8 +36,18 @@ export class AgentPlatform extends Construct {
   /** Base guardrail applied on every invocation (spec §6, D11) and stored in each harness. */
   readonly guardrail: bedrock.CfnGuardrail;
   readonly guardrailVersion: bedrock.CfnGuardrailVersion;
-  /** Encrypts the AgentCore runtime log groups of all agents. */
+  /**
+   * `alias/Mango-<ns>-agent-runtime-logs`: encrypted the runtime log groups of every harness until
+   * 2026-11-08 and still encrypts the MCP packs' (D16). It stays: the events written before keep
+   * it until their retention takes them.
+   */
   readonly runtimeLogsKey: kms.Key;
+  /**
+   * `alias/Mango-<ns>-harness-runtime-logs`: the runtime log groups of the agents' and the
+   * Playground's harnesses, which are content (D16, precised 2026-11-08). The evals harness has its
+   * own key (D110 (3)).
+   */
+  readonly harnessLogsKey: kms.Key;
   /** Ceiling of what any agent execution role may be allowed to do. */
   readonly boundary: iam.ManagedPolicy;
   /** The AgentCore Memory of the installation (D122): off until M0. */
@@ -52,10 +62,54 @@ export class AgentPlatform extends Construct {
   /** Log groups of those runtimes (one per runtime endpoint). */
   readonly runtimeLogGroupArns: string;
 
+  /**
+   * D16, precised 2026-11-08: no role of Mango reads or exports the runtime log groups of the
+   * harnesses, but the trace reader of D108, which reads their `spans` stream (unified telemetry)
+   * and keeps a closed list of span attributes. The same actions as the evals' (D110 (8)); the
+   * evals harness's log groups match the pattern too and keep their own Deny, which exempts only
+   * the evaluator. An administrator of the account can still read them, like any data of the
+   * account (D110 (8)): that read is the break-glass, and CloudTrail records it (the dry-run
+   * `kms:Decrypt` of each reader with the harness logs key).
+   *
+   * The trace reader is exempted by the full ARN of its role, never by a name compared in CDK
+   * (a token in the release, D110 (9)).
+   */
+  harnessLogsDenyStatements(actions: readonly string[]): iam.PolicyStatement[] {
+    const { account } = Stack.of(this);
+    return [
+      new iam.PolicyStatement({
+        sid: "NoHarnessRuntimeContent",
+        effect: iam.Effect.DENY,
+        actions: [...actions],
+        resources: [this.runtimeLogGroupArns],
+        conditions: {
+          ArnNotEquals: {
+            "aws:PrincipalArn": `arn:aws:iam::${account}:role/${roleNames.traceReader(this.namespace)}`,
+          },
+        },
+      }),
+      new iam.PolicyStatement({
+        // The key stays on them. Only the provisioner takes a key off: the evals harness's log
+        // groups match this pattern too, and it binds their key again (D110 (9)).
+        sid: "NoHarnessLogsKeyRemoval",
+        effect: iam.Effect.DENY,
+        actions: ["logs:DisassociateKmsKey"],
+        resources: [this.runtimeLogGroupArns],
+        conditions: {
+          ArnNotEquals: {
+            "aws:PrincipalArn": `arn:aws:iam::${account}:role/${roleNames.provisioner(this.namespace)}`,
+          },
+        },
+      }),
+    ];
+  }
+
+  private readonly namespace: string;
+
   constructor(scope: Construct, id: string, props: AgentPlatformProps) {
     super(scope, id);
     const cfg = props.installation;
-    const ns = cfg.namespace;
+    const ns = (this.namespace = cfg.namespace);
     const stack = Stack.of(this);
     const agentcore = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}`;
     this.agentRoleArns = `arn:aws:iam::${stack.account}:role/${agentNames.rolePrefix(ns)}*`;
@@ -106,6 +160,30 @@ export class AgentPlatform extends Construct {
     this.runtimeLogsKey.addToResourcePolicy(
       new iam.PolicyStatement({
         sid: "CloudWatchLogsAgentRuntimeLogGroups",
+        principals: [new iam.ServicePrincipal(`logs.${stack.region}.amazonaws.com`)],
+        actions: ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"],
+        resources: ["*"],
+        conditions: { ArnLike: { "kms:EncryptionContext:aws:logs:arn": this.runtimeLogGroupArns } },
+      }),
+    );
+
+    // D16, precised 2026-11-08: the log of a harness is content, like the evals' (D110 (8)). The
+    // key encrypts it at rest with a key only for these log groups (the service uses it only with
+    // their encryption context), leaves every use in CloudTrail, the dry-run Decrypt CloudWatch
+    // Logs makes as each reader included, and makes the content unreadable if it is deleted. Who
+    // reads it is decided in IAM ({@link harnessLogsDenyStatements}): a Deny of the key does not
+    // stop `GetLogEvents` (2026-11-06, D110 (8)).
+    this.harnessLogsKey = new kms.Key(this, "HarnessLogsKey", {
+      alias: `alias/Mango-${ns}-harness-runtime-logs`,
+      description: "Encrypts the runtime log groups of the Mango harnesses, which are content (D16)",
+      enableKeyRotation: true,
+      // Retained on uninstall; deleted only if the operation that created it rolls back, so a
+      // failed first update leaves no orphan key behind (D58 (27)).
+      removalPolicy: cfg.retainData ? RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE : RemovalPolicy.DESTROY,
+    });
+    this.harnessLogsKey.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "CloudWatchLogsHarnessRuntimeLogGroups",
         principals: [new iam.ServicePrincipal(`logs.${stack.region}.amazonaws.com`)],
         actions: ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"],
         resources: ["*"],

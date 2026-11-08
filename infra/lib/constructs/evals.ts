@@ -177,9 +177,14 @@ export class EvalsCapture extends Construct {
   readonly provisionerRoleArn: string;
   readonly judgeFunctionArn: string;
   readonly judgeFunctionName: string;
-  /** `Mango-<ns>-evals-content-deny`: attached to every role of the installation but the evaluator. */
+  /**
+   * `Mango-<ns>-evals-content-deny`: attached to every role of the installation but the evaluator.
+   * Since 2026-11-08 it also carries the Deny of the harnesses' runtime log groups (D16), through
+   * {@link denyAlso}: one policy every role already has, instead of another one per role.
+   */
   readonly contentDeny: iam.ManagedPolicy;
   private readonly namespace: string;
+  private readonly alsoDenied: iam.PolicyStatement[] = [];
 
   constructor(scope: Construct, id: string, props: EvalsCaptureProps) {
     super(scope, id);
@@ -257,7 +262,17 @@ export class EvalsCapture extends Construct {
         actions: [...ACCOUNT_LOG_EXPORT_ACTIONS],
         resources: ["*"],
       }),
+      ...this.alsoDenied,
     ];
+  }
+
+  /**
+   * More content Mango's roles must not read, in the same policy and the same boundaries (D16,
+   * precised 2026-11-08: the harnesses' runtime log groups). Called before {@link denyInBoundary}.
+   */
+  denyAlso(statements: iam.PolicyStatement[]): void {
+    this.alsoDenied.push(...statements);
+    this.contentDeny.addStatements(...statements);
   }
 
   /** The same Deny in the boundary of roles created at runtime (agents, packs, KB sources). */

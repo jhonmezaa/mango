@@ -91,6 +91,7 @@ def test_the_harness_has_no_tools_no_memory_and_no_agent_content(lab: Lab) -> No
     assert guardrail["guardrailIdentifier"] == "gr123456"
     env = config["environmentVariables"]
     assert env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] == "false"
+    assert "content" in env["AWS_REDACT_SPAN_ATTRIBUTES"].split(",")  # D16, 2026-11-08
     assert env["MANGO_AGENT_ID"] == "playground"
 
 

@@ -50,7 +50,7 @@ const STATEFUL = [
 ];
 
 describe("stacks nested in Core (D99)", () => {
-  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge, TurnWorker, Sandbox, RenderDocument and UiSandbox, and keep Core of a release under 423 resources", () => {
+  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge, TurnWorker, Sandbox, RenderDocument and UiSandbox, and keep Core of a release under 425 resources", () => {
     expect([...nested.keys()].sort()).toEqual([
       "Authorization",
       "CurReconciliation",
@@ -71,7 +71,9 @@ describe("stacks nested in Core (D99)", () => {
     // 414 since the agents' memory, its key and alias (D122): they hold data (D99 (2)).
     // 423 since the second origin (D123 (9)): its bucket, and the distribution with its headers
     // policy, function and key value store, which the SPA's CSP names, stay in Core.
-    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(423);
+    // 425 since the key of the harnesses' runtime logs and its alias (D16, 2026-11-08): they
+    // encrypt content.
+    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(425);
   });
 
   it("are created from a template of the release's assets bucket, named by its content (D25, D69)", () => {

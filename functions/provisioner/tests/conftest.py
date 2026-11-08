@@ -69,7 +69,7 @@ ENV = {
     "GATEWAY_URL": "https://mango-test-tools-abc123.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp",
     "GUARDRAIL_ID": "gr123456",
     "GUARDRAIL_VERSION": "1",
-    "RUNTIME_LOGS_KEY_ARN": LOGS_KEY_ARN,
+    "HARNESS_LOGS_KEY_ARN": LOGS_KEY_ARN,
     "EVALS_LOGS_KEY_ARN": EVALS_LOGS_KEY_ARN,
     "EVAL_JUDGE_FUNCTION": "Mango-test-EvalJudge",
     "AGENT_SESSION_IDLE_SECONDS": "300",

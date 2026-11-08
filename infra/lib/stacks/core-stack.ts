@@ -26,7 +26,7 @@ import { Edge } from "../constructs/edge.js";
 import { UI_SANDBOX_ALARMS, UiSandboxOrigin } from "../constructs/ui-sandbox-origin.js";
 import { EVAL_JUDGE_ALARMS, EVALUATION_FEE_USD } from "../constructs/eval-judge.js";
 import { CHAT_FILES_ALARMS } from "../constructs/chat-files-scan.js";
-import { DenyEvalsContent, Evals, EvalsCapture, judgeModels } from "../constructs/evals.js";
+import { DenyEvalsContent, Evals, EVALS_CONTENT_ACTIONS, EvalsCapture, judgeModels } from "../constructs/evals.js";
 import { Governance, GROUPS_PARTITION } from "../constructs/governance.js";
 import { Identity, SESSION_HOURS } from "../constructs/identity.js";
 import { INDEXING_PROFILE, Knowledge, KNOWLEDGE_PREFIXES } from "../constructs/knowledge.js";
@@ -218,6 +218,9 @@ export class CoreStack extends Stack {
     // D110 (3): the key of the evals harness's log groups, the only ones with content.
     const evalsCapture = new EvalsCapture(this, "EvalsCapture", { installation: cfg, retainData: cfg.retainData });
     evalsCapture.allowAgents(agentPlatform.boundary);
+    // D16, precised 2026-11-08: the harnesses' runtime log groups are content too. The same
+    // policy and boundaries deny reading them to every role but the trace reader (D108).
+    evalsCapture.denyAlso(agentPlatform.harnessLogsDenyStatements(EVALS_CONTENT_ACTIONS));
     // D110 (8): no role of Mango but the evaluator reads the evals content; IAM decides it.
     evalsCapture.denyInBoundary(agentPlatform.boundary);
     evalsCapture.grantApi(apiTaskRole);
@@ -469,6 +472,12 @@ export class CoreStack extends Stack {
       installation: cfg,
       configKey: tools.configKey,
       apiTaskRole,
+      // D16, precised 2026-11-08: the published harnesses' log groups, on every update.
+      harnessLogs: {
+        keyArn: agentPlatform.harnessLogsKey.keyArn,
+        coreStackId: this.stackId,
+        release: props.release?.label ?? "v0.0.0-unpublished",
+      },
     });
     // D110: the evaluator of the evals and the evals harness, in a stack nested in Core (D99).
     const evalJudge = new EvalsStack(this, "EvalJudge", {

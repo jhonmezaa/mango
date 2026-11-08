@@ -365,10 +365,11 @@ export class Provisioner extends Construct {
     );
     role.addToPolicy(
       new iam.PolicyStatement({
-        sid: "RuntimeLogsKey",
-        // CloudWatch Logs checks that the caller can use the key it associates.
+        sid: "HarnessLogsKey",
+        // CloudWatch Logs checks that the caller can use the key it associates. The harnesses'
+        // key since 2026-11-08 (D16); the shared runtime logs key is the packs' only.
         actions: ["kms:DescribeKey"],
-        resources: [platform.runtimeLogsKey.keyArn],
+        resources: [platform.harnessLogsKey.keyArn],
       }),
     );
 
@@ -565,7 +566,7 @@ export class Provisioner extends Construct {
         GATEWAY_URL: props.gatewayUrl,
         GUARDRAIL_ID: platform.guardrail.attrGuardrailId,
         GUARDRAIL_VERSION: platform.guardrailVersion.attrVersion,
-        RUNTIME_LOGS_KEY_ARN: platform.runtimeLogsKey.keyArn,
+        HARNESS_LOGS_KEY_ARN: platform.harnessLogsKey.keyArn,
         CONNECTOR_CATALOG: JSON.stringify(connectorCatalog()),
         RELEASE_AGENTS: JSON.stringify(props.releaseAgents),
         // D39: the session lifecycle mango-api assumes when it reuses a runtime session.

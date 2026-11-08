@@ -4,6 +4,12 @@ AgentCore names a log group per runtime endpoint after the generated runtime id 
 it on its own, unencrypted and without retention, as soon as the endpoint exists. The
 provisioner therefore creates-or-adopts them before the agent is published, when nothing has
 been invoked yet. The runtimes of MCP packs get the same treatment.
+
+The log of a harness is content (D16, precised 2026-11-08): the harnesses of the agents and of
+the Playground get a key of their own (``alias/Mango-<ns>-harness-runtime-logs``) and 7 days;
+the evals harness keeps its own key and 30 days (D110 (3)), and the packs the shared key and 30
+days. The log groups of a harness published before are corrected on every update of the stack
+(:mod:`mango_provisioner.harness_logs`).
 """
 
 from __future__ import annotations
@@ -13,7 +19,11 @@ from typing import TYPE_CHECKING
 
 from botocore.exceptions import BotoCoreError, ClientError
 
-from mango_provisioner.config import RUNTIME_LOG_RETENTION_DAYS, Settings
+from mango_provisioner.config import (
+    HARNESS_LOG_RETENTION_DAYS,
+    RUNTIME_LOG_RETENTION_DAYS,
+    Settings,
+)
 from mango_provisioner.errors import aws_error, error_code
 
 if TYPE_CHECKING:
@@ -27,6 +37,7 @@ def govern_log_groups(
     tags: Mapping[str, str],
     arn_of: Callable[[str], str],
     *,
+    retention_days: int = RUNTIME_LOG_RETENTION_DAYS,
     rebind: bool = False,
 ) -> None:
     """Create or adopt each log group with the key and the retention of D16, and the tags.
@@ -59,9 +70,9 @@ def govern_log_groups(
                 elif current.get("kmsKeyId") != key_arn:
                     logs.associate_kms_key(logGroupName=name, kmsKeyId=key_arn)
                 logs.tag_resource(resourceArn=arn_of(name), tags=dict(tags))
-                if current.get("retentionInDays") == RUNTIME_LOG_RETENTION_DAYS:
+                if current.get("retentionInDays") == retention_days:
                     continue
-            logs.put_retention_policy(logGroupName=name, retentionInDays=RUNTIME_LOG_RETENTION_DAYS)
+            logs.put_retention_policy(logGroupName=name, retentionInDays=retention_days)
         except (ClientError, BotoCoreError) as exc:
             raise aws_error("RuntimeLogGroup", exc) from None
 
@@ -91,15 +102,17 @@ class RuntimeLogs:
     def govern(
         self, agent_id: str, runtime_id: str, key_arn: str | None = None, *, rebind: bool = False
     ) -> None:
-        """``key_arn``: the evals harness has a key of its own (D110 (3)); the others share the
-        runtime logs key. ``rebind``: see :func:`govern_log_groups`."""
+        """``key_arn``: the evals harness has a key of its own and keeps 30 days (D110 (3)); the
+        other harnesses share the harness logs key and keep 7 days (D16, precised 2026-11-08).
+        ``rebind``: see :func:`govern_log_groups`."""
         settings = self._settings
         govern_log_groups(
             self._logs,
             settings.log_group_names(runtime_id),
-            key_arn or settings.runtime_logs_key_arn,
+            key_arn or settings.harness_logs_key_arn,
             settings.tags(agent_id),
             settings.log_group_arn,
+            retention_days=RUNTIME_LOG_RETENTION_DAYS if key_arn else HARNESS_LOG_RETENTION_DAYS,
             rebind=rebind,
         )
 

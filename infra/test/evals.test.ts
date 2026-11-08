@@ -99,7 +99,8 @@ describe("the key of the evals log groups (D110 (8), TM-EV1)", () => {
     const env = provisioner.Properties.Environment.Variables;
     expect(env.EVAL_JUDGE_FUNCTION).toBe(judgeName);
     expect(env.EVALS_LOGS_KEY_ARN).toBeDefined();
-    expect(env.EVALS_LOGS_KEY_ARN).not.toEqual(env.RUNTIME_LOGS_KEY_ARN);
+    expect(env.HARNESS_LOGS_KEY_ARN).toBeDefined();
+    expect(env.EVALS_LOGS_KEY_ARN).not.toEqual(env.HARNESS_LOGS_KEY_ARN);
   });
 });
 
@@ -124,7 +125,8 @@ describe("who reads the evals content: IAM (D110 (8), 2026-11-06)", () => {
     expect(account.Effect).toBe("Deny");
     expect(resourcesOf(account)).toEqual(["*"]);
     expect(actions(account)).toEqual([...ACCOUNT_LOG_EXPORT_ACTIONS]);
-    expect(denyStatements).toHaveLength(3);
+    // Plus the two of the harnesses' runtime log groups (D16, 2026-11-08: harness-logs.test.ts).
+    expect(denyStatements).toHaveLength(5);
   });
 
   it("lets only the provisioner take the key off, by its full ARN (D110 (9))", () => {

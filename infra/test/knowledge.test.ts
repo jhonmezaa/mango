@@ -215,7 +215,10 @@ describe("knowledge bases: fixed resources in Core", () => {
     const sids = bySid(statements);
     // Plus the evals content Deny every boundary carries (D110 (8), evals.test.ts).
     expect(statements.map((s) => s.Sid).sort()).toEqual(
-      ["NeverMangoBuckets", "NoAccountWideLogExport", "NoEvalsContent", "NoEvalsKeyRemoval", "ReadBucketsOfThisAccount"],
+      [
+        "NeverMangoBuckets", "NoAccountWideLogExport", "NoEvalsContent", "NoEvalsKeyRemoval",
+        "NoHarnessLogsKeyRemoval", "NoHarnessRuntimeContent", "ReadBucketsOfThisAccount",
+      ],
     );
     expect(actions(sids.ReadBucketsOfThisAccount!).sort()).toEqual(["s3:GetObject", "s3:ListBucket"]);
     expect(sids.ReadBucketsOfThisAccount!.Condition).toEqual({ StringEquals: { "s3:ResourceAccount": account } });

@@ -50,6 +50,32 @@ REDACT_GENAI_CONTENT = {
     "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "false",
     "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS": "urllib3,aws_mcp",
 }
+# D16, precised 2026-11-08: the runtime log of a harness is content. Strands redacts the messages,
+# the system prompt and the tools' arguments and results with the variable above, but records
+# its memory events (`memory.query`, `memory.results`, `memory.content`) verbatim under
+# `content`. ADOT's AttributeRedactingSpanProcessor (aws-opentelemetry-distro 0.22.0, the
+# version the managed harness ran on 2026-11-08) replaces these attributes, on every span and
+# span event, before any exporter sees them: the spans to `aws/spans` and the events ADOT moves
+# to the runtime's log (`otel-rt-logs`). Exact names only: no attribute the trace readers keep
+# (models, token counts, durations, tool and session ids) is among them.
+REDACTED_SPAN_ATTRIBUTES = (
+    "content",
+    "message",
+    "tool.result",
+    "gen_ai.input.messages",
+    "gen_ai.output.messages",
+    "gen_ai.system_instructions",
+    "gen_ai.tool.call.arguments",
+    "gen_ai.tool.call.result",
+    "gen_ai.prompt",
+    "gen_ai.completion",
+)
+HARNESS_CONTENT_OFF = {
+    **REDACT_GENAI_CONTENT,
+    "AWS_REDACT_SPAN_ATTRIBUTES": ",".join(REDACTED_SPAN_ATTRIBUTES),
+}
+"""Environment of every harness but the evals harness (D110 (3)): no content in its telemetry.
+The MCP pack runtimes keep :data:`REDACT_GENAI_CONTENT` (they run no model)."""
 ENV_AGENT_ID = "MANGO_AGENT_ID"
 ENV_AGENT_VERSION = "MANGO_AGENT_VERSION"
 ENV_CONTENT_HASH = "MANGO_CONTENT_HASH"
@@ -264,7 +290,7 @@ def harness_config(
         },
     }
     environment = {
-        **REDACT_GENAI_CONTENT,
+        **HARNESS_CONTENT_OFF,
         ENV_AGENT_ID: agent_id,
         ENV_AGENT_VERSION: str(version),
         ENV_CONTENT_HASH: content_hash,
@@ -349,7 +375,7 @@ def playground_config(settings: Settings, models: frozenset[str]) -> dict[str, A
         models,
         PLAYGROUND_ID,
         PLAYGROUND_PROMPT,
-        {**REDACT_GENAI_CONTENT, ENV_AGENT_ID: PLAYGROUND_ID},
+        {**HARNESS_CONTENT_OFF, ENV_AGENT_ID: PLAYGROUND_ID},
     )
 
 
