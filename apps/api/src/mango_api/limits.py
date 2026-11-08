@@ -41,6 +41,7 @@ from mango_api import (
     skills,
     task_reports,
     tasks,
+    textdocs,
     tickets,
     tool_policies,
     web_session,
@@ -221,6 +222,24 @@ LIMITS: dict[str, LimitSpec] = {
         MINUTE,
         shared=True,
         why="Images of the chat read as blob: through mango-api, each one audited (D116 (5)).",
+    ),
+    "textdoc.reads": LimitSpec(
+        textdocs.READS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="The Canvas reading a document and its versions (D124): reads of DynamoDB.",
+    ),
+    "textdoc.edits": LimitSpec(
+        textdocs.EDITS_PER_MINUTE,
+        MINUTE,
+        shared=True,
+        why="Versions a person saves or restores, and comments resolved, in the Canvas (D124).",
+    ),
+    "textdoc.exports": LimitSpec(
+        textdocs.EXPORTS_PER_HOUR,
+        HOUR,
+        shared=True,
+        why="Word and PDF files of the Canvas (D124 (3)): each one is a file of the chat, scanned.",
     ),
     "tasks.report_downloads": LimitSpec(
         task_reports.DOWNLOADS_PER_HOUR,

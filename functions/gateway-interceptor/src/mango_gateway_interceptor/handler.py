@@ -28,7 +28,8 @@ of those only the ones the person may use. The model can name none outside that 
 
 The code tools (D114, ``code`` target) also get the subject, the agent, the conversation and
 the turn mango-api signed (claims ``conv`` and ``turn``, TM-CI2): the connector keys the
-person's sandbox session by them and meters each cell against the turn. A call of a code tool
+person's sandbox session by them and meters each cell against the turn. The Canvas tools
+(D124, ``textdoc`` target) get the same: they write only in that conversation. A call of either
 under a signature without them is refused here: the model can never name a conversation.
 
 A tool of an MCP pack goes through only if the release's signed manifest classifies it
@@ -84,7 +85,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from mango_core import approval, approval_use, invocation, pack_identity, remote_mcp
-from mango_core.harness_tools import CODE_TARGET, KNOWLEDGE_TARGET
+from mango_core.harness_tools import CODE_TARGET, KNOWLEDGE_TARGET, TEXTDOC_TARGET
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -444,10 +445,11 @@ def _context(
                 "agent_id": signed.agent_id,
                 "agent_version": signed.agent_version,
             }
-        if target == CODE_TARGET:
+        if target in {CODE_TARGET, TEXTDOC_TARGET}:
+            # The code sandbox and the Canvas (D124) reach one conversation: the signed one.
             if signed.conversation_id is None or signed.turn_id is None:
                 raise _RefusedError(
-                    403, _FORBIDDEN, "tool not allowed", "code_without_conversation"
+                    403, _FORBIDDEN, "tool not allowed", f"{target}_without_conversation"
                 )
             return {
                 "token": token,

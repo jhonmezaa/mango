@@ -93,6 +93,11 @@ class StoredMessage:
     code_runs: list[dict[str, Any]] = field(default_factory=list)
     """Cells of the code sandbox this answer showed (C4): turn, run and the guardrail's verdict,
     never their content (``code_blocks.Reference``)."""
+    textdocs: list[dict[str, Any]] = field(default_factory=list)
+    """Canvas documents this answer wrote (D124): id and version, never a title nor a text."""
+    exports: list[dict[str, Any]] = field(default_factory=list)
+    """Files a Canvas export added to the conversation (D124 (3)): id, name, kind and size of
+    each, as ``attachments``. A message of its own, without text."""
 
 
 @dataclass(frozen=True)
@@ -412,6 +417,8 @@ class ConversationRepository:
         stop_code: str = "",
         attachments: list[dict[str, Any]] | None = None,
         code_runs: list[dict[str, Any]] | None = None,
+        textdocs: list[dict[str, Any]] | None = None,
+        exports: list[dict[str, Any]] | None = None,
     ) -> str:
         message_id = message_id or new_id()
         item: dict[str, Any] = {
@@ -440,6 +447,10 @@ class ConversationRepository:
             item["attachments"] = {"S": json.dumps(attachments, ensure_ascii=False)}
         if code_runs:
             item["code_runs"] = {"S": json.dumps(code_runs)}
+        if textdocs:
+            item["textdocs"] = {"S": json.dumps(textdocs)}
+        if exports:
+            item["exports"] = {"S": json.dumps(exports, ensure_ascii=False)}
         self._clients(user_id).put_item(TableName=self._table, Item=item)
         return message_id
 
@@ -643,6 +654,8 @@ class ConversationRepository:
                         stop_code=i.get("stop_code", {}).get("S", ""),
                         attachments=json.loads(i.get("attachments", {}).get("S", "[]")),
                         code_runs=json.loads(i.get("code_runs", {}).get("S", "[]")),
+                        textdocs=json.loads(i.get("textdocs", {}).get("S", "[]")),
+                        exports=json.loads(i.get("exports", {}).get("S", "[]")),
                     )
                 )
             if "LastEvaluatedKey" not in resp:

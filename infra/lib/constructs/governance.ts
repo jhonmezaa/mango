@@ -56,6 +56,11 @@ export interface GovernanceProps {
    * cells of one person at a time in that person's rows. Nested in Core too (D99).
    */
   readonly codeConnectorRoleArn?: string;
+  /**
+   * The role of the Canvas connector (D124 (2)), by its ARN: it writes the documents of one
+   * person at a time in that person's rows. Nested in Core too (D99).
+   */
+  readonly textdocConnectorRoleArn?: string;
 }
 
 /**
@@ -208,6 +213,7 @@ export class Governance extends Construct {
             props.apiTaskRole.roleArn,
             ...(props.turnWorkerRoleArn ? [props.turnWorkerRoleArn] : []),
             ...(props.codeConnectorRoleArn ? [props.codeConnectorRoleArn] : []),
+            ...(props.textdocConnectorRoleArn ? [props.textdocConnectorRoleArn] : []),
           ],
         },
       }),

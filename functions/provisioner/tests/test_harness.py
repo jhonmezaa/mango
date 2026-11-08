@@ -196,6 +196,7 @@ def test_a_version_with_knowledge_bases_gets_the_knowledge_search() -> None:
 
 def test_a_version_that_runs_code_gets_the_code_tools_and_nothing_of_the_harness() -> None:
     # D114 (6): they follow from the capability; the harness keeps no shell nor file tools.
+    # The Canvas goes with it (D124, notes of K1).
     allowed = allowed_tools(SETTINGS, make_definition(capabilities=["code_interpreter"]))
     assert allowed == [
         "@mango/code___list_files",
@@ -203,10 +204,14 @@ def test_a_version_that_runs_code_gets_the_code_tools_and_nothing_of_the_harness
         "@mango/code___render_document",
         "@mango/code___run_python",
         "@mango/finops___get_cost_and_usage",
+        "@mango/textdoc___comment",
+        "@mango/textdoc___create",
+        "@mango/textdoc___update",
     ]
     assert not {"shell", "file_operations"} & set(allowed)
     assert not any("code___" in t for t in allowed_tools(SETTINGS, make_definition()))
-    for tool in ("code.run_python", "code.run_shell"):
+    assert not any("textdoc___" in t for t in allowed_tools(SETTINGS, make_definition()))
+    for tool in ("code.run_python", "code.run_shell", "textdoc.create"):
         with pytest.raises(StepError, match="unknown_tool"):
             allowed_tools(SETTINGS, make_definition(tools=[tool]))
 

@@ -3386,6 +3386,109 @@ export const zSyncOutSchema = z.object({
 });
 
 /**
+ * TextdocCardOut
+ *
+ * The card of a document in an answer: opens the Canvas (design round 41).
+ */
+export const zTextdocCardOutSchema = z.object({
+    kind: z.enum([
+        'document',
+        'code/python',
+        'code/react',
+        'code/html'
+    ]),
+    textdoc_id: z.string(),
+    title: z.string(),
+    version: z.int()
+});
+
+/**
+ * TextdocCommentOut
+ */
+export const zTextdocCommentOutSchema = z.object({
+    comment_id: z.string(),
+    quote: z.string(),
+    text: z.string(),
+    version: z.int()
+});
+
+/**
+ * TextdocContentOut
+ */
+export const zTextdocContentOutSchema = z.object({
+    content: z.string(),
+    textdoc_id: z.string(),
+    version: z.int()
+});
+
+/**
+ * TextdocEmptyIn
+ */
+export const zTextdocEmptyInSchema = z.record(z.string(), z.never());
+
+/**
+ * TextdocExportIn
+ */
+export const zTextdocExportInSchema = z.object({
+    format: z.enum(['docx', 'pdf']),
+    version: z.int().gte(1).lte(100)
+});
+
+/**
+ * TextdocExportOut
+ */
+export const zTextdocExportOutSchema = z.object({
+    file: zCodeFileOutSchema,
+    message_id: z.string()
+});
+
+/**
+ * TextdocSaveIn
+ */
+export const zTextdocSaveInSchema = z.object({
+    base: z.int().gte(1).lte(100),
+    content: z.string().max(262144),
+    restored_from: z.int().gte(1).lte(100).nullish()
+});
+
+/**
+ * TextdocVersionOut
+ */
+export const zTextdocVersionOutSchema = z.object({
+    by: z.enum(['agent', 'person']),
+    chars: z.int(),
+    created_at: z.iso.datetime(),
+    note: z.string(),
+    restored_from: z.int().nullish(),
+    version: z.int()
+});
+
+/**
+ * TextdocOut
+ */
+export const zTextdocOutSchema = z.object({
+    comments: z.array(zTextdocCommentOutSchema),
+    exports: z.array(z.enum([
+        'md',
+        'py',
+        'jsx',
+        'html',
+        'docx',
+        'pdf'
+    ])),
+    kind: z.enum([
+        'document',
+        'code/python',
+        'code/react',
+        'code/html'
+    ]),
+    latest: z.int(),
+    textdoc_id: z.string(),
+    title: z.string(),
+    versions: z.array(zTextdocVersionOutSchema)
+});
+
+/**
  * TicketChangeIn
  */
 export const zTicketChangeInSchema = z.object({
@@ -3479,11 +3582,13 @@ export const zMessageOutSchema = z.object({
     connection_required: z.array(z.string()).optional().default([]),
     content: z.string(),
     created_at: z.string(),
+    files: z.array(zCodeFileOutSchema).optional().default([]),
     message_id: z.string(),
     remote_sources: z.array(z.string()).optional().default([]),
     role: z.string(),
     stop_code: z.enum(['cancelled', 'turn_interrupted']).nullish(),
     stopped: z.boolean().optional().default(false),
+    textdocs: z.array(zTextdocCardOutSchema).optional().default([]),
     tools: z.array(zToolStatusSchema)
 });
 
@@ -4989,6 +5094,64 @@ export const zChatFileOutputPath = z.object({
  * Successful Response
  */
 export const zChatFileOutputResponse = zChatOutputOutSchema;
+
+export const zGetTextdocPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    textdoc_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetTextdocResponse = zTextdocOutSchema;
+
+export const zResolveTextdocCommentBody = zTextdocEmptyInSchema;
+
+export const zResolveTextdocCommentPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    textdoc_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+    comment_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zResolveTextdocCommentResponse = z.void();
+
+export const zExportTextdocBody = zTextdocExportInSchema;
+
+export const zExportTextdocPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    textdoc_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zExportTextdocResponse = zTextdocExportOutSchema;
+
+export const zSaveTextdocVersionBody = zTextdocSaveInSchema;
+
+export const zSaveTextdocVersionPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    textdoc_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+});
+
+/**
+ * Successful Response
+ */
+export const zSaveTextdocVersionResponse = zTextdocVersionOutSchema;
+
+export const zGetTextdocVersionPath = z.object({
+    conversation_id: z.string().regex(/^[0-9a-f]{32}$/),
+    textdoc_id: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+    version: z.int().gte(1).lte(100)
+});
+
+/**
+ * Successful Response
+ */
+export const zGetTextdocVersionResponse = zTextdocContentOutSchema;
 
 export const zConversationTurnPath = z.object({
     conversation_id: z.string()

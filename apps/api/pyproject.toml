@@ -10,6 +10,8 @@ dependencies = [
   "pydantic>=2.11",
   "mango-core[agents]",
   "mango-packs",
+  "python-docx>=1.2",
+  "markdown-it-py>=4.2",
 ]
 
 [tool.uv.sources]

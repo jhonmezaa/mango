@@ -34,9 +34,10 @@ import { Skills } from "../constructs/skills.js";
 import { Tickets } from "../constructs/tickets.js";
 import { ChatFiles, CHAT_FILES_PREFIXES } from "../constructs/chat-files.js";
 import { codeConnectorRoleArn } from "../constructs/code-connector.js";
+import { textdocConnectorRoleArn } from "../constructs/textdoc-connector.js";
 import { codeInterpreterPrices, SandboxVpc } from "../constructs/code-sandbox.js";
 import { Presign } from "../constructs/presign.js";
-import { RENDER_DOCUMENT_ALARMS } from "../constructs/render-document.js";
+import { RENDER_DOCUMENT_ALARMS, renderDocumentName } from "../constructs/render-document.js";
 import { MemberAccess } from "../constructs/member-access.js";
 import { Network } from "../constructs/network.js";
 import { Observability } from "../constructs/observability.js";
@@ -153,6 +154,8 @@ export class CoreStack extends Stack {
       // connector, for the sessions and cells of the sandbox (D114 (4)).
       turnWorkerRoleArn: turnWorkerRoleArn(this, cfg.namespace),
       codeConnectorRoleArn: codeConnectorRoleArn(this, cfg.namespace),
+      // D124 (2): the Canvas connector writes the documents of a conversation the same way.
+      textdocConnectorRoleArn: textdocConnectorRoleArn(this, cfg.namespace),
       ...(release ? { auditLockMode: release.auditLockMode } : {}),
     });
     // D99: the Cedar policies of the store, in a stack nested in Core.
@@ -785,6 +788,8 @@ export class CoreStack extends Stack {
       ...knowledge.apiEnvironment,
       // D116: attachments and generated files of the chat.
       CHAT_FILES_BUCKET: chatFiles.bucket.bucketName,
+      // D124 (3): the PDF of a Canvas document, where the render function exists (a release).
+      ...(props.release ? { RENDER_DOCUMENT_FUNCTION: renderDocumentName(cfg.namespace) } : {}),
       ...skills.apiEnvironment,
       ...evals.apiEnvironment,
       // D110: the evaluator mango-api asks for the verdict of a judge case, and its judges.
@@ -929,6 +934,8 @@ export class CoreStack extends Stack {
           mfa: cfg.mfa,
           sessionHours: SESSION_HOURS,
         },
+        // D123, D124 (4): the second origin the Canvas frames for its preview.
+        sandboxOrigin: uiSandbox.origin,
       };
       edge.deploySpa(
         release

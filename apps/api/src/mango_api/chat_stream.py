@@ -12,6 +12,8 @@ and translates it here into deltas ``{c, p, o, v}`` over messages
 * each tool call is a message of its own (``recipient`` = the tool's display name, as the
   stream of D57 named it) and its result another one, ``author.role = "tool"``, without
   content: what a tool answered never reaches the browser (D90 (3));
+* a Canvas document a turn wrote (D124) is a card in the answer's ``metadata.textdocs``
+  (``textdocs.TextdocCardOut``), and its call a message with ``recipient = "textdoc.<tool>"``;
 * a cell of the code sandbox (C4, D114 (7)) is a call with ``recipient = "code.run_python"``
   and ``content_type = "code"``; its result carries what the chat shows of the cell in
   ``metadata.aggregate_result`` (``code_blocks.CodeCellOut``: code, output with its cap, the
@@ -58,6 +60,7 @@ MESSAGE_PATHS: frozenset[str] = frozenset(
         "/metadata/result",
         "/metadata/error",
         "/metadata/aggregate_result",
+        "/metadata/textdocs",
     }
 )
 """Every path a delta of this server writes, relative to its channel's message."""
@@ -180,6 +183,7 @@ class Translator:
                         "knowledge": [],
                         "approvals": [],
                         "connection_required": [],
+                        "textdocs": [],
                     },
                 ),
             )
@@ -215,6 +219,10 @@ class Translator:
             out.append(Delta(FINAL, "/metadata/knowledge", "append", [data]))
         elif kind == "approval":
             out.append(Delta(FINAL, "/metadata/approvals", "append", [data]))
+        elif kind == "textdoc":
+            # The card of a Canvas document the turn wrote (D124): its id, title, kind and
+            # version; a later card of the same document replaces it in the chat.
+            out.append(Delta(FINAL, "/metadata/textdocs", "append", [data]))
         elif kind == "remote_connection_required":
             registration = str(data.get("registration_id", ""))
             out.append(Delta(FINAL, "/metadata/connection_required", "append", [registration]))

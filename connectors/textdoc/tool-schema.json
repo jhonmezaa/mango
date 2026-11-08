@@ -1,0 +1,100 @@
+[
+  {
+    "name": "create",
+    "description": "Create a document or a piece of code in the Canvas, next to the chat, where the user reads it, edits it, sees each version and its changes, exports it and previews code. Use it for anything the user will keep working on (a report, a plan, an email, a script, a small web page or React component) instead of writing it in the answer; then answer briefly. kind: 'document' (Markdown, without raw HTML: it is never rendered), 'code/python' (the preview runs it in the user's browser with Pyodide: numpy, pandas and matplotlib only, no network, no files), 'code/react' (one component as the default export; Tailwind classes and recharts are available, nothing else is imported) or 'code/html' (one self-contained page, no network). At most 256 KiB of text and 20 documents per conversation. The id it returns is what update and comment take.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "A short title for the user (at most 120 characters)."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["document", "code/python", "code/react", "code/html"],
+          "description": "What the document is."
+        },
+        "content": {
+          "type": "string",
+          "description": "The whole text of the first version."
+        }
+      },
+      "required": ["title", "kind", "content"]
+    }
+  },
+  {
+    "name": "update",
+    "description": "Write a new version of a Canvas document of this conversation, on top of its latest version (the user may have edited it: the conversation tells you its current text when they did). Give either the whole new text (always for code) or literal edits for a small, isolated change of a document: each edit finds an exact piece of the text (not a regular expression) and replaces it; a piece that is not there, or is there more than once without all, is refused and nothing changes. The user sees the version and what changed. At most 100 versions per document.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "textdoc_id": {
+          "type": "string",
+          "description": "The id create returned."
+        },
+        "content": {
+          "type": "string",
+          "description": "The whole new text. Omit it when giving edits."
+        },
+        "edits": {
+          "type": "array",
+          "maxItems": 20,
+          "description": "Literal edits, applied in order. Omit them when giving content.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "find": {
+                "type": "string",
+                "description": "An exact piece of the current text (1 to 4000 characters)."
+              },
+              "replace": { "type": "string", "description": "What goes instead of it." },
+              "all": {
+                "type": "boolean",
+                "description": "Replace every time it appears (false: it must appear once)."
+              }
+            },
+            "required": ["find", "replace"]
+          }
+        },
+        "note": {
+          "type": "string",
+          "description": "What this version changed, in a few words in the user's language (at most 120 characters)."
+        }
+      },
+      "required": ["textdoc_id"]
+    }
+  },
+  {
+    "name": "comment",
+    "description": "Comment on pieces of the latest version of a Canvas document of this conversation, without changing it: a question, a doubt or a suggestion the user reads next to the text and resolves. Each quote must be an exact piece of the text. At most 10 comments per call and 20 open per document.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "textdoc_id": {
+          "type": "string",
+          "description": "The id create returned."
+        },
+        "comments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "quote": {
+                "type": "string",
+                "description": "An exact piece of the latest version (1 to 500 characters)."
+              },
+              "text": {
+                "type": "string",
+                "description": "The comment (1 to 1000 characters)."
+              }
+            },
+            "required": ["quote", "text"]
+          }
+        }
+      },
+      "required": ["textdoc_id", "comments"]
+    }
+  }
+]

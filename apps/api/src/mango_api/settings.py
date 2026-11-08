@@ -176,6 +176,9 @@ class Settings:
     may use it (nothing is uploaded nor downloaded)."""
     presign_role_arn: str = ""
     """``Mango-<ns>-Presign``: the only credentials that sign URLs a browser uses."""
+    render_document_function: str = ""
+    """``Mango-<ns>-RenderDocument`` (D117): the PDF export of a Canvas document (D124 (3)).
+    Empty where it is not installed (only a release has its image): no PDF export."""
     """``Mango-<ns>-KnowledgeSync`` (D88 (11)): indexes, deletes and verifies documents."""
     """Documents of the knowledge bases (D88 (9)): presigned uploads and the copy to ``kb/``."""
     """KMS key whose signature answers that client's challenge; only mango-api signs."""
@@ -293,6 +296,7 @@ class Settings:
             tickets_table=env.get("TICKETS_TABLE", ""),
             chat_files_bucket=env.get("CHAT_FILES_BUCKET", ""),
             presign_role_arn=env.get("PRESIGN_ROLE_ARN", ""),
+            render_document_function=env.get("RENDER_DOCUMENT_FUNCTION", ""),
             allowed_hosts=frozenset(
                 h.strip().lower() for h in env["ALLOWED_HOSTS"].split(",") if h
             ),

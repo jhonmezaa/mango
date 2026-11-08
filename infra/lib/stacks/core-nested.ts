@@ -11,6 +11,7 @@ import {
   grantChatFilesApi,
 } from "../constructs/chat-files-scan.js";
 import { CodeConnector, CodeConnectorProps } from "../constructs/code-connector.js";
+import { TextdocConnector } from "../constructs/textdoc-connector.js";
 import { acknowledge, arnWildcardFinding } from "../nag.js";
 import { CodeSandbox, CodeSandboxProps } from "../constructs/code-sandbox.js";
 import { CurReconciler, CurReconcilerProps } from "../constructs/cur-reconciler.js";
@@ -267,6 +268,8 @@ export class SandboxStack extends CoreNestedStack {
   readonly sandbox: CodeSandbox;
   readonly scanResults: ChatFilesScanResults;
   readonly connector: CodeConnector;
+  /** The Canvas tools (D124 (2)): a Mango connector that writes only in Mango. */
+  readonly textdoc: TextdocConnector;
 
   constructor(scope: Construct, id: string, props: SandboxStackProps) {
     super(scope, id, "code sandbox");
@@ -287,11 +290,29 @@ export class SandboxStack extends CoreNestedStack {
       bucket: props.chatFiles.bucket,
       key: props.chatFiles.key,
       guardrailArn: props.guardrailArn,
+      // D124 (3): the PDF of a Canvas document, rendered from its Word file (only in a release).
+      renderDocument: props.connector.renderDocument === true,
     });
     this.connector = new CodeConnector(this, "CodeConnector", {
       ...props.connector,
       installation,
       codeInterpreter: this.sandbox.codeInterpreter,
+    });
+    const c = props.connector;
+    this.textdoc = new TextdocConnector(this, "TextdocConnector", {
+      installation,
+      conversations: c.conversations,
+      dataKey: c.dataKey,
+      dataAccessRoleArn: c.dataAccessRoleArn,
+      rateLimits: c.rateLimits,
+      auditIndex: c.auditIndex,
+      auditStream: c.auditStream,
+      configKey: c.configKey,
+      issuer: c.issuer,
+      webClientId: c.webClientId,
+      tasksClientId: c.tasksClientId,
+      gateway: c.gateway,
+      policyEngineId: c.policyEngineId,
     });
   }
 }

@@ -35,6 +35,8 @@ from mango_core.harness_tools import (
     KNOWLEDGE_TARGET,
     KNOWLEDGE_TOOL,
     SKILLS_TOOL,
+    TEXTDOC_TARGET,
+    TEXTDOC_TOOLS,
     allowed_inline_tool,
     allowed_tool,
     code_allowed_tools,
@@ -408,6 +410,21 @@ def code_run_names(allowed: Iterable[str]) -> frozenset[str]:
         frozenset({CODE_RUN})
         if allowed_tool(CODE_TARGET, CODE_RUN_TOOL) in allowed
         else frozenset()
+    )
+
+
+TEXTDOC_RECIPIENT_PREFIX = "textdoc."
+"""The ``recipient`` of a Canvas call in the ``v1`` stream (``textdoc.create``…, D124)."""
+
+
+def textdoc_names(allowed: Iterable[str]) -> frozenset[str]:
+    """The Canvas tools the invocation allows: only then is a call of one of them a Canvas call
+    (the name in the stream is written by the model, TM-LP1)."""
+    entries = set(allowed)
+    return frozenset(
+        gateway_tool_name(TEXTDOC_TARGET, tool)
+        for tool in TEXTDOC_TOOLS
+        if allowed_tool(TEXTDOC_TARGET, tool) in entries
     )
 
 
@@ -801,6 +818,8 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     remote_calls = _RemoteCalls(remotes or {}, result)
     code_runs = code_run_names(request.get("allowedTools", []))
     code_calls: set[str] = set()
+    textdoc_tools = textdoc_names(request.get("allowedTools", []))
+    textdoc_calls: set[str] = set()
     # Write tool calls in flight: the Gateway refuses them, whatever the harness does next.
     refused: set[str] = set()
     asked = False
@@ -841,6 +860,10 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                     # Handed back to mango-api: the turn ends with this message (D87 (3)).
                     asked = True
                 name = display_tool_name(start["toolUse"].get("name", "tool"))
+                canvas = _captured_tool(raw_name, textdoc_tools) if textdoc_tools else None
+                if canvas is not None:
+                    # A Canvas tool (D124): ``textdoc.create``…, never the model's own name.
+                    name = TEXTDOC_RECIPIENT_PREFIX + canvas.split("___", 1)[1]
                 recorded.call(index, tool_id, name)
                 searches.call(tool_id, raw_name)
                 remote_calls.call(tool_id, raw_name)
@@ -860,6 +883,10 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                     code_calls.add(tool_id)
                     yield StreamEvent("tool", {"name": name, "status": "started", "code": True})
                     yield from progress.to(Phase.CODE)
+                elif canvas is not None:
+                    textdoc_calls.add(tool_id)
+                    yield StreamEvent("tool", {"name": name, "status": "started", "textdoc": True})
+                    yield from progress.to(Phase.TOOL, "")
                 else:
                     yield StreamEvent("tool", {"name": name, "status": "started"})
                     yield from progress.to(Phase.TOOL, name if name in known_tools else "")
@@ -880,8 +907,11 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
                     block.get("contentBlockIndex", -1), tool_id, failed=status == "error"
                 )
                 result.tools.append({"name": name, "status": status})
-                cell = {"code": True} if tool_id in code_calls else {}
+                cell: dict[str, Any] = {"code": True} if tool_id in code_calls else {}
+                if tool_id in textdoc_calls:
+                    cell = {"textdoc": True}
                 code_calls.discard(tool_id)
+                textdoc_calls.discard(tool_id)
                 yield StreamEvent("tool", {"name": name, "status": status, **cell})
                 if on_call is not None and tool_id in called_at and name in known_tools:
                     elapsed = max(0, round((clock() - called_at.pop(tool_id)) * 1000))

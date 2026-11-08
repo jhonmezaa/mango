@@ -203,6 +203,7 @@ class ChatFileStore:
         *,
         now: int,
         sha256: str | None = None,
+        size: int | None = None,
     ) -> ChatFile | None:
         """Move a file from the status it was read in to ``to``; ``None`` when another
         request moved it first (the caller reads it again)."""
@@ -216,6 +217,10 @@ class ChatFileStore:
         if sha256 is not None:
             update += ", sha256 = :h"
             values[":h"] = {"S": sha256}
+        if size is not None:
+            # A PDF of the Canvas learns its size once it is rendered (D124 (3)).
+            update += ", #z = :z"
+            values[":z"] = {"N": str(size)}
         try:
             self._clients(f.owner).update_item(
                 TableName=self._table,
@@ -224,7 +229,10 @@ class ChatFileStore:
                 ConditionExpression=(
                     "#s = :from AND (attribute_not_exists(deleted) OR deleted = :f)"
                 ),
-                ExpressionAttributeNames={"#s": "status"},
+                ExpressionAttributeNames={
+                    "#s": "status",
+                    **({"#z": "size"} if size is not None else {}),
+                },
                 ExpressionAttributeValues=values,
             )
         except ClientError as exc:
@@ -233,7 +241,13 @@ class ChatFileStore:
             raise ChatFileStoreUnavailableError(type(exc).__name__) from exc
         except BotoCoreError as exc:
             raise ChatFileStoreUnavailableError(type(exc).__name__) from exc
-        return replace(f, status=to, status_at=now, sha256=sha256 or f.sha256)
+        return replace(
+            f,
+            status=to,
+            status_at=now,
+            sha256=sha256 or f.sha256,
+            size=f.size if size is None else size,
+        )
 
     def set_guard(self, f: ChatFile, verdict: str) -> ChatFile:
         """Keep what the guardrail said of a chart or a table (``chat_outputs``). Only the first

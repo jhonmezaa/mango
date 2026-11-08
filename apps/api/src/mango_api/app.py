@@ -34,6 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from mango_api import chat_files, code_blocks, harness, memory, sessions, turns
+from mango_api import textdocs as textdocs_api
 from mango_api.activity import (
     ActivityDeps,
     AgentView,
@@ -259,9 +260,12 @@ from mango_core.identity import (
 )
 from mango_core.knowledge import ID_PATTERN as KNOWLEDGE_ID_PATTERN
 from mango_core.skills import parse_ref as parse_skill_ref
+from mango_core.textdocs import TextdocStore, TextdocStoreUnavailableError
 from mango_core.tickets import TicketStore
 
 logger = logging.getLogger("mango_api")
+RENDER_CLIENT_CONFIG = Config(retries={"mode": "standard", "max_attempts": 1}, read_timeout=200)
+"""A render takes up to the function's timeout (3 minutes, D117): wait a little longer."""
 
 MAX_BODY_BYTES = 32 * 1024
 TURN_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -406,6 +410,10 @@ class MessageOut(_Strict):
     code: list[code_blocks.CodeCellOut] = []
     """The cells of the code sandbox this answer showed (C4): the «Analizando» block, as it was
     shown (a cell the guardrail blocked comes without content)."""
+    textdocs: list[textdocs_api.TextdocCardOut] = []
+    """The Canvas documents this answer wrote (D124): their cards, which open the Canvas."""
+    files: list[code_blocks.CodeFileOut] = []
+    """The files a Canvas export added (D124 (3)): a message without text, only their cards."""
 
 
 class ConversationDetail(_Strict):
@@ -525,6 +533,8 @@ class Services:
     knowledge: KnowledgeDeps | None = None
     # Files of the chat (D116): their records always; their bucket once mango-api may use it.
     chat_files: ChatFilesDeps | None = None
+    # The Canvas (D124): the documents of the conversations, in each person's partition.
+    textdocs: textdocs_api.TextdocsDeps | None = None
     # Skills of instructions (D92); set in production once the Skills table exists.
     skills: SkillsDeps | None = None
     # The Playground's test harness (D91); set in production.
@@ -923,6 +933,7 @@ def build_services(settings: Settings) -> Services:
         limits=limits,
     )
     trace_refs = TraceRefs(dynamodb, settings.audit_index_table)
+    conversations = ConversationRepository(rls.for_user, settings.conversations_table)
     services = Services(
         settings=settings,
         verifier=verifier,
@@ -955,7 +966,7 @@ def build_services(settings: Settings) -> Services:
             else None
         ),
         home=HomeData(table=settings.budgets_table, dynamodb=dynamodb, own=rls.for_user),
-        conversations=ConversationRepository(rls.for_user, settings.conversations_table),
+        conversations=conversations,
         audit=audit,
         agentcore=harness.TurnClients(region),
         bedrock=bedrock,
@@ -1148,6 +1159,31 @@ def build_services(settings: Settings) -> Services:
             guardrail=code_blocks.Guardrail(
                 bedrock, settings.guardrail_id, settings.guardrail_version
             ),
+        ),
+        textdocs=textdocs_api.TextdocsDeps(
+            stores=lambda sub: TextdocStore(rls.for_user(sub), settings.conversations_table, sub),
+            audit=audit,
+            files=ChatFileStore(rls.for_user, settings.conversations_table),
+            storage=(
+                textdocs_api.ExportStorage(
+                    boto3.client("s3", region_name=region, config=CHAT_FILES_S3_CONFIG),
+                    settings.chat_files_bucket,
+                    (
+                        boto3.client("lambda", region_name=region, config=RENDER_CLIENT_CONFIG)
+                        if settings.render_document_function
+                        else None
+                    ),
+                    settings.render_document_function,
+                )
+                if settings.chat_files_bucket
+                else None
+            ),
+            announce=lambda user_id, conversation_id, files: conversations.add_message(
+                user_id, conversation_id, "assistant", "", exports=files
+            ),
+            reads=limits.limiter("textdoc.reads"),
+            edits=limits.limiter("textdoc.edits"),
+            exports=limits.limiter("textdoc.exports"),
         ),
         knowledge=(
             KnowledgeDeps(
@@ -1713,8 +1749,16 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             await asyncio.to_thread(
                 chat_files.present, services.chat_files, user_id, conversation_id
             )
-            if any(m.attachments or m.code_runs for m in messages)
+            if any(m.attachments or m.code_runs or m.exports for m in messages)
             else frozenset()
+        )
+        # The cards of the Canvas documents of its answers (D124): one read of its documents.
+        cards = (
+            await asyncio.to_thread(
+                _stored_textdocs, services.textdocs, user_id, conversation_id, messages
+            )
+            if services.textdocs is not None and any(m.textdocs for m in messages)
+            else {}
         )
         # The «Analizando» block of the answers that ran code (C4): one read per turn.
         cells = (
@@ -1758,6 +1802,18 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
                         for a in m.attachments
                     ],
                     code=cells.get(m.message_id, []),
+                    textdocs=cards.get(m.message_id, []),
+                    files=[
+                        code_blocks.CodeFileOut(
+                            file_id=f["file_id"],
+                            name=f["name"],
+                            kind=f["kind"],
+                            size_bytes=f["size"],
+                            image=False,
+                            gone=f["file_id"] not in present,
+                        )
+                        for f in m.exports
+                    ],
                 )
                 for m in messages
             ],
@@ -2263,6 +2319,23 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
             chat_files_router(services.chat_files, current_user, own_for_files, stored_owner)
         )
 
+    if services.textdocs is not None:
+
+        async def own_for_textdocs(
+            caller: Caller, conversation_id: str, owner: str, read_only: bool
+        ) -> None:
+            await own_conversation(caller, conversation_id, owner, read_only=read_only)
+
+        def textdoc_owner(user_id: str, conversation_id: str) -> str | None:
+            summary = services.conversations.summary(user_id, conversation_id)
+            return summary[2] if summary is not None else None
+
+        app.include_router(
+            textdocs_api.textdocs_router(
+                services.textdocs, current_user, own_for_textdocs, textdoc_owner
+            )
+        )
+
     async def begin_turn(body: ChatRequest, caller: Caller) -> tuple[turns.ChatTurns, str, str]:
         """Validate, authorize and queue a turn (D121): what ``POST /api/chat`` and
         ``POST /api/chat/turns`` share. The conversation and the turn of it."""
@@ -2453,6 +2526,26 @@ def _stored_cells(
             out[m.message_id] = code_blocks.history(
                 refs, lambda turn: repo.code_runs(user_id, turn), present
             )
+    return out
+
+
+def _stored_textdocs(
+    deps: textdocs_api.TextdocsDeps,
+    user_id: str,
+    conversation_id: str,
+    messages: list[StoredMessage],
+) -> dict[str, list[textdocs_api.TextdocCardOut]]:
+    """The Canvas cards of each answer that wrote a document, read from the caller's own
+    partition; none when the documents cannot be read (the answer still shows)."""
+    store = deps.stores(user_id)
+    out: dict[str, list[textdocs_api.TextdocCardOut]] = {}
+    try:
+        for m in messages:
+            if m.textdocs:
+                out[m.message_id] = textdocs_api.history_cards(store, conversation_id, m.textdocs)
+    except TextdocStoreUnavailableError:
+        logger.exception("the Canvas of a conversation could not be read for its history")
+        return {}
     return out
 
 

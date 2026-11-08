@@ -7047,6 +7047,14 @@
             "title": "Created At",
             "type": "string"
           },
+          "files": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CodeFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
           "message_id": {
             "title": "Message Id",
             "type": "string"
@@ -7082,6 +7090,14 @@
             "default": false,
             "title": "Stopped",
             "type": "boolean"
+          },
+          "textdocs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TextdocCardOut"
+            },
+            "title": "Textdocs",
+            "type": "array"
           },
           "tools": {
             "items": {
@@ -13662,6 +13678,296 @@
         "title": "TaskOut",
         "type": "object"
       },
+      "TextdocCardOut": {
+        "additionalProperties": false,
+        "description": "The card of a document in an answer: opens the Canvas (design round 41).",
+        "properties": {
+          "kind": {
+            "enum": [
+              "document",
+              "code/python",
+              "code/react",
+              "code/html"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "textdoc_id": {
+            "title": "Textdoc Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "textdoc_id",
+          "title",
+          "kind",
+          "version"
+        ],
+        "title": "TextdocCardOut",
+        "type": "object"
+      },
+      "TextdocCommentOut": {
+        "additionalProperties": false,
+        "properties": {
+          "comment_id": {
+            "title": "Comment Id",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "comment_id",
+          "version",
+          "quote",
+          "text"
+        ],
+        "title": "TextdocCommentOut",
+        "type": "object"
+      },
+      "TextdocContentOut": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "textdoc_id": {
+            "title": "Textdoc Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "textdoc_id",
+          "version",
+          "content"
+        ],
+        "title": "TextdocContentOut",
+        "type": "object"
+      },
+      "TextdocEmptyIn": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "TextdocEmptyIn",
+        "type": "object"
+      },
+      "TextdocExportIn": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "enum": [
+              "docx",
+              "pdf"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "version": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "version"
+        ],
+        "title": "TextdocExportIn",
+        "type": "object"
+      },
+      "TextdocExportOut": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "$ref": "#/components/schemas/CodeFileOut"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id",
+          "file"
+        ],
+        "title": "TextdocExportOut",
+        "type": "object"
+      },
+      "TextdocOut": {
+        "additionalProperties": false,
+        "properties": {
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/TextdocCommentOut"
+            },
+            "title": "Comments",
+            "type": "array"
+          },
+          "exports": {
+            "items": {
+              "enum": [
+                "md",
+                "py",
+                "jsx",
+                "html",
+                "docx",
+                "pdf"
+              ],
+              "type": "string"
+            },
+            "title": "Exports",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "document",
+              "code/python",
+              "code/react",
+              "code/html"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "latest": {
+            "title": "Latest",
+            "type": "integer"
+          },
+          "textdoc_id": {
+            "title": "Textdoc Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/TextdocVersionOut"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "textdoc_id",
+          "title",
+          "kind",
+          "latest",
+          "versions",
+          "comments",
+          "exports"
+        ],
+        "title": "TextdocOut",
+        "type": "object"
+      },
+      "TextdocSaveIn": {
+        "additionalProperties": false,
+        "properties": {
+          "base": {
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Base",
+            "type": "integer"
+          },
+          "content": {
+            "maxLength": 262144,
+            "title": "Content",
+            "type": "string"
+          },
+          "restored_from": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restored From"
+          }
+        },
+        "required": [
+          "content",
+          "base"
+        ],
+        "title": "TextdocSaveIn",
+        "type": "object"
+      },
+      "TextdocVersionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "by": {
+            "enum": [
+              "agent",
+              "person"
+            ],
+            "title": "By",
+            "type": "string"
+          },
+          "chars": {
+            "title": "Chars",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "restored_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restored From"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "by",
+          "note",
+          "created_at",
+          "chars"
+        ],
+        "title": "TextdocVersionOut",
+        "type": "object"
+      },
       "TicketChangeIn": {
         "additionalProperties": false,
         "properties": {
@@ -19673,6 +19979,304 @@
           }
         },
         "summary": "Chat File Output"
+      }
+    },
+    "/conversations/{conversation_id}/textdocs/{textdoc_id}": {
+      "get": {
+        "description": "A document of the Canvas: its versions and its open comments, without text.",
+        "operationId": "get_textdoc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "textdoc_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Textdoc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextdocOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Textdoc"
+      }
+    },
+    "/conversations/{conversation_id}/textdocs/{textdoc_id}/comments/{comment_id}/resolve": {
+      "post": {
+        "description": "«Resolver»: the comment leaves the view.",
+        "operationId": "resolve_textdoc_comment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "textdoc_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Textdoc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Comment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TextdocEmptyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Resolve Textdoc Comment"
+      }
+    },
+    "/conversations/{conversation_id}/textdocs/{textdoc_id}/exports": {
+      "post": {
+        "description": "Word or PDF of a version, as a file of the chat («Generando {tipo}. Aparecerá en la\nconversación.»).",
+        "operationId": "export_textdoc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "textdoc_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Textdoc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TextdocExportIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextdocExportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Export Textdoc"
+      }
+    },
+    "/conversations/{conversation_id}/textdocs/{textdoc_id}/versions": {
+      "post": {
+        "description": "«Guardar versión» / «Restaurar esta versión» (design round 41).",
+        "operationId": "save_textdoc_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "textdoc_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Textdoc Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TextdocSaveIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextdocVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Save Textdoc Version"
+      }
+    },
+    "/conversations/{conversation_id}/textdocs/{textdoc_id}/versions/{version}": {
+      "get": {
+        "operationId": "get_textdoc_version",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "textdoc_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Textdoc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextdocContentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get Textdoc Version"
       }
     },
     "/conversations/{conversation_id}/turn": {

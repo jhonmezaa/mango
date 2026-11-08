@@ -40,6 +40,8 @@ from mango_core.harness_tools import (
     gateway_tool_name,
     knowledge_allowed_tool,
     knowledge_gateway_tool,
+    textdoc_allowed_tools,
+    textdoc_gateway_tools,
 )
 from mango_core.identity import UserContext
 
@@ -345,6 +347,9 @@ class PublishedAgents:
         if definition.code_interpreter:
             allowed.extend(code_allowed_tools())
             gateway.extend(code_gateway_tools())
+            # The Canvas goes with «Ejecutar código» (D124, notes of K1).
+            allowed.extend(textdoc_allowed_tools())
+            gateway.extend(textdoc_gateway_tools())
         return (
             tuple(sorted(allowed)),
             tuple(sorted(gateway)),

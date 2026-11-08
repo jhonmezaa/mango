@@ -26,10 +26,12 @@ from mango_core.harness_tools import (
     CODE_TARGET,
     GATEWAY_MCP_SERVER,
     KNOWLEDGE_TARGET,
+    TEXTDOC_TARGET,
     allowed_tool,
     code_allowed_tools,
     knowledge_allowed_tool,
     skills_allowed_tool,
+    textdoc_allowed_tools,
 )
 from mango_core.playground import PLAYGROUND_ID
 from mango_core.remote_mcp import registration_of_target
@@ -147,7 +149,7 @@ def allowed_tools(
     """
     approval = set(definition.approval_tools)
     targets = {connector.target for connector in settings.connectors.values()}
-    targets.update({KNOWLEDGE_TARGET, CODE_TARGET})
+    targets.update({KNOWLEDGE_TARGET, CODE_TARGET, TEXTDOC_TARGET})
     out: list[str] = []
     for ref in definition.tools:
         server_id, _, tool = ref.partition(".")
@@ -182,6 +184,8 @@ def allowed_tools(
         out.append(knowledge_allowed_tool())
     if definition.code_interpreter:
         out.extend(code_allowed_tools())
+        # The Canvas goes with «Ejecutar código» (D124, notes of K1).
+        out.extend(textdoc_allowed_tools())
     return sorted(out)
 
 

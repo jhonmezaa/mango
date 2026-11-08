@@ -1,4 +1,4 @@
-import { CfnResource, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { ArnFormat, CfnResource, Duration, RemovalPolicy, Stack } from "aws-cdk-lib";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as events from "aws-cdk-lib/aws-events";
@@ -15,6 +15,7 @@ import { mangoName, roleNames } from "../names.js";
 import { acknowledge, arnWildcardFinding, REASONS } from "../nag.js";
 import { CHAT_FILES_PREFIXES } from "./chat-files.js";
 import { PythonFunction } from "./python-function.js";
+import { renderDocumentName } from "./render-document.js";
 
 /** Namespace and dimension of the metric the function emits (embedded metric format). */
 export const CHAT_FILES_METRICS = { namespace: "Mango/ChatFiles", dimension: "Installation" };
@@ -197,6 +198,11 @@ export interface ChatFilesApiProps {
   readonly key: kms.IKey;
   /** The base guardrail: the texts of a chart or a table of a cell, before the chat draws it. */
   readonly guardrailArn: string;
+  /**
+   * Whether `Mango-<ns>-RenderDocument` exists (D117 (8): only in a release). Then mango-api may
+   * invoke it for the PDF of a Canvas document (D124 (3)), with keys it builds itself.
+   */
+  readonly renderDocument?: boolean;
 }
 
 /**
@@ -235,6 +241,24 @@ export function grantChatFilesApi(scope: Construct, props: ChatFilesApiProps): i
         actions: ["bedrock:ApplyGuardrail"],
         resources: [props.guardrailArn],
       }),
+      // D124 (3): the PDF of a Canvas document is its Word file rendered by the function of
+      // D117, from a key of the owner's conversation and into its `renders/` (TM-CI8).
+      ...(props.renderDocument
+        ? [
+            new iam.PolicyStatement({
+              sid: "RenderCanvasPdf",
+              actions: ["lambda:InvokeFunction"],
+              resources: [
+                Stack.of(scope).formatArn({
+                  service: "lambda",
+                  resource: "function",
+                  resourceName: renderDocumentName(props.namespace),
+                  arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+                }),
+              ],
+            }),
+          ]
+        : []),
     ],
   });
   const bucket = props.bucket.node.defaultChild as CfnResource;

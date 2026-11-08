@@ -3837,6 +3837,10 @@ export type MessageOut = {
      */
     created_at: string;
     /**
+     * Files
+     */
+    files?: Array<CodeFileOut>;
+    /**
      * Message Id
      */
     message_id: string;
@@ -3856,6 +3860,10 @@ export type MessageOut = {
      * Stopped
      */
     stopped?: boolean;
+    /**
+     * Textdocs
+     */
+    textdocs?: Array<TextdocCardOut>;
     /**
      * Tools
      */
@@ -7219,6 +7227,184 @@ export type TaskOut = {
      * Updated At
      */
     updated_at: string;
+};
+
+/**
+ * TextdocCardOut
+ *
+ * The card of a document in an answer: opens the Canvas (design round 41).
+ */
+export type TextdocCardOut = {
+    /**
+     * Kind
+     */
+    kind: 'document' | 'code/python' | 'code/react' | 'code/html';
+    /**
+     * Textdoc Id
+     */
+    textdoc_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * TextdocCommentOut
+ */
+export type TextdocCommentOut = {
+    /**
+     * Comment Id
+     */
+    comment_id: string;
+    /**
+     * Quote
+     */
+    quote: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * TextdocContentOut
+ */
+export type TextdocContentOut = {
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Textdoc Id
+     */
+    textdoc_id: string;
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * TextdocEmptyIn
+ */
+export type TextdocEmptyIn = {
+    [key: string]: never;
+};
+
+/**
+ * TextdocExportIn
+ */
+export type TextdocExportIn = {
+    /**
+     * Format
+     */
+    format: 'docx' | 'pdf';
+    /**
+     * Version
+     */
+    version: number;
+};
+
+/**
+ * TextdocExportOut
+ */
+export type TextdocExportOut = {
+    file: CodeFileOut;
+    /**
+     * Message Id
+     */
+    message_id: string;
+};
+
+/**
+ * TextdocOut
+ */
+export type TextdocOut = {
+    /**
+     * Comments
+     */
+    comments: Array<TextdocCommentOut>;
+    /**
+     * Exports
+     */
+    exports: Array<'md' | 'py' | 'jsx' | 'html' | 'docx' | 'pdf'>;
+    /**
+     * Kind
+     */
+    kind: 'document' | 'code/python' | 'code/react' | 'code/html';
+    /**
+     * Latest
+     */
+    latest: number;
+    /**
+     * Textdoc Id
+     */
+    textdoc_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Versions
+     */
+    versions: Array<TextdocVersionOut>;
+};
+
+/**
+ * TextdocSaveIn
+ */
+export type TextdocSaveIn = {
+    /**
+     * Base
+     */
+    base: number;
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Restored From
+     */
+    restored_from?: number | null;
+};
+
+/**
+ * TextdocVersionOut
+ */
+export type TextdocVersionOut = {
+    /**
+     * By
+     */
+    by: 'agent' | 'person';
+    /**
+     * Chars
+     */
+    chars: number;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Note
+     */
+    note: string;
+    /**
+     * Restored From
+     */
+    restored_from?: number | null;
+    /**
+     * Version
+     */
+    version: number;
 };
 
 /**
@@ -10756,6 +10942,184 @@ export type ChatFileOutputResponses = {
 };
 
 export type ChatFileOutputResponse = ChatFileOutputResponses[keyof ChatFileOutputResponses];
+
+export type GetTextdocData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * Textdoc Id
+         */
+        textdoc_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/textdocs/{textdoc_id}';
+};
+
+export type GetTextdocErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetTextdocError = GetTextdocErrors[keyof GetTextdocErrors];
+
+export type GetTextdocResponses = {
+    /**
+     * Successful Response
+     */
+    200: TextdocOut;
+};
+
+export type GetTextdocResponse = GetTextdocResponses[keyof GetTextdocResponses];
+
+export type ResolveTextdocCommentData = {
+    body: TextdocEmptyIn;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * Textdoc Id
+         */
+        textdoc_id: string;
+        /**
+         * Comment Id
+         */
+        comment_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/textdocs/{textdoc_id}/comments/{comment_id}/resolve';
+};
+
+export type ResolveTextdocCommentErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ResolveTextdocCommentError = ResolveTextdocCommentErrors[keyof ResolveTextdocCommentErrors];
+
+export type ResolveTextdocCommentResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type ResolveTextdocCommentResponse = ResolveTextdocCommentResponses[keyof ResolveTextdocCommentResponses];
+
+export type ExportTextdocData = {
+    body: TextdocExportIn;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * Textdoc Id
+         */
+        textdoc_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/textdocs/{textdoc_id}/exports';
+};
+
+export type ExportTextdocErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type ExportTextdocError = ExportTextdocErrors[keyof ExportTextdocErrors];
+
+export type ExportTextdocResponses = {
+    /**
+     * Successful Response
+     */
+    202: TextdocExportOut;
+};
+
+export type ExportTextdocResponse = ExportTextdocResponses[keyof ExportTextdocResponses];
+
+export type SaveTextdocVersionData = {
+    body: TextdocSaveIn;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * Textdoc Id
+         */
+        textdoc_id: string;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/textdocs/{textdoc_id}/versions';
+};
+
+export type SaveTextdocVersionErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type SaveTextdocVersionError = SaveTextdocVersionErrors[keyof SaveTextdocVersionErrors];
+
+export type SaveTextdocVersionResponses = {
+    /**
+     * Successful Response
+     */
+    201: TextdocVersionOut;
+};
+
+export type SaveTextdocVersionResponse = SaveTextdocVersionResponses[keyof SaveTextdocVersionResponses];
+
+export type GetTextdocVersionData = {
+    body?: never;
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: string;
+        /**
+         * Textdoc Id
+         */
+        textdoc_id: string;
+        /**
+         * Version
+         */
+        version: number;
+    };
+    query?: never;
+    url: '/conversations/{conversation_id}/textdocs/{textdoc_id}/versions/{version}';
+};
+
+export type GetTextdocVersionErrors = {
+    /**
+     * Error
+     */
+    default: ErrorBody;
+};
+
+export type GetTextdocVersionError = GetTextdocVersionErrors[keyof GetTextdocVersionErrors];
+
+export type GetTextdocVersionResponses = {
+    /**
+     * Successful Response
+     */
+    200: TextdocContentOut;
+};
+
+export type GetTextdocVersionResponse = GetTextdocVersionResponses[keyof GetTextdocVersionResponses];
 
 export type ConversationTurnData = {
     body?: never;

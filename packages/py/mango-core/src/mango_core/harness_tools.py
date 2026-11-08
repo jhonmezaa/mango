@@ -71,6 +71,23 @@ def code_allowed_tools() -> tuple[str, ...]:
     return tuple(allowed_tool(CODE_TARGET, tool) for tool in CODE_TOOLS)
 
 
+TEXTDOC_TARGET = "textdoc"
+"""Gateway target of the Canvas connector (D124 (2)): a Mango connector that writes only in
+Mango. A version with the ``code_interpreter`` capability has its tools, and only such a
+version (D124, notes of K1): the Canvas goes with «Ejecutar código»."""
+TEXTDOC_TOOLS = ("create", "update", "comment")
+
+
+def textdoc_gateway_tools() -> tuple[str, ...]:
+    """Gateway names of the Canvas tools (``textdoc___create``…)."""
+    return tuple(gateway_tool_name(TEXTDOC_TARGET, tool) for tool in TEXTDOC_TOOLS)
+
+
+def textdoc_allowed_tools() -> tuple[str, ...]:
+    """``allowedTools`` entries of the Canvas tools."""
+    return tuple(allowed_tool(TEXTDOC_TARGET, tool) for tool in TEXTDOC_TOOLS)
+
+
 SKILLS_TOOL = "skills"
 """Built-in tool of the harness that loads the instructions of one of its skills (D92): the
 ``AgentSkills`` plugin of Strands, which the harness runs. A version with skills has it, and

@@ -45,6 +45,7 @@ from mango_api import (
     memory,
     sessions,
 )
+from mango_api import textdocs as textdocs_api
 from mango_api.activity import TurnActivity
 from mango_api.activity_store import Origin
 from mango_api.approvals import (
@@ -389,6 +390,23 @@ def turn_cells(
         code_blocks.Guardrail(services.bedrock, settings.guardrail_id, settings.guardrail_version),
         user_id,
         turn_id,
+    )
+
+
+def turn_textdocs(
+    services: Services, user_id: str, conversation_id: str, turn_id: str, agent: PublishedAgent
+) -> textdocs_api.TurnTextdocs | None:
+    """The Canvas cards of a turn of a version with the Canvas (D124), else ``None``."""
+    if not agent.definition.code_interpreter or services.textdocs is None:
+        return None
+    return textdocs_api.TurnTextdocs(services.textdocs.stores(user_id), conversation_id, turn_id)
+
+
+def _textdoc_answered(event: harness.StreamEvent) -> bool:
+    return (
+        event.kind == "tool"
+        and event.data.get("textdoc") is True
+        and event.data.get("status") != "started"
     )
 
 
@@ -1101,6 +1119,9 @@ class ChatTurns:
                 code_runs=code_blocks.stored_of_events(
                     turn_id, (e.data for e in written if e.kind == "code")
                 ),
+                textdocs=textdocs_api.stored_of_events(
+                    [e.data for e in written if e.kind == "textdoc"]
+                ),
                 stopped=True,
                 stop_code=code,
             )
@@ -1374,6 +1395,11 @@ class ChatTurns:
             if services.approvals is not None and not is_new and agent.write_tools
             else ""
         )
+        # What the person changed in the Canvas since the agent last saw it (D124): told
+        # before the question, as data of the conversation, never as instructions.
+        if definition.code_interpreter and services.textdocs is not None and not is_new:
+            canvas = textdocs_api.turn_note(services.textdocs.stores(user.user_id), conversation_id)
+            note = "\n\n".join(part for part in (note, canvas) if part)
         text = message.message
         history.append(harness.ChatTurn("user", f"{note}\n\n{text}" if note else text))
         # The files of the question, read again (TM-CF9): still ready, of this conversation
@@ -1556,6 +1582,7 @@ class ChatTurns:
             Origin(user.user_id, agent.agent_id, agent.version, conversation_id=conversation_id),
         )
         cells = turn_cells(services, user.user_id, turn_id, agent)
+        canvas = turn_textdocs(services, user.user_id, conversation_id, turn_id, agent)
         try:
             services.audit.emit(
                 "agent.invoke",
@@ -1579,6 +1606,10 @@ class ChatTurns:
                         # What the cell showed, once the guardrail checked it (TM-CI5).
                         for cell in cells.new():
                             put("code", cell)
+                    if canvas is not None and _textdoc_answered(event):
+                        # The card of each document the call wrote (D124).
+                        for doc in canvas.new():
+                            put("textdoc", doc)
                     continue
                 if stopped:
                     # Nobody reads this turn any more: nothing is asked of the person.
@@ -1628,6 +1659,7 @@ class ChatTurns:
                     remote_sources=result.remote_sources,
                     message_id=message_id,
                     code_runs=cells.stored() if cells is not None else None,
+                    textdocs=canvas.stored() if canvas is not None else None,
                 )
                 answered = True
         except Exception as exc:
@@ -1662,6 +1694,7 @@ class ChatTurns:
                         connection_required=result.connection_required,
                         remote_sources=result.remote_sources,
                         code_runs=cells.stored() if cells is not None else None,
+                        textdocs=canvas.stored() if canvas is not None else None,
                         stopped=True,
                         stop_code=TURN_INTERRUPTED["code"],
                     )

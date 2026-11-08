@@ -81,6 +81,11 @@ export interface SpaRuntimeConfig {
   aiPolicyUrl?: string;
   /** Installation auth policy, shown read-only in Ajustes › Autenticación. */
   auth: SpaAuthConfig;
+  /**
+   * The second origin (D123): `https://<distribution of the sandbox>`, the only one the SPA
+   * frames (its CSP `frame-src` names it). The Canvas runs its previews there (D124 (4)).
+   */
+  sandboxOrigin?: string;
 }
 
 /**
@@ -123,6 +128,7 @@ export function releaseConfigJson(config: ReleaseSpaConfig): string {
     `"apiBasePath":${text(config.apiBasePath)}`,
     `"signUpDomains":["${Fn.join('","', Fn.split(",", config.deployTime.signUpDomains))}"]`,
     `"auth":${JSON.stringify(config.auth)}`,
+    ...(config.sandboxOrigin ? [`"sandboxOrigin":${text(config.sandboxOrigin)}`] : []),
   ];
   return `{${members.join(",")}${config.deployTime.aiPolicyUrlMember}}`;
 }
