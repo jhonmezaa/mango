@@ -10777,29 +10777,6 @@ export type RejectApprovalResponses = {
 
 export type RejectApprovalResponse = RejectApprovalResponses[keyof RejectApprovalResponses];
 
-export type ChatData = {
-    body: ChatRequest;
-    path?: never;
-    query?: never;
-    url: '/chat';
-};
-
-export type ChatErrors = {
-    /**
-     * Error
-     */
-    default: ErrorBody;
-};
-
-export type ChatError = ChatErrors[keyof ChatErrors];
-
-export type ChatResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
 export type CreateTurnData = {
     body: ChatRequest;
     path?: never;

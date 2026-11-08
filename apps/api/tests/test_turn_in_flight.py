@@ -21,7 +21,7 @@ from mango_api import turns as turns_module
 from mango_api.conversations import ConversationRepository
 from mango_api.turns_store import DynamoTurnLog, MemoryTurnLog, TurnLog, TurnState
 
-from .test_app import Harness, _auth, _events
+from .test_app import Harness, _auth
 from .test_chat_turns import CONVERSATION
 from .v1_patches import Applier, feed
 
@@ -207,16 +207,10 @@ def test_a_turn_sent_while_another_runs_is_busy_and_stores_nothing(log: MemoryTu
         _until(lambda: any(e.kind == "delta" for e in log.events(USER, first, 0)))
         second = _turn(client, conversation_id=CONVERSATION)
         busy = _answer(client, second)
-        # The old stream answers the same as before: 409 before any event.
-        old = client.post(
-            "/api/chat", headers=_auth(), json={"message": "otra", "conversation_id": CONVERSATION}
-        )
     finally:
         gate.set()
     assert busy["status"] == "error"
     assert busy["metadata"]["error"] == turns_module.BUSY_REJECTION
-    assert old.status_code == 409
-    assert old.json()["error"]["code"] == "conversation_busy"
     _until(_no_turn_threads)
     # Neither question went out: only the first turn's question and answer are stored, the
     # agent ran once and only one reservation was made.
@@ -234,11 +228,9 @@ def test_a_session_that_stays_busy_does_not_store_the_question() -> None:
     h = Harness()
     h.conversations.concurrent_turns = 5
     client = h.client()
-    response = client.post(
-        "/api/chat", headers=_auth(), json={"message": "hola", "conversation_id": CONVERSATION}
-    )
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "conversation_busy"
+    busy = _answer(client, _turn(client, conversation_id=CONVERSATION))
+    assert busy["status"] == "error"
+    assert busy["metadata"]["error"]["code"] == "conversation_busy"
     assert h.conversations.stored == []
     # The conversation is free again for the next question.
     h.conversations.concurrent_turns = 0
@@ -281,11 +273,8 @@ def test_a_turn_whose_stream_is_lost_ends_with_its_own_code(log: MemoryTurnLog) 
     assert answer["status"] == "error"
     assert answer["content"]["text"] == "Hola "
     assert answer["metadata"]["error"] == chat_stream.TURN_INTERRUPTED
-    # The stream of D57 does not change: it still says ``upstream_error``.
-    old = client.post(
-        "/api/chat", headers=_auth(), json={"message": "hola", "conversation_id": CONVERSATION}
-    )
-    assert _events(old.text)[-1] == ("error", dict(turns_module.UPSTREAM_ERROR))
+    # A second one, to see the history keep both cuts.
+    _answer(client, _turn(client, conversation_id=CONVERSATION))
     _until(_no_turn_threads)
     # What the person saw is stored, with why it was cut.
     kept = [

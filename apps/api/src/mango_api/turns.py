@@ -1,4 +1,5 @@
-"""The turn of an agent: what ``POST /api/chat``, the turn worker and the runs of tasks share.
+"""The turn of an agent: what ``POST /api/chat/turns``, the turn worker and the runs of tasks
+share.
 
 A chat turn runs outside the request (D121). ``mango-api`` validates and authorizes it as
 before, writes its state (``queued``) and sends it to ``Mango-<ns>-ChatTurns`` with the
@@ -6,7 +7,7 @@ person's access token, which only the worker can decrypt (D121 (4), TM-TW1). The
 (``mango_api.turn_worker``) claims it with a conditional write (TM-TW5), checks the token's
 margin and authorizes again (TM-TW2, TM-TW9), reserves (rule 4), invokes the harness as the
 person (rule 5), writes each event of the stream, the final message, and settles (D73).
-``mango-api`` answers the request with the same events, read from the turn's record.
+The client reads the turn from its record in ``v1`` deltas (``stream_v1``, D120), from any task.
 
 Without a queue configured, ``mango-api`` hands the message to the same handler inside its
 own task: the path is the same, only the transport differs.
@@ -117,11 +118,10 @@ READ_FAST_SECONDS = 2.0
 STATE_POLL_SECONDS = 2.0
 END_ATTEMPTS = 5
 """Tries to write the end of a turn stopped from outside its worker after its last event."""
-TERMINAL_EVENTS = frozenset({"done", "error"})
 UPSTREAM_ERROR = {"code": "upstream_error", "message": "the agent failed"}
 TURN_INTERRUPTED = chat_stream.TURN_INTERRUPTED
 """The end of a turn lost halfway: its worker stopped or lost the agent's stream after the
-agent started (D121 (7)). The stream of D57 still says ``upstream_error``."""
+agent started (D121 (7))."""
 BUSY_REJECTION: dict[str, Any] = {
     "status": 409,
     "code": "conversation_busy",
@@ -129,10 +129,6 @@ BUSY_REJECTION: dict[str, Any] = {
 }
 MESSAGE_VERSION = 1
 _ID = r"^[0-9a-f]{32}$"
-
-
-def sse(event: str, data: dict[str, Any]) -> bytes:
-    return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n".encode()
 
 
 # --- The agent a turn runs on -----------------------------------------------------------
@@ -701,20 +697,6 @@ INTERNAL_REJECTION: dict[str, Any] = {"status": 500, "internal": True}
 UNAVAILABLE = ApiError(503, "agent_unavailable", "please try again")
 
 
-def raise_rejection(rejection: dict[str, Any] | None) -> None:
-    """Raise what the request answers for a turn that ended before its stream started: the
-    same error as when the turn ran inside the request."""
-    if rejection is None:
-        raise ApiError(503, "agent_unavailable", "please try again")
-    if rejection.get("internal"):
-        # An unexpected failure: the request fails as it did when it hit it itself.
-        raise RuntimeError("the chat turn could not start")
-    status = int(rejection.get("status", 503))
-    if "code" in rejection:
-        raise ApiError(status, str(rejection["code"]), str(rejection.get("message", "")))
-    raise HTTPException(status_code=status, detail=str(rejection.get("detail", "error")))
-
-
 # --- The chat turn: checks shared by mango-api and the worker ----------------------------
 
 
@@ -879,7 +861,7 @@ class _Started:
 
 
 class ChatTurns:
-    """The chat turn (D121): ``enqueue``/``opening``/``stream`` in mango-api, ``handle`` in
+    """The chat turn (D121): ``enqueue``/``stream_v1``/``cancel`` in mango-api, ``handle`` in
     the worker. Both sides share ``log`` (the Conversations table)."""
 
     def __init__(
@@ -994,82 +976,6 @@ class ChatTurns:
         if status is None or status.state in ENDED or status.conversation_id != conversation_id:
             return None
         return current, status
-
-    async def opening(self, user_id: str, turn_id: str) -> list[TurnEvent]:
-        """The first events of the turn, once its stream started; raises what the request
-        answers when the turn ended before that (the same error as before D121)."""
-        backoff = ReadBackoff()
-        while True:
-            events = await asyncio.to_thread(self._log.events, user_id, turn_id, 0)
-            if events:
-                return events
-            status = await asyncio.to_thread(self._log.status, user_id, turn_id)
-            if status is None:
-                raise ApiError(503, "agent_unavailable", "please try again")
-            if status.state in ENDED:
-                events = await asyncio.to_thread(self._log.events, user_id, turn_id, 0)
-                if events:
-                    return events
-                raise_rejection(status.rejection)
-            if int(self._clock()) > status.deadline:
-                # Nobody took it in time (TM-TW10), or its worker stopped: given up, so that
-                # it never runs later without anyone reading it.
-                given_up = (
-                    TurnState.FAILED if status.state == TurnState.QUEUED else TurnState.INTERRUPTED
-                )
-                ended = await asyncio.to_thread(
-                    self._log.end, user_id, turn_id, given_up, were=frozenset({status.state})
-                )
-                if ended:
-                    logger.warning("chat turn %s was given up %s", turn_id, status.state.value)
-                    await asyncio.to_thread(self._release, user_id, status.conversation_id, turn_id)
-                    raise ApiError(503, "agent_unavailable", "please try again")
-                continue
-            await self._pause(user_id, turn_id, backoff.wait())
-
-    async def stream(
-        self, user_id: str, turn_id: str, first: list[TurnEvent]
-    ) -> AsyncIterator[bytes]:
-        """The SSE of the turn from its record: every event once and in order, a comment every
-        15 s without one, and the end once the worker closed the turn (the message, the
-        settlement and the title of a new conversation are written by then)."""
-        loop = time.monotonic
-        backoff = ReadBackoff()
-        seq, pending, ended = 0, first, False
-        sent_at = state_at = loop()
-        while True:
-            for event in pending:
-                seq = event.seq
-                if event.kind == "code":
-                    # The «Analizando» block only exists in ``v1`` (C4): D57 never had it.
-                    continue
-                yield sse(event.kind, _d57(event))
-                sent_at = loop()
-                ended = ended or event.kind in TERMINAL_EVENTS
-            if ended:
-                await self._closed(user_id, turn_id)
-                return
-            if loop() - state_at >= STATE_POLL_SECONDS:
-                state_at = loop()
-                status = await asyncio.to_thread(self._log.status, user_id, turn_id)
-                if status is None or status.state in ENDED:
-                    pending = await asyncio.to_thread(self._log.events, user_id, turn_id, seq)
-                    if pending:
-                        continue
-                    return
-                if int(self._clock()) > status.deadline and await asyncio.to_thread(
-                    self.interrupt, user_id, turn_id
-                ):
-                    # Its end was written after its last event: read and sent as any other.
-                    pending = await asyncio.to_thread(self._log.events, user_id, turn_id, seq)
-                    continue
-            if loop() - sent_at >= HEARTBEAT_SECONDS:
-                yield b": ping\n\n"
-                sent_at = loop()
-            await self._pause(user_id, turn_id, backoff.wait())
-            pending = await asyncio.to_thread(self._log.events, user_id, turn_id, seq)
-            if pending:
-                backoff.seen()
 
     async def _closed(self, user_id: str, turn_id: str) -> None:
         """Wait, at most ``SETTLE_SECONDS``, until the worker closes the turn."""
@@ -1390,7 +1296,7 @@ class ChatTurns:
 
     def _start(self, caller: Caller, message: TurnMessage) -> _Started:  # noqa: PLR0915
         """Every check of the request again, the reservation (rule 4) and the session: what
-        happened inside ``POST /api/chat`` before its stream started."""
+        happened before the turn's stream started."""
         services = self._services
         user = caller.user
         repo = services.conversations
@@ -1824,14 +1730,6 @@ class ChatTurns:
         return (
             TurnState.INTERRUPTED if result.started and not result.usage_final else TurnState.FAILED
         )
-
-
-def _d57(event: TurnEvent) -> dict[str, Any]:
-    """The data of an event as the stream of D57 says it: it has no code of its own for a turn
-    lost halfway (it does not change until R5 retires it)."""
-    if event.kind == "error" and event.data.get("code") == TURN_INTERRUPTED["code"]:
-        return dict(UPSTREAM_ERROR)
-    return event.data
 
 
 def _safe(ack: Callable[[], None]) -> None:

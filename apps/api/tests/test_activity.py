@@ -24,6 +24,7 @@ from mango_api.audit import is_read
 from mango_api.budget import BudgetExceededError, BudgetScope, BudgetService
 from mango_api.harness import ToolCall
 
+from .chat_client import post_chat
 from .test_admin import RecordingAudit, _table
 from .test_app import (
     HOST,
@@ -488,7 +489,7 @@ def test_a_chat_turn_records_its_tool_calls_and_its_agent_budget(
 
         asgi = app_module.create_app(_settings(), services_factory=factory)
         client = TestClient(asgi, base_url=f"http://{HOST}")  # type: ignore[arg-type]
-        response = client.post("/api/chat", headers=_h("good"), json={"message": "hola"})
+        response = post_chat(client, headers=_h("good"), json={"message": "hola"})
         assert response.status_code == (402 if blocked else 200)
         records, _ = store.mine(
             USER,

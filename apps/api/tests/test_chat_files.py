@@ -43,6 +43,7 @@ from mango_core.identity import user_from_claims
 from mango_core.knowledge import is_id
 
 from .cedar_fake import CedarPolicyStore
+from .chat_client import post_chat
 from .test_admin import RecordingAudit
 from .test_app import (
     HOST,
@@ -654,8 +655,8 @@ def test_a_question_takes_ready_files_of_its_conversation_and_keeps_what_they_ar
     env: Env,
 ) -> None:
     file_id = env.ready("cur_octubre_2026.csv", b"cuenta,costo\n1,2\n")
-    response = env.client.post(
-        "/api/chat",
+    response = post_chat(
+        env.client,
         headers=_h("good"),
         json={"conversation_id": CONVERSATION, "message": "Analiza esto", "attachments": [file_id]},
     )

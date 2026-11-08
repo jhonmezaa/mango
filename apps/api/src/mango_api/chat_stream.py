@@ -116,7 +116,7 @@ def _message(
 
 def error_of(rejection: dict[str, Any] | None) -> dict[str, Any]:
     """The error of a turn that ended before its stream started, as the stream says it: the
-    same status, code and message ``POST /api/chat`` answered with (never content)."""
+    same status, code and message the request answered with before D121 (never content)."""
     if rejection is None:
         return {"status": 503, "code": "agent_unavailable", "message": "please try again"}
     if rejection.get("internal"):

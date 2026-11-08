@@ -29,6 +29,7 @@ from mango_core import memory
 from mango_core.identity import UserContext
 from mango_core.memory import SENTINEL_ACTOR, Kind, MemoryActorError
 
+from .chat_client import post_chat
 from .test_admin import _table
 from .test_app import FakeAudit, Harness, _auth, _events, _settings, served
 
@@ -844,7 +845,7 @@ def test_a_turn_with_memory_recalls_into_the_prompt_and_remembers_only_the_quest
     h = _memory_harness(fake)
     actor = memory.actor_id("user-1", "finops")
     fake.add_record(actor, Kind.FACTS, "Se llama Ana")
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "¿Cómo me llamo?"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "¿Cómo me llamo?"})
     assert response.status_code == 200, response.text
     assert any(k == "done" for k, _ in _events(response.text))
     (request,) = h.agentcore.requests
@@ -869,7 +870,7 @@ def test_a_turn_with_memory_recalls_into_the_prompt_and_remembers_only_the_quest
 def test_a_question_the_guardrail_stopped_is_not_remembered(fake: FakeMemory) -> None:
     h = _memory_harness(fake)
     h.agentcore.stop_reason = "guardrail_intervened"
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "algo"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "algo"})
     assert response.status_code == 200, response.text
     assert fake.written == []
 
@@ -891,13 +892,10 @@ def test_a_turn_with_memory_reserves_its_recalls_and_event_and_is_charged_them(
     fake: FakeMemory,
 ) -> None:
     with_memory = _memory_harness(fake)
-    response = with_memory.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    response = post_chat(with_memory.client(), headers=_auth(), json={"message": "hola"})
     assert response.status_code == 200, response.text
     without = Harness()
-    assert (
-        without.client().post("/api/chat", headers=_auth(), json={"message": "hola"}).status_code
-        == 200
-    )
+    assert post_chat(without.client(), headers=_auth(), json={"message": "hola"}).status_code == 200
     (reserved,) = with_memory.budgets.reserved
     assert reserved - without.budgets.reserved[0] == memory.turn_cost(PRICES)
     ((_, charged),) = with_memory.budgets.settled
@@ -908,20 +906,15 @@ def test_a_turn_with_memory_reserves_its_recalls_and_event_and_is_charged_them(
 def test_a_version_without_memory_reserves_nothing_for_it(fake: FakeMemory) -> None:
     h = _memory_harness(fake)
     h.published.agents["finops"] = served(memory=False)
-    assert (
-        h.client().post("/api/chat", headers=_auth(), json={"message": "hola"}).status_code == 200
-    )
+    assert post_chat(h.client(), headers=_auth(), json={"message": "hola"}).status_code == 200
     without = Harness()
-    assert (
-        without.client().post("/api/chat", headers=_auth(), json={"message": "hola"}).status_code
-        == 200
-    )
+    assert post_chat(without.client(), headers=_auth(), json={"message": "hola"}).status_code == 200
     assert h.budgets.reserved == without.budgets.reserved
 
 
 def test_a_turn_with_memory_is_not_served_without_its_prices(fake: FakeMemory) -> None:
     h = _memory_harness(fake, prices=None)
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     assert response.status_code == 503
     assert h.budgets.reserved == []
     assert fake.written == [] and h.agentcore.requests == []

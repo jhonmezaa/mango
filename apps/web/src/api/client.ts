@@ -11,7 +11,6 @@ import {
   organizationSchema,
   type Units,
 } from './adminSchemas';
-import { parseChatEvent, type ChatEvent } from './chatEvents';
 import { chatFileIdSchema, chatFileLinkSchema, chatFileStatusSchema } from './codeSchemas';
 import { ApiError, NotAuthenticatedError, apiErrorFromResponse } from './errors';
 import { mfaResetCreatedSchema, mfaResetIdSchema, mfaResetListSchema } from './mfaResetSchemas';
@@ -62,17 +61,6 @@ export const MAX_STREAM_AFTER = 1_000_000;
 /** `mango_api.memory.RecordId`: the id of a record of the agents' memory. */
 const MEMORY_RECORD_ID = /^mem-[a-zA-Z0-9_-]{36,46}$/;
 
-export interface StreamChatRequest {
-  conversationId: string | null;
-  /** Agent of a new conversation; an existing one keeps the agent of its first turn. */
-  agentId?: string | null;
-  /** One of the agent's allowed models; the API rejects any other (D22). */
-  model?: string | null;
-  message: string;
-  signal?: AbortSignal;
-  onEvent: (event: ChatEvent) => void;
-}
-
 /** One Playground test (D91): a stored version, one question and the three allowed changes. */
 export interface StreamPlaygroundRequest {
   agentId: string;
@@ -101,7 +89,7 @@ export const AUDIT_PAGE_MAX = 200;
 
 export type ApiClient = ReturnType<typeof createApiClient>;
 
-/** Reads a text/event-stream body to its end, handing each event over as it completes. */
+/** Reads a text/event-stream body (the Playground's) to its end, one event at a time. */
 async function readEvents(response: Response, onMessage: (message: SseMessage) => void) {
   if (!response.body) throw new ApiError(502, 'empty_stream', 'Empty response stream');
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -417,41 +405,11 @@ export function createApiClient(options: ApiClientOptions) {
         await call('conversationTurn', {
           path: { conversation_id: conversationIdSchema.parse(conversationId) },
         })
-      ).turn,
+      ).turn ?? null,
 
     /** «Cancelar» (D121 (7)): POST /api/chat/turns/{turn}/cancel; idempotent. */
     cancelTurn: (turnId: string) =>
       call('cancelTurn', { path: { turn_id: turnIdSchema.parse(turnId) } }),
-
-    /**
-     * POST /api/chat and consume the SSE response with fetch + ReadableStream (EventSource cannot
-     * send a POST body or the Authorization header). Resolves when the stream ends.
-     */
-    async streamChat(request: StreamChatRequest): Promise<void> {
-      const message = request.message.trim();
-      if (message.length < 1 || message.length > MESSAGE_MAX_LENGTH) {
-        throw new ApiError(422, 'invalid_message', 'Message length out of range');
-      }
-      const init: RequestInit = {
-        method: 'POST',
-        headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
-        // Only the fields of the contract; the backend rejects anything else (TM-I2). The agent
-        // and the model are choices among what the API already lets this user use: prompt,
-        // tools and limits are never sent.
-        body: JSON.stringify({
-          conversation_id: request.conversationId,
-          message,
-          ...(request.agentId ? { agent_id: agentIdSchema.parse(request.agentId) } : {}),
-          ...(request.model ? { model: modelIdSchema.parse(request.model) } : {}),
-        }),
-      };
-      if (request.signal) init.signal = request.signal;
-      const response = await authorizedFetch('/chat', init);
-      await readEvents(response, (raw) => {
-        const event = parseChatEvent(raw);
-        if (event) request.onEvent(event);
-      });
-    },
 
     /**
      * POST /api/playground/runs, read like the chat stream. Only the fields of the contract go

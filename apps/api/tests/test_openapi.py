@@ -28,7 +28,7 @@ def test_paths_are_relative_to_the_api_prefix() -> None:
     document = build_openapi()
     assert document["servers"] == [{"url": API_PREFIX}]
     assert all(not path.startswith(API_PREFIX) for path in document["paths"])
-    assert {"/me", "/chat", "/admin/budgets", "/groups"} <= set(document["paths"])
+    assert {"/me", "/chat/turns", "/admin/budgets", "/groups"} <= set(document["paths"])
 
 
 def test_operation_ids_are_unique_route_names() -> None:

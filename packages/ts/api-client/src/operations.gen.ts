@@ -419,7 +419,7 @@ import {
  * Every route of mango-api that answers JSON: how to call it and the zod schemas of its path
  * parameters, query, body and response. Paths are relative to the API base path.
  *
- * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, POST /chat, GET /chat/turns/{turn_id}/stream, GET /conversations/{conversation_id}/files/{file_id}/content, POST /conversations/{conversation_id}/textdocs/{textdoc_id}/comments/{comment_id}/resolve, POST /evals/requirement-changes/{change_id}/approve, POST /evals/requirement-changes/{change_id}/reject, POST /evals/requirement-changes/{change_id}/withdraw, POST /evals/suites/{suite_id}/delete, DELETE /memory/{record_id}, POST /playground/runs, POST /session, DELETE /session.
+ * Not listed (no JSON response schema): DELETE /agents/{agent_id}/versions/{version}, GET /chat/turns/{turn_id}/stream, GET /conversations/{conversation_id}/files/{file_id}/content, POST /conversations/{conversation_id}/textdocs/{textdoc_id}/comments/{comment_id}/resolve, POST /evals/requirement-changes/{change_id}/approve, POST /evals/requirement-changes/{change_id}/reject, POST /evals/requirement-changes/{change_id}/withdraw, POST /evals/suites/{suite_id}/delete, DELETE /memory/{record_id}, POST /playground/runs, POST /session, DELETE /session.
  */
 export const operations = {
     addComment: {

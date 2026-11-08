@@ -50,6 +50,7 @@ from mango_api.tool_policies import (
 from mango_core.approval import call_hash
 from mango_core.identity import UserContext
 
+from .chat_client import post_chat
 from .harness_wire import wire_stream
 from .test_admin import RecordingAudit, _code, _table
 from .test_app import (
@@ -287,7 +288,7 @@ class Env:
         """A chat turn in which the agent calls the write tool; returns the request shown."""
         if arguments is not None:
             self.agentcore.arguments = [arguments]
-        response = self.client.post("/api/chat", headers=_h(token), json={"message": "crea uno"})
+        response = post_chat(self.client, headers=_h(token), json={"message": "crea uno"})
         assert response.status_code == 200, response.text
         shown = [data for kind, data in _events(response.text) if kind == "approval"]
         assert len(shown) == 1, _events(response.text)
@@ -751,7 +752,7 @@ def test_the_tier_uses_the_stored_policy_and_the_call_arguments(env: Env) -> Non
 )
 def test_calls_whose_arguments_cannot_be_shown_create_no_request(env: Env, arguments: str) -> None:
     env.agentcore.arguments = [arguments] if arguments else ["null"]
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "x"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "x"})
     kinds = [kind for kind, _ in _events(response.text)]
     assert "approval" not in kinds and "done" in kinds
     assert env.audit.named("approval.request") == []
@@ -760,10 +761,10 @@ def test_calls_whose_arguments_cannot_be_shown_create_no_request(env: Env, argum
 def test_the_same_call_is_requested_once_and_a_turn_is_capped(env: Env) -> None:
     same = '{"name":"a","amount_usd":1}'
     env.agentcore.arguments = [same, '{"amount_usd":1.0,"name":"a"}']
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "x"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "x"})
     assert [k for k, _ in _events(response.text)].count("approval") == 1
     env.agentcore.arguments = [f'{{"name":"b{n}","amount_usd":1}}' for n in range(6)]
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "x"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "x"})
     assert [k for k, _ in _events(response.text)].count("approval") == (
         approvals_module.MAX_REQUESTS_PER_TURN
     )
@@ -774,23 +775,23 @@ def test_a_person_cannot_pile_up_open_requests(env: Env, monkeypatch: pytest.Mon
     env.ask(arguments='{"name":"a","amount_usd":1}')
     env.ask(arguments='{"name":"b","amount_usd":1}')
     env.agentcore.arguments = ['{"name":"c","amount_usd":1}']
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "x"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "x"})
     assert "approval" not in [k for k, _ in _events(response.text)]
 
 
 def test_tools_that_are_not_write_tools_of_the_agent_create_no_request(env: Env) -> None:
     env.agentcore.tool_name = "mango___ops___delete_budget"
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "x"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "x"})
     assert "approval" not in [k for k, _ in _events(response.text)]
     # A name that only ends like the write tool is another tool.
     env.agentcore.tool_name = f"evil{GATEWAY_TOOL}"
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "x"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "x"})
     assert "approval" not in [k for k, _ in _events(response.text)]
 
 
 def test_no_request_without_its_audit_record(env: Env) -> None:
     env.audit.fail_outcomes = {"applied"}
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "x"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "x"})
     assert "approval" not in [k for k, _ in _events(response.text)]
     env.audit.fail_outcomes = set()
     assert env.client.get(URL, headers=_h("approver")).json()["items"] == []
@@ -820,7 +821,7 @@ def test_the_turn_ends_well_once_the_request_exists(env: Env) -> None:
         return add_message(*args, **kwargs)
 
     env.conversations.add_message = record  # type: ignore[method-assign]
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "crea uno"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "crea uno"})
     events = _events(response.text)
     kinds = [kind for kind, _ in events]
     assert "error" not in kinds
@@ -843,8 +844,8 @@ def test_the_turn_ends_well_once_the_request_exists(env: Env) -> None:
     assert env.conversations.sessions[("user-10", conversation)].used_at == 0
     env.post("requester", f"{shown['approval_id']}/cancel")
     env.agentcore.arguments, env.agentcore.stalls = [], False
-    env.client.post(
-        "/api/chat",
+    post_chat(
+        env.client,
         headers=_h("requester"),
         json={"message": "gracias", "conversation_id": conversation},
     )
@@ -1207,8 +1208,8 @@ def test_the_next_turn_tells_the_agent_what_happened_once(env: Env) -> None:
     env.post("requester", f"{shown['approval_id']}/confirm")
     conversation = shown["conversation_id"]
     env.agentcore.arguments = []
-    env.client.post(
-        "/api/chat",
+    post_chat(
+        env.client,
         headers=_h("requester"),
         json={"message": "gracias", "conversation_id": conversation},
     )
@@ -1216,8 +1217,8 @@ def test_the_next_turn_tells_the_agent_what_happened_once(env: Env) -> None:
     assert sent.endswith("gracias")
     assert f"- {GATEWAY_TOOL}: was confirmed and executed successfully." in sent
     assert "team-a" not in sent  # the outcome only, nothing of the call or its answer
-    env.client.post(
-        "/api/chat",
+    post_chat(
+        env.client,
         headers=_h("requester"),
         json={"message": "otra", "conversation_id": conversation},
     )
@@ -1272,7 +1273,7 @@ def _turn_with(env: Env, *events: dict[str, Any], stop_reason: str) -> list[tupl
         }
 
     env.agentcore.invoke_harness = invoke_harness  # type: ignore[method-assign]
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "crea uno"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "crea uno"})
     assert response.status_code == 200, response.text
     return _events(response.text)
 
@@ -1427,7 +1428,7 @@ def test_a_tool_result_does_not_make_up_for_a_message_end_that_never_came(env: E
         }
 
     env.agentcore.invoke_harness = invoke_harness  # type: ignore[method-assign]
-    response = env.client.post("/api/chat", headers=_h("requester"), json={"message": "crea uno"})
+    response = post_chat(env.client, headers=_h("requester"), json={"message": "crea uno"})
     assert "approval" not in [kind for kind, _ in _events(response.text)]
     assert env.store.by_requester("user-10") == []
 

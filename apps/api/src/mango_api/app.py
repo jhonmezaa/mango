@@ -2411,8 +2411,8 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         )
 
     async def begin_turn(body: ChatRequest, caller: Caller) -> tuple[turns.ChatTurns, str, str]:
-        """Validate, authorize and queue a turn (D121): what ``POST /api/chat`` and
-        ``POST /api/chat/turns`` share. The conversation and the turn of it."""
+        """Validate, authorize and queue a turn (D121) for ``POST /api/chat/turns``. The
+        conversation and the turn of it."""
         user = caller.user
         repo = services.conversations
         is_new = body.conversation_id is None
@@ -2489,21 +2489,10 @@ def create_app(  # noqa: PLR0912, PLR0915 - app factory registering route closur
         )
         return chat_turns, conversation_id, turn_id
 
-    @app.post("/api/chat")
-    async def chat(body: ChatRequest, caller: CallerDependency) -> Response:
-        """The stream of D57, answered while the turn runs (retired in R5, D120 (7))."""
-        chat_turns, _conversation_id, turn_id = await begin_turn(body, caller)
-        first = await chat_turns.opening(caller.user.user_id, turn_id)
-        return StreamingResponse(
-            chat_turns.stream(caller.user.user_id, turn_id, first),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
-        )
-
     @app.post("/api/chat/turns", response_model=TurnCreated)
     async def create_turn(body: ChatRequest, caller: CallerDependency) -> TurnCreated:
-        """The same turn as ``POST /api/chat``, without its stream: the client reads it with
-        ``GET /api/chat/turns/{turn_id}/stream`` (D120, D121 (2))."""
+        """Queue a chat turn: the client reads it with ``GET /api/chat/turns/{turn_id}/stream``
+        (D120, D121 (2))."""
         _chat_turns, conversation_id, turn_id = await begin_turn(body, caller)
         return TurnCreated(conversation_id=conversation_id, turn_id=turn_id)
 
@@ -2717,7 +2706,7 @@ def _task_turn(  # noqa: PLR0911, PLR0912, PLR0915 - the steps of a turn, as in 
     *,
     reports_on: bool,
 ) -> TurnOutcome:
-    """One turn without chat, as the owner of the task: the path of ``POST /api/chat``.
+    """One turn without chat, as the owner of the task: the path of a chat turn.
     ``reports_on``: the PDFs of runs are deployed (D86). In mango-api or in the turn worker.
 
     The run has no conversation: its id stands for one in the turn's pending record and its

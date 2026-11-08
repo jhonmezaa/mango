@@ -24,11 +24,13 @@ from moto import mock_aws
 from mango_api import app as app_module
 from mango_api import turns as turns_module
 from mango_api.budget import BudgetService, current_period
+from mango_api.chat_stream import TURN_INTERRUPTED
 from mango_api.settings import Settings
 from mango_core import budget_turns, code_sandbox, invocation
 from mango_core.budget_turns import STATE_HELD, STATE_OPEN, PendingTurn
 from mango_core.code_sandbox import CellUse, Prices
 
+from .chat_client import post_chat
 from .harness_wire import wire_stream
 from .test_app import (
     HOST,
@@ -142,7 +144,7 @@ class Env:
             "message": "hola",
             **({"conversation_id": conversation_id} if conversation_id else {}),
         }
-        return self.client().post("/api/chat", headers=_auth(), json=body)
+        return post_chat(self.client(), headers=_auth(), json=body)
 
     def records(self) -> list[PendingTurn]:
         return [
@@ -709,7 +711,8 @@ def test_a_tool_call_cut_at_the_cap_in_a_later_call_charges_every_call(write_env
 def test_a_cut_turn_is_never_settled_as_zero(env: Env) -> None:
     env.agentcore.stream = lambda: _cut(TEXT, TOOL_USE, CALL, TEXT)
     events = _events(env.chat().text)
-    assert ("error", {"code": "upstream_error", "message": "the agent failed"}) in events
+    # Cut after the agent started: lost halfway (D121 (7)).
+    assert ("error", dict(TURN_INTERRUPTED)) in events
     (record,) = env.records()
     reserved = env.seen[0].reserved
     # What was already counted is charged, not zero; the rest is not given back.

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ChatEvent } from './chatEvents';
 import { createApiClient } from './client';
 import { ApiError, NotAuthenticatedError, sessionUnavailableError } from './errors';
 import type { PlaygroundEvent } from './playgroundEvents';
@@ -119,8 +118,7 @@ describe('createApiClient', () => {
       });
       for (const call of [
         () => client.getMe(),
-        () =>
-          client.streamChat({ conversationId: null, message: 'hola', onEvent: () => undefined }),
+        () => client.createTurn({ conversationId: null, message: 'hola' }),
       ]) {
         const error = await call().catch((e: unknown) => e);
         expect(error).not.toBeInstanceOf(NotAuthenticatedError);
@@ -236,54 +234,41 @@ describe('createApiClient', () => {
     }
   });
 
-  describe('streamChat', () => {
-    it('posts only conversation_id and message without an agent, and emits parsed events', async () => {
+  describe('chat turns (D120)', () => {
+    const CONVERSATION = 'a'.repeat(32);
+    const TURN = 'b'.repeat(32);
+
+    it('posts only conversation_id and the trimmed message without an agent', async () => {
       const fetchMock = vi.fn<typeof fetch>(() =>
-        Promise.resolve(
-          sseResponse([
-            'event: conversation\ndata: {"conversation_id":"01JX"}\n\n',
-            ': ping\n\n',
-            'event: tool\ndata: {"name":"get_cost_and_usage","status":"started"}\n\nevent: del',
-            'ta\ndata: {"text":"Hola "}\n\nevent: delta\ndata: {"text":"mundo"}\n\n',
-            'event: unknown\ndata: {}\n\n',
-            'event: done\ndata: {"message_id":"m1","stop_reason":"end_turn","usage":{"input_tokens":3,"output_tokens":4},"cost_usd":"0.0010"}\n\n',
-          ]),
-        ),
+        Promise.resolve(jsonResponse({ conversation_id: CONVERSATION, turn_id: TURN })),
       );
       const { client } = setup(fetchMock);
-      const events: ChatEvent[] = [];
-      await client.streamChat({
+      const created = await client.createTurn({
         conversationId: null,
         message: '  ¿Cuánto gastamos?  ',
-        onEvent: (event) => events.push(event),
       });
-
+      expect(created).toEqual({ conversationId: CONVERSATION, turnId: TURN });
       const [url, init] = fetchMock.mock.calls[0] ?? [];
-      expect(url).toBe('/api/chat');
+      expect(url).toBe('/api/chat/turns');
       expect(init?.method).toBe('POST');
       expect(JSON.parse(init?.body as string)).toEqual({
         conversation_id: null,
         message: '¿Cuánto gastamos?',
+        // The generated client fills the default of the contract (D116 (11)).
+        attachments: [],
       });
-      expect(new Headers(init?.headers).get('Accept')).toBe('text/event-stream');
-      expect(events.map((event) => event.type)).toEqual([
-        'conversation',
-        'tool',
-        'delta',
-        'delta',
-        'done',
-      ]);
     });
 
     it('sends the agent of a new conversation and the chosen model, and nothing else', async () => {
-      const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(sseResponse([])));
+      const fetchMock = vi.fn<typeof fetch>(() =>
+        Promise.resolve(jsonResponse({ conversation_id: CONVERSATION, turn_id: TURN })),
+      );
       const { client } = setup(fetchMock);
-      await client.streamChat({
+      await client.createTurn({
         conversationId: null,
         agentId: 'abcdefghijklmnop',
         model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
         message: 'hola',
-        onEvent: vi.fn(),
         // Never part of the contract: prompt, tools and limits come from the published version.
         ...({ system_prompt: 'x', tools: ['*'] } as object),
       });
@@ -292,34 +277,25 @@ describe('createApiClient', () => {
         message: 'hola',
         agent_id: 'abcdefghijklmnop',
         model: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+        attachments: [],
       });
     });
 
-    it('rejects an agent id or a model that is not well formed before calling the API', async () => {
+    it('rejects an agent id, a model or a message out of range before calling the API', async () => {
       const fetchMock = vi.fn<typeof fetch>();
       const { client } = setup(fetchMock);
-      const base = { conversationId: null, message: 'hola', onEvent: vi.fn() };
+      const base = { conversationId: null, message: 'hola' };
       for (const agentId of ['../me', 'Fin Ops', 'x'.repeat(17), 'a']) {
-        await expect(client.streamChat({ ...base, agentId })).rejects.toThrow();
+        await expect(client.createTurn({ ...base, agentId })).rejects.toThrow();
       }
       for (const model of ['a b', '<script>', 'x'.repeat(129)]) {
-        await expect(client.streamChat({ ...base, agentId: 'finops', model })).rejects.toThrow();
+        await expect(client.createTurn({ ...base, agentId: 'finops', model })).rejects.toThrow();
       }
-      expect(fetchMock).not.toHaveBeenCalled();
-    });
-
-    it('validates the message length before calling the API', async () => {
-      const fetchMock = vi.fn<typeof fetch>();
-      const { client } = setup(fetchMock);
-      const onEvent = vi.fn();
-      await expect(
-        client.streamChat({ conversationId: null, message: '   ', onEvent }),
-      ).rejects.toMatchObject({
-        status: 422,
-      });
-      await expect(
-        client.streamChat({ conversationId: null, message: 'x'.repeat(4001), onEvent }),
-      ).rejects.toMatchObject({ status: 422 });
+      for (const message of ['   ', 'x'.repeat(4001)]) {
+        await expect(client.createTurn({ ...base, message })).rejects.toMatchObject({
+          status: 422,
+        });
+      }
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
@@ -330,14 +306,22 @@ describe('createApiClient', () => {
         ),
       );
       await expect(
-        client.streamChat({ conversationId: 'c1', message: 'hola', onEvent: vi.fn() }),
+        client.createTurn({ conversationId: CONVERSATION, message: 'hola' }),
       ).rejects.toMatchObject({ status: 402, code: 'budget_exceeded' });
     });
-  });
 
-  describe('conversationTurn', () => {
-    const CONVERSATION = 'a'.repeat(32);
-    const TURN = 'b'.repeat(32);
+    it('reads a stream from a bounded offset and never with a malformed turn id', async () => {
+      const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(sseResponse([])));
+      const { client } = setup(fetchMock);
+      const signal = new AbortController().signal;
+      await client.openTurnStream(TURN, 7, signal);
+      const [url, init] = fetchMock.mock.calls[0] ?? [];
+      expect(url).toBe(`/api/chat/turns/${TURN}/stream?after=7`);
+      expect(new Headers(init?.headers).get('Accept')).toBe('text/event-stream');
+      expect(() => client.openTurnStream('../x', 0, signal)).toThrow();
+      expect(() => client.openTurnStream(TURN, -1, signal)).toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
 
     it('tells the turn in flight of a conversation, or none (R3b)', async () => {
       const fetchMock = vi.fn<typeof fetch>((input) =>

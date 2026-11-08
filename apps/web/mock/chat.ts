@@ -1,7 +1,6 @@
 /**
- * Chat of the mock: conversations in memory, the turns of `POST /api/chat/turns` read in `v1`
- * (D120, D121) with the turn in flight of a conversation (R3b), and the old SSE stream of
- * `POST /api/chat` (retired in its own PR, D120 (7)).
+ * Chat of the mock: conversations in memory and the turns of `POST /api/chat/turns`, read in
+ * `v1` (D120, D121), with the turn in flight of a conversation (R3b).
  */
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -50,7 +49,7 @@ interface StoredMessage {
 
 interface StoredConversation {
   conversation_id: string;
-  /** Fixed by the first turn (`POST /chat` with `agent_id`). */
+  /** Fixed by the first turn (`POST /chat/turns` with `agent_id`). */
   agent_id: string;
   title: string;
   updated_at: string;
@@ -180,7 +179,7 @@ interface AdmittedTurn {
   bearer: string | null;
 }
 
-/** Where a turn writes its events (D57): an SSE response, or a turn record (D121). */
+/** Where a turn writes its events (D57): its record (D121). */
 interface TurnSink {
   send: (event: string, data: unknown) => void;
   closed: () => boolean;
@@ -636,30 +635,6 @@ async function runTurn(admitted: AdmittedTurn, sink: TurnSink): Promise<void> {
   });
 }
 
-/** `POST /api/chat` (D57, retired in R5): the turn answered on the request, as SSE. */
-async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const admitted = await admitTurn(req, res);
-  if (!admitted) return;
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-store');
-  const stream = { closed: false };
-  req.on('close', () => {
-    stream.closed = true;
-  });
-  const send = (event: string, data: unknown) => {
-    if (!stream.closed) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-  };
-  await runTurn(admitted, {
-    send,
-    closed: () => stream.closed,
-    reject: (error) => {
-      send('error', { code: error.code, message: error.message });
-    },
-  });
-  res.end();
-}
-
 /**
  * Demo variants of the design (round 40) for the connection of a turn, by a word of the
  * question: «reconecta» cuts the first connection halfway and the next one resumes; «no
@@ -879,10 +854,6 @@ export const handleChatApi: ApiHandler = async (req, res, path) => {
       messages,
       approvals: approvalsOfConversation(conversation_id),
     });
-    return true;
-  }
-  if (path === '/chat' && req.method === 'POST') {
-    await handleChat(req, res);
     return true;
   }
   // The turn of a conversation that is still running (R3b): what a reloaded page follows.

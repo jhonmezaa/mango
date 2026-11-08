@@ -78,6 +78,22 @@ export const messageAppsSchema = z
   )
   .max(3);
 
+/**
+ * A source of a knowledge search of a turn (D88 (44)): knowledge base, document and page. Never
+ * the text of a fragment; plain text, rendered as text.
+ */
+export const citationSchema = z.object({
+  knowledge_base: z.string().max(200),
+  document: z.string().max(200),
+  page: z.number().int().positive().optional(),
+});
+
+/**
+ * A tool of a remote MCP asked the person to connect their account (D98 (20)): only the
+ * registration, never a URL. The card is built from it and the person's connections.
+ */
+export const remoteConnectionSchema = z.object({ registration_id: registrationIdSchema });
+
 export const messageSchema = z.object({
   message_id: z.string(),
   role: z.enum(['user', 'assistant']),

@@ -30,6 +30,7 @@ from mango_core.budget_turns import PendingTurn, TokenUsage, token_cost
 from mango_core.identity import IdentityError
 from mango_core.memory import SENTINEL_ACTOR
 
+from .chat_client import post_chat
 from .harness_wire import wire_stream
 
 HOST = "internal-alb.example.com"
@@ -614,7 +615,7 @@ def test_user_without_group_gets_no_group_everywhere(h: Harness) -> None:
     for method, path, body in (
         ("GET", "/api/me", None),
         ("GET", "/api/conversations", None),
-        ("POST", "/api/chat", {"message": "hola"}),
+        ("POST", "/api/chat/turns", {"message": "hola"}),
         ("GET", "/api/admin/audit", None),
     ):
         response = client.request(method, path, headers=_auth("nogroup"), json=body)
@@ -633,7 +634,7 @@ def test_bu_lead_without_area_gets_area_required_and_the_reason_is_logged(
         for method, path, body in (
             ("GET", "/api/me", None),
             ("GET", "/api/conversations", None),
-            ("POST", "/api/chat", {"message": "hola"}),
+            ("POST", "/api/chat/turns", {"message": "hola"}),
         ):
             response = client.request(method, path, headers=_auth("noarea"), json=body)
             # Not a 401: signing in again does not fix it, an administrator does (D60).
@@ -668,14 +669,14 @@ def test_chat_rejects_client_supplied_agent_configuration(h: Harness) -> None:
         {"limits": {"max_iterations": 99}},
         {"harness_arn": HARNESS.format("finops")},
     ):
-        response = h.client().post("/api/chat", headers=_auth(), json={"message": "hola", **extra})
+        response = post_chat(h.client(), headers=_auth(), json={"message": "hola", **extra})
         assert response.status_code == 422
     assert h.agentcore.requests == []
 
 
 def test_chat_denied_by_authorization(h: Harness) -> None:
     h.authorizer.allow = False
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     assert response.status_code == 403
     assert "policy.decision" in h.audit.events
     assert h.budgets.reserved == []
@@ -683,26 +684,26 @@ def test_chat_denied_by_authorization(h: Harness) -> None:
 
 def test_chat_budget_exceeded(h: Harness) -> None:
     h.budgets.exceed = True
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     assert response.status_code == 402
     assert response.json()["error"]["code"] == "budget_exceeded"
     assert h.agentcore.requests == []
 
 
 def test_chat_rejects_token_about_to_expire(h: Harness) -> None:
-    response = h.client().post("/api/chat", headers=_auth("expiring"), json={"message": "hola"})
+    response = post_chat(h.client(), headers=_auth("expiring"), json={"message": "hola"})
     assert response.status_code == 401
 
 
 def test_chat_unknown_conversation_is_not_found(h: Harness) -> None:
-    response = h.client().post(
-        "/api/chat", headers=_auth(), json={"message": "hola", "conversation_id": "b" * 32}
+    response = post_chat(
+        h.client(), headers=_auth(), json={"message": "hola", "conversation_id": "b" * 32}
     )
     assert response.status_code == 404
 
 
 def test_chat_streams_and_settles_budget(h: Harness) -> None:
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "¿Cuánto gasté?"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "¿Cuánto gasté?"})
     assert response.status_code == 200
     events = _events(response.text)
     kinds = [k for k, _ in events]
@@ -724,7 +725,7 @@ def test_a_chat_turn_counts_as_a_conversation_in_costos_and_its_title_does_not(
 ) -> None:
     """D106: the turn adds to its model and to the origin «chat». The title of the new
     conversation is not a turn: only Inicio's counters, «sin desglose» in Costos."""
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "¿Cuánto gasté?"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "¿Cuánto gasté?"})
     assert response.status_code == 200
     (turn,) = h.budgets.turns
     assert turn.origin == "chat"
@@ -734,7 +735,7 @@ def test_a_chat_turn_counts_as_a_conversation_in_costos_and_its_title_does_not(
 
 
 def test_chat_streams_live_progress(h: Harness) -> None:
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "¿Cuánto gasté?"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "¿Cuánto gasté?"})
     events = _events(response.text)
     # The first thing after the conversation id: the turn is running, before any text.
     assert events[1] == ("status", {"phase": "thinking"})
@@ -749,7 +750,7 @@ def test_chat_streams_live_progress(h: Harness) -> None:
 
 
 def test_harness_request_is_built_server_side(h: Harness) -> None:
-    h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     request = h.agentcore.requests[0]
     # Exactly the tools of the published version, by name, on the `live` endpoint (D32, D33).
     assert request["harnessArn"] == HARNESS.format("finops")
@@ -792,7 +793,7 @@ def test_harness_request_is_built_server_side(h: Harness) -> None:
 
 
 def test_oversized_body_rejected(h: Harness) -> None:
-    response = h.client().post("/api/chat", headers=_auth(), content=b"{" + b" " * 40_000 + b"}")
+    response = post_chat(h.client(), headers=_auth(), content=b"{" + b" " * 40_000 + b"}")
     assert response.status_code == 413
 
 
@@ -873,7 +874,7 @@ def test_read_decisions_are_still_audited_and_flagged(h: Harness) -> None:
 
 
 def test_chat_decision_is_not_a_read(h: Harness) -> None:
-    h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     decision = h.audit.details[h.audit.events.index("policy.decision")]
     assert decision["read_only"] is False
     # Every event of the turn records who acted.
@@ -885,7 +886,7 @@ def _detail(h: Harness, event: str) -> dict[str, Any]:
 
 
 def test_chat_decision_is_linked_to_its_turn(h: Harness) -> None:
-    h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     decision = _detail(h, "policy.decision")
     completed = _detail(h, "agent.completed")
     assert (decision["conversation_id"], decision["turn"]) == (
@@ -897,7 +898,7 @@ def test_chat_decision_is_linked_to_its_turn(h: Harness) -> None:
 
 def test_chat_decision_is_audited_when_the_turn_never_completes(h: Harness) -> None:
     h.budgets.exceed = True
-    h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     decision = _detail(h, "policy.decision")
     assert decision["allowed"] is True
     assert set(decision) >= {"conversation_id", "turn"}
@@ -906,9 +907,7 @@ def test_chat_decision_is_audited_when_the_turn_never_completes(h: Harness) -> N
 
 def test_denied_chat_decision_carries_the_requested_turn(h: Harness) -> None:
     h.authorizer.allow = False
-    h.client().post(
-        "/api/chat", headers=_auth(), json={"message": "hola", "conversation_id": "c" * 32}
-    )
+    post_chat(h.client(), headers=_auth(), json={"message": "hola", "conversation_id": "c" * 32})
     decision = _detail(h, "policy.decision")
     assert decision["allowed"] is False
     assert decision["conversation_id"] == "c" * 32
@@ -925,7 +924,7 @@ def test_conversation_ids_are_validated(h: Harness) -> None:
 def test_reservation_released_when_turn_cannot_start(h: Harness) -> None:
     h.conversations.fail_writes = True
     client = TestClient(h.client().app, base_url=f"http://{HOST}", raise_server_exceptions=False)
-    response = client.post("/api/chat", headers=_auth(), json={"message": "hola"})
+    response = post_chat(client, headers=_auth(), json={"message": "hola"})
     assert response.status_code == 500
     reserved, actual = h.budgets.settled[0]
     assert reserved == h.budgets.reserved[0]
@@ -934,7 +933,7 @@ def test_reservation_released_when_turn_cannot_start(h: Harness) -> None:
 
 
 def test_chat_uses_settings_limits_and_labels_the_user(h: Harness) -> None:
-    h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     user_scope, agent_scope = h.budgets.scopes
     assert (user_scope.key, user_scope.limit, user_scope.label) == (
         "USER#user-1",
@@ -950,7 +949,7 @@ def test_chat_uses_settings_limits_and_labels_the_user(h: Harness) -> None:
 
 def test_chat_fails_closed_without_budget_settings(h: Harness) -> None:
     h.limits.unavailable = True
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "budget_unavailable"
     assert h.budgets.reserved == []
@@ -967,7 +966,7 @@ def _turn(h: Harness, token: str = "good", conversation_id: str | None = None) -
     body: dict[str, Any] = {"message": "¿y el mes pasado?"}
     if conversation_id:
         body["conversation_id"] = conversation_id
-    response = h.client().post("/api/chat", headers=_auth(token), json=body)
+    response = post_chat(h.client(), headers=_auth(token), json=body)
     assert response.status_code == 200
     return str(next(d for k, d in _events(response.text) if k == "conversation")["conversation_id"])
 
@@ -1051,8 +1050,8 @@ def test_two_turns_at_once_never_share_a_session(h: Harness) -> None:
 
 def test_conversation_that_stays_busy_is_rejected_and_the_budget_released(h: Harness) -> None:
     h.conversations.concurrent_turns = 5
-    response = h.client().post(
-        "/api/chat", headers=_auth(), json={"message": "hola", "conversation_id": CONVERSATION}
+    response = post_chat(
+        h.client(), headers=_auth(), json={"message": "hola", "conversation_id": CONVERSATION}
     )
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "conversation_busy"
@@ -1061,8 +1060,8 @@ def test_conversation_that_stays_busy_is_rejected_and_the_budget_released(h: Har
 
 
 def test_client_cannot_choose_the_session(h: Harness) -> None:
-    response = h.client().post(
-        "/api/chat", headers=_auth(), json={"message": "hola", "runtimeSessionId": "x" * 40}
+    response = post_chat(
+        h.client(), headers=_auth(), json={"message": "hola", "runtimeSessionId": "x" * 40}
     )
     assert response.status_code == 422
 
@@ -1089,7 +1088,7 @@ def test_turn_cut_by_the_guardrail_is_not_continued(h: Harness) -> None:
 
 def test_answer_is_delivered_when_the_session_mark_cannot_be_saved(h: Harness) -> None:
     h.conversations.fail_complete = True
-    response = h.client().post("/api/chat", headers=_auth(), json={"message": "hola"})
+    response = post_chat(h.client(), headers=_auth(), json={"message": "hola"})
     kinds = [k for k, _ in _events(response.text)]
     assert "done" in kinds
     assert "error" not in kinds
@@ -1106,7 +1105,7 @@ def test_new_conversations_get_different_sessions(h: Harness) -> None:
 
 
 def _chat(h: Harness, token: str = "good", **body: Any) -> Any:
-    return h.client().post("/api/chat", headers=_auth(token), json={"message": "hola", **body})
+    return post_chat(h.client(), headers=_auth(token), json={"message": "hola", **body})
 
 
 def _error_code(response: Any) -> str:
@@ -1500,19 +1499,19 @@ def test_a_denied_conversation_answers_the_same_404_as_a_missing_one(h: Harness)
 
 def test_a_turn_in_an_existing_conversation_needs_its_owner(h: Harness) -> None:
     client = h.client()
-    client.post("/api/chat", headers=_auth(), json={"message": "hola", "conversation_id": "a" * 32})
-    (decision,) = _own_decisions(h)
-    assert decision["read_only"] is False
+    post_chat(client, headers=_auth(), json={"message": "hola", "conversation_id": "a" * 32})
+    # The reads of its stream decide too (read only); the turn itself is the one change.
+    (decision,) = [d for d in _own_decisions(h) if not d["read_only"]]
     assert decision["conversation_id"] == "a" * 32
     assert len(decision["turn"]) == 32
     # A new conversation has nobody else's to protect: no decision on it.
-    client.post("/api/chat", headers=_auth(), json={"message": "hola"})
-    assert len(_own_decisions(h)) == 1
+    post_chat(client, headers=_auth(), json={"message": "hola"})
+    assert len([d for d in _own_decisions(h) if not d["read_only"]]) == 1
     # Denied: the same 404 as a conversation that does not exist, and nothing runs.
     h.authorizer.allow = False
     calls = len(h.agentcore.requests)
-    denied = client.post(
-        "/api/chat", headers=_auth(), json={"message": "hola", "conversation_id": "a" * 32}
+    denied = post_chat(
+        client, headers=_auth(), json={"message": "hola", "conversation_id": "a" * 32}
     )
     assert denied.status_code == 404
     assert denied.json() == {"error": {"code": "not_found", "message": "not found"}}

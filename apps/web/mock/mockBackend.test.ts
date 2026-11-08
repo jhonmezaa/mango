@@ -209,7 +209,7 @@ describe('mock backend', () => {
 
 describe('mock chat with several agents', () => {
   const chat = (body: Record<string, unknown>) =>
-    api('/chat', { method: 'POST', body: JSON.stringify({ message: 'hola', ...body }) });
+    api('/chat/turns', { method: 'POST', body: JSON.stringify({ message: 'hola', ...body }) });
   const code = async (response: Response) =>
     ((await response.json()) as { error: { code: string } }).error.code;
   const idOf = (name: string) => {

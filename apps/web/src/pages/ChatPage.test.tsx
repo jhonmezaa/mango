@@ -5,26 +5,26 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { Agent } from '../agents/agents';
 
-import type { ChatEvent } from '../api/chatEvents';
+import type { ScriptEvent } from '../test/turnEvents';
 import type { ApiClient } from '../api/client';
 import { ApiError, NotAuthenticatedError, sessionUnavailableError } from '../api/errors';
 import type { AuthContextValue } from '../auth/AuthContext';
 import type { SessionContextValue } from '../auth/SessionContext';
 import { agentFixture, authValue, baseMe, finopsAgent, sessionValue } from '../test/fixtures';
 import { TestProviders } from '../test/TestProviders';
-import { turnsApi } from '../test/turnsApi';
+import { turnsApi, type TurnScript, type TurnScriptRequest } from '../test/turnsApi';
 import { ChatPage } from './ChatPage';
 
 /** Design round 40: «Cancelar» ends the turn interrupted and charged in full (D121 (7)). */
 const STOPPED =
   'Respuesta detenida. El turno se cobra entero y tu próxima pregunta empieza de nuevo: el agente solo recordará lo que se ve aquí.';
 
-type ScriptArgs = Parameters<ApiClient['streamChat']>[0];
+type ScriptArgs = TurnScriptRequest;
 
 /** API whose chat stream emits the given events and then waits until `finish` is called. */
-function streamingApi(events: ChatEvent[]) {
+function streamingApi(events: ScriptEvent[]) {
   const pending: { finish: () => void } = { finish: () => undefined };
-  const streamChat = vi.fn(
+  const turnScript = vi.fn(
     ({ onEvent }: ScriptArgs) =>
       new Promise<void>((resolve) => {
         events.forEach(onEvent);
@@ -42,7 +42,7 @@ function streamingApi(events: ChatEvent[]) {
         };
       }),
   );
-  return { api: turnsApi({ streamChat }) as unknown as ApiClient, streamChat, pending };
+  return { api: turnsApi({ turnScript }) as unknown as ApiClient, turnScript, pending };
 }
 
 function renderChat(
@@ -172,7 +172,7 @@ describe('ChatPage', () => {
 
   it('blocks messages over 4000 characters with an alert and no counter (v11)', async () => {
     const user = userEvent.setup();
-    const { api, streamChat } = streamingApi([]);
+    const { api, turnScript } = streamingApi([]);
     renderChat(api);
     const input = screen.getByRole('textbox', { name: 'Mensaje a FinOps' });
     await user.click(input);
@@ -189,13 +189,13 @@ describe('ChatPage', () => {
     expect(input).toHaveAccessibleDescription(alert.textContent);
     expect(screen.getByRole('button', { name: /Enviar/ })).toBeDisabled();
     await user.keyboard('{Enter}');
-    expect(streamChat).not.toHaveBeenCalled();
+    expect(turnScript).not.toHaveBeenCalled();
     expect(screen.queryByText(/4001|\/ 4/)).toBeNull();
   });
 
   it('streams a turn, offers "Cancelar" meanwhile and opens its steps in observe mode', async () => {
     const user = userEvent.setup();
-    const { api, streamChat, pending } = streamingApi([
+    const { api, turnScript, pending } = streamingApi([
       { type: 'conversation', conversation_id: 'c1' },
       { type: 'status', phase: 'thinking' },
       { type: 'tool', name: 'get_cost_and_usage', status: 'started' },
@@ -208,7 +208,7 @@ describe('ChatPage', () => {
     expect(observe).toHaveAttribute('aria-pressed', 'true');
 
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
-    expect(streamChat).toHaveBeenCalledWith(
+    expect(turnScript).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: null, message: 'Hola' }),
     );
     // The visible word stays «Cancelar» (hidden when narrow, where the button is icon only).
@@ -234,14 +234,14 @@ describe('ChatPage', () => {
 
   it('shows the live progress of the turn until the answer arrives', async () => {
     const user = userEvent.setup();
-    const { api, streamChat, pending } = streamingApi([
+    const { api, turnScript, pending } = streamingApi([
       { type: 'conversation', conversation_id: 'c1' },
     ]);
     renderChat(api);
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
     // Before the API reports anything, the design's first step.
     expect(await screen.findByText('Pensando…')).toBeInTheDocument();
-    const onEvent = (streamChat.mock.calls[0] as [ScriptArgs])[0].onEvent;
+    const onEvent = (turnScript.mock.calls[0] as [ScriptArgs])[0].onEvent;
 
     act(() => {
       onEvent({ type: 'status', phase: 'tool', tool: '<b>get_cost_and_usage</b>' });
@@ -330,15 +330,15 @@ describe('ChatPage', () => {
 
   it('does not toast a stopped answer', async () => {
     const user = userEvent.setup();
-    const streamChat = vi.fn(
+    const turnScript = vi.fn(
       ({ signal }: ScriptArgs) =>
         new Promise<void>((_resolve, reject) => {
-          signal?.addEventListener('abort', () => {
+          signal.addEventListener('abort', () => {
             reject(new DOMException('aborted', 'AbortError'));
           });
         }),
     );
-    renderChat(turnsApi({ streamChat }) as unknown as ApiClient);
+    renderChat(turnsApi({ turnScript }) as unknown as ApiClient);
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
     await user.click(await screen.findByRole('button', { name: 'Cancelar respuesta' }));
     expect(await screen.findByText(STOPPED)).toBeInTheDocument();
@@ -387,11 +387,11 @@ describe('ChatPage', () => {
         },
       ],
     } as unknown as Awaited<ReturnType<ApiClient['getConversation']>>);
-    const streamChat = vi.fn(({ onEvent }: ScriptArgs) => {
+    const turnScript = vi.fn(({ onEvent }: ScriptArgs) => {
       onEvent({ type: 'error', code: 'conversation_busy', message: 'busy' });
       return Promise.resolve();
     });
-    renderChat(turnsApi({ getConversation, streamChat }) as unknown as ApiClient, false, {
+    renderChat(turnsApi({ getConversation, turnScript }) as unknown as ApiClient, false, {
       path: `/c/${CONVERSATION_ID}`,
     });
     await screen.findByText('Fueron USD 10.');
@@ -438,7 +438,7 @@ describe('ChatPage', () => {
       // Read again after the refusal: the other tab's question is in it by then.
       .mockResolvedValue({ ...conversationOf('finops'), messages: [...history, asked] } as never);
     let other: (() => void) | null = null;
-    const streamChat = vi.fn(({ message, onEvent }: ScriptArgs) => {
+    const turnScript = vi.fn(({ message, onEvent }: ScriptArgs) => {
       if (message === '¿Y RDS?') {
         onEvent({ type: 'error', code: 'conversation_busy', message: 'busy' });
         return Promise.resolve();
@@ -448,7 +448,7 @@ describe('ChatPage', () => {
         other = resolve;
       });
     });
-    const api = turnsApi({ getConversation, streamChat });
+    const api = turnsApi({ getConversation, turnScript });
     // The other tab's turn, already running.
     await api.createTurn({ conversationId: CONVERSATION_ID, message: asked.content });
     let calls = 0;
@@ -479,11 +479,11 @@ describe('ChatPage', () => {
         },
       ],
     } as never);
-    const streamChat = vi.fn(({ onEvent }: ScriptArgs) => {
+    const turnScript = vi.fn(({ onEvent }: ScriptArgs) => {
       onEvent({ type: 'delta', text: 'El pronóstico sube' });
       return new Promise<void>(() => undefined);
     });
-    const api = turnsApi({ getConversation, streamChat });
+    const api = turnsApi({ getConversation, turnScript });
     await api.createTurn({ conversationId: CONVERSATION_ID, message: '¿Y el pronóstico?' });
     renderChat(api as unknown as ApiClient, false, { path: `/c/${CONVERSATION_ID}` });
     expect(await screen.findByText('El pronóstico sube')).toBeInTheDocument();
@@ -691,11 +691,11 @@ describe('ChatPage: a turn that fails says whether the session ended', () => {
 
   async function sendFailing(failure: Error) {
     const auth = authValue();
-    const streamChat = vi.fn<ApiClient['streamChat']>(() => Promise.reject(failure));
+    const turnScript = vi.fn<TurnScript>(() => Promise.reject(failure));
     const user = userEvent.setup();
-    renderChat(turnsApi({ streamChat }) as unknown as ApiClient, false, { auth });
+    renderChat(turnsApi({ turnScript }) as unknown as ApiClient, false, { auth });
     await user.type(screen.getByRole('textbox', { name: 'Mensaje a FinOps' }), 'Hola{Enter}');
-    return { auth, streamChat, user };
+    return { auth, turnScript, user };
   }
 
   it.each([
@@ -703,14 +703,14 @@ describe('ChatPage: a turn that fails says whether the session ended', () => {
     ['the renewal had no network', new TypeError('Failed to fetch'), NETWORK],
     ['the API answered 503', new ApiError(503, 'http_503', ''), GENERIC],
   ])('keeps the session and offers to retry when %s', async (_cause, failure, text) => {
-    const { auth, streamChat, user } = await sendFailing(failure);
+    const { auth, turnScript, user } = await sendFailing(failure);
     expect(await screen.findByText(text)).toBeInTheDocument();
     expect(auth.expireSession).not.toHaveBeenCalled();
     expect(screen.queryByText('Tu sesión expiró. Vuelve a iniciar sesión.')).toBeNull();
     // The same question goes out again from the message.
     await user.click(screen.getByRole('button', { name: 'Reintentar' }));
-    expect(streamChat).toHaveBeenCalledTimes(2);
-    expect(streamChat.mock.calls[1]?.[0]).toMatchObject({ message: 'Hola' });
+    expect(turnScript).toHaveBeenCalledTimes(2);
+    expect(turnScript.mock.calls[1]?.[0]).toMatchObject({ message: 'Hola' });
     expect(auth.expireSession).not.toHaveBeenCalled();
   });
 
@@ -721,7 +721,7 @@ describe('ChatPage: a turn that fails says whether the session ended', () => {
     // What the edge answers when it limits an office: the same body as the API's own limit.
     ['the API or the edge answered 429', new ApiError(429, 'rate_limited', 'x', 2)],
   ])('keeps the session and counts down «Reintentar» when %s', async (_cause, failure) => {
-    const { auth, streamChat, user } = await sendFailing(failure);
+    const { auth, turnScript, user } = await sendFailing(failure);
     expect(await screen.findByText('Demasiadas solicitudes')).toBeInTheDocument();
     expect(
       screen.getByText(/Llegaron muchas solicitudes desde tu red\. Tu mensaje no se envió\./),
@@ -729,8 +729,8 @@ describe('ChatPage: a turn that fails says whether the session ended', () => {
     expect(screen.getByRole('button', { name: /^Reintentar en \d s$/ })).toBeDisabled();
     expect(auth.expireSession).not.toHaveBeenCalled();
     await user.click(await screen.findByRole('button', { name: 'Reintentar' }, { timeout: 4000 }));
-    expect(streamChat).toHaveBeenCalledTimes(2);
-    expect(streamChat.mock.calls[1]?.[0]).toMatchObject({ message: 'Hola' });
+    expect(turnScript).toHaveBeenCalledTimes(2);
+    expect(turnScript.mock.calls[1]?.[0]).toMatchObject({ message: 'Hola' });
   });
 
   it.each([
@@ -746,7 +746,7 @@ describe('ChatPage: a turn that fails says whether the session ended', () => {
 
 describe('ChatPage with several agents', () => {
   const two = { agents: [finopsAgent, SALES] };
-  const done: ChatEvent = {
+  const done: ScriptEvent = {
     type: 'done',
     message_id: 'm1',
     stop_reason: 'end_turn',
@@ -754,12 +754,12 @@ describe('ChatPage with several agents', () => {
     cost_usd: '0.01',
   };
   const finishingApi = () => {
-    const streamChat = vi.fn(({ onEvent }: ScriptArgs) => {
+    const turnScript = vi.fn(({ onEvent }: ScriptArgs) => {
       onEvent({ type: 'conversation', conversation_id: CONVERSATION_ID });
       onEvent(done);
       return Promise.resolve();
     });
-    return { api: turnsApi({ streamChat }) as unknown as ApiClient, streamChat };
+    return { api: turnsApi({ turnScript }) as unknown as ApiClient, turnScript };
   };
 
   it('opens a new conversation with the agent of the URL, with its texts as text', () => {
@@ -798,10 +798,10 @@ describe('ChatPage with several agents', () => {
 
   it('sends the agent of the new conversation and the default model', async () => {
     const user = userEvent.setup();
-    const { api, streamChat } = finishingApi();
+    const { api, turnScript } = finishingApi();
     renderChat(api, false, { path: '/?agent=abcdefghijklmnop', session: two });
     await user.type(screen.getByRole('textbox'), 'hola{Enter}');
-    expect(streamChat.mock.calls[0]?.[0]).toMatchObject({
+    expect(turnScript.mock.calls[0]?.[0]).toMatchObject({
       conversationId: null,
       agentId: 'abcdefghijklmnop',
       model: 'model-a',
@@ -813,7 +813,7 @@ describe('ChatPage with several agents', () => {
 
     // The next turn names no agent: the API keeps the one of the conversation.
     await user.type(screen.getByRole('textbox'), 'otra{Enter}');
-    expect(streamChat.mock.calls[1]?.[0]).toMatchObject({
+    expect(turnScript.mock.calls[1]?.[0]).toMatchObject({
       conversationId: CONVERSATION_ID,
       agentId: null,
       model: 'model-a',
@@ -822,7 +822,7 @@ describe('ChatPage with several agents', () => {
 
   it('lets the user pick one of the models the agent allows', async () => {
     const user = userEvent.setup();
-    const { api, streamChat } = finishingApi();
+    const { api, turnScript } = finishingApi();
     renderChat(api, false, { path: '/?agent=abcdefghijklmnop', session: two });
     const trigger = within(topbar()).getByRole('button', { name: 'Modelo: model-a' });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -845,7 +845,7 @@ describe('ChatPage with several agents', () => {
     expect(within(topbar()).getByRole('button', { name: 'Modelo: model-b' })).toBeInTheDocument();
 
     await user.type(screen.getByRole('textbox'), 'hola{Enter}');
-    expect(streamChat.mock.calls[0]?.[0]).toMatchObject({ model: 'model-b' });
+    expect(turnScript.mock.calls[0]?.[0]).toMatchObject({ model: 'model-b' });
   });
 
   it("closes the model list with Escape and offers only the agent's own models", async () => {
@@ -892,7 +892,7 @@ describe('ChatPage with several agents', () => {
 
   it('shows the agent of a stored conversation and sends no agent with its turns', async () => {
     const user = userEvent.setup();
-    const { api, streamChat } = finishingApi();
+    const { api, turnScript } = finishingApi();
     const getConversation = vi.fn<ApiClient['getConversation']>().mockResolvedValue({
       ...conversationOf(SALES.id),
       messages: [
@@ -913,7 +913,7 @@ describe('ChatPage with several agents', () => {
       await within(topbar()).findByRole('heading', { name: 'Ventas <b>LATAM</b>' }),
     ).toBeVisible();
     await user.type(screen.getByRole('textbox'), 'hola{Enter}');
-    expect(streamChat.mock.calls[0]?.[0]).toMatchObject({
+    expect(turnScript.mock.calls[0]?.[0]).toMatchObject({
       conversationId: CONVERSATION_ID,
       agentId: null,
     });
@@ -933,8 +933,8 @@ describe('ChatPage with several agents', () => {
 
   it('says so when the agent is not available to the user, and takes no message', async () => {
     const call = vi.fn().mockRejectedValue(new Error('forbidden'));
-    const streamChat = vi.fn();
-    renderChat({ call, streamChat } as unknown as ApiClient, false, {
+    const turnScript = vi.fn();
+    renderChat({ call, turnScript } as unknown as ApiClient, false, {
       path: '/?agent=zzzzzzzzzzzzzzzz',
       session: two,
     });
@@ -961,7 +961,7 @@ describe('ChatPage with several agents', () => {
       'href',
       '/marketplace',
     );
-    expect(streamChat).not.toHaveBeenCalled();
+    expect(turnScript).not.toHaveBeenCalled();
   });
 
   it('says so when the user has no agents', () => {

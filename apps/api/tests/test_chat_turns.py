@@ -16,7 +16,6 @@ from typing import Any
 import boto3
 import pytest
 from botocore.exceptions import ReadTimeoutError
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from moto import mock_aws
 
@@ -24,8 +23,8 @@ from mango_api import app as app_module
 from mango_api import turns as turns_module
 from mango_api.conversations import ConversationRepository
 from mango_api.turns_store import DynamoTurnLog, MemoryTurnLog, TurnLog, TurnState
-from mango_api.web import ApiError
 
+from .chat_client import events_of, post_chat
 from .test_app import HOST, TOKENS, Harness, _auth, _events, served
 
 CONVERSATION = "a" * 32
@@ -33,7 +32,8 @@ SECRET = "eyJ-secret-access-token-of-the-person"
 """A token value that must never appear in a log line, an audit event or the table."""
 
 # The events of a turn, as POST /api/chat streamed them before D121 (captured from the code
-# that ran the turn inside the request, for the default script of ``FakeAgentCore``).
+# that ran the turn inside the request, for the default script of ``FakeAgentCore``): what
+# the turn's record holds and its ``v1`` stream says (that route was retired in R5).
 BEFORE_D121 = [
     ["conversation", {"conversation_id": "<cid>"}],
     ["status", {"phase": "thinking"}],
@@ -118,21 +118,19 @@ def _normalized(body: str) -> list[list[Any]]:
 
 
 def _chat(h: Harness, token: str = "good", **body: Any) -> Any:
-    return h.client().post("/api/chat", headers=_auth(token), json={"message": "hola", **body})
+    return post_chat(h.client(), headers=_auth(token), json={"message": "hola", **body})
 
 
 def _message(queue: QueueDouble) -> dict[str, Any]:
     return dict(json.loads(queue.bodies[-1]))
 
 
-# --- What the web receives --------------------------------------------------------------
+# --- What the turn records --------------------------------------------------------------
 
 
-def test_the_web_receives_exactly_the_events_it_received_before() -> None:
+def test_the_turn_records_exactly_the_events_it_streamed_before() -> None:
     response = _chat(Harness())
     assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert response.headers["cache-control"] == "no-store"
     assert _normalized(response.text) == BEFORE_D121
 
 
@@ -356,13 +354,24 @@ def test_a_person_who_loses_the_agent_while_the_turn_waits_is_refused(
     queue: QueueDouble,
 ) -> None:
     h = Harness()
-    queue.meanwhile = lambda: setattr(h.authorizer, "allow", False)
-    response = _chat(h)
-    assert response.status_code == 403
+    queue.deliver = False
+    client = h.client()
+    created = client.post("/api/chat/turns", headers=_auth(), json={"message": "hola"})
+    assert created.status_code == 200
+    h.authorizer.allow = False
+    queue.run(queue.bodies[-1])
+    h.authorizer.allow = True
+    stream = client.get(f"/api/chat/turns/{created.json()['turn_id']}/stream", headers=_auth())
+    assert events_of(stream.text)[-1] == (
+        "error",
+        {"status": 403, "code": "forbidden", "message": "not allowed"},
+    )
     assert h.budgets.reserved == []
     assert h.agentcore.requests == []
     decisions = [
-        d for e, d in zip(h.audit.events, h.audit.details, strict=True) if e == "policy.decision"
+        d
+        for e, d in zip(h.audit.events, h.audit.details, strict=True)
+        if e == "policy.decision" and d.get("action") == "UseAgent"
     ]
     assert [d["allowed"] for d in decisions] == [True, False]
     assert decisions[1]["via"] == "turn-worker"
@@ -462,7 +471,7 @@ def test_a_stalled_turn_is_interrupted_by_its_reader(
     finally:
         gate.set()
     events = _events(response.text)
-    assert events[-1] == ("error", {"code": "upstream_error", "message": "the agent failed"})
+    assert events[-1] == ("error", dict(turns_module.TURN_INTERRUPTED))
     turn_id = _message(queue)["turn_id"]
     status = log.status("user-1", turn_id)
     assert status is not None
@@ -509,23 +518,10 @@ def test_the_token_is_never_in_the_table_the_audit_or_the_logs(
 # --- Shared by mango-api and the worker -------------------------------------------------
 
 
-def test_a_rejection_is_raised_as_the_same_error() -> None:
-    with pytest.raises(ApiError) as api:
-        turns_module.raise_rejection({"status": 409, "code": "conversation_busy", "message": "m"})
-    assert (api.value.status, api.value.code) == (409, "conversation_busy")
-    with pytest.raises(HTTPException) as http:
-        turns_module.raise_rejection({"status": 403, "detail": "not allowed"})
-    assert (http.value.status_code, http.value.detail) == (403, "not allowed")
-    with pytest.raises(RuntimeError):
-        turns_module.raise_rejection(turns_module.INTERNAL_REJECTION)
-    with pytest.raises(ApiError):
-        turns_module.raise_rejection(None)
-
-
 def test_cost_reserved_is_released_when_the_turn_cannot_start_in_the_worker() -> None:
     h = Harness()
     h.conversations.fail_writes = True
     client = TestClient(h.client().app, base_url=f"http://{HOST}", raise_server_exceptions=False)
-    response = client.post("/api/chat", headers=_auth(), json={"message": "hola"})
+    response = post_chat(client, headers=_auth(), json={"message": "hola"})
     assert response.status_code == 500
     assert h.budgets.settled == [(h.budgets.reserved[0], Decimal(0))]

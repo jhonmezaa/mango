@@ -542,7 +542,7 @@ def test_only_the_save_of_a_version_takes_a_body_over_32_kib() -> None:
         ("GET", path),
         ("POST", f"{path}/1"),
         ("POST", path.replace("/versions", "/exports")),
-        ("POST", "/api/chat"),
+        ("POST", "/api/chat/turns"),
     ):
         assert app_module.body_limit(method, other) == app_module.MAX_BODY_BYTES
 
