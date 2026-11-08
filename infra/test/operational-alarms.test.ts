@@ -131,6 +131,8 @@ describe("operational alarms of Core", () => {
         "Bedrock-throttled",
         "BudgetReconciler-failed",
         "BudgetReconciler-reservation-charged",
+        "ChatTurns-failed",
+        "ChatTurns-waiting",
         "Cognito-rate-limited",
         "CostAnomalies-rejected",
         "CostAnomalyConsumer-failed",
@@ -146,6 +148,7 @@ describe("operational alarms of Core", () => {
         "PreTokenGeneration-failing",
         "TaskReport-failed",
         "TaskRuns-failed",
+        "TurnWorker-tasks-below-desired",
         "UninstallGuard-deletion-failed",
         "UninstallGuard-failed",
       ]

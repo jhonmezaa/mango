@@ -46,6 +46,11 @@ export interface GovernanceProps {
   readonly installation: Installation;
   /** Only this role may assume the conversation data-access role. */
   readonly apiTaskRole: iam.IRole;
+  /**
+   * The task role of the turn worker (D121), by its ARN: it takes a person's rows the same way.
+   * The role lives in a stack nested in Core (D99), which Core names and never reads.
+   */
+  readonly turnWorkerRoleArn?: string;
 }
 
 /**
@@ -193,7 +198,9 @@ export class Governance extends Construct {
       roleName: mangoName(cfg.namespace, "ConversationData"),
       description: "Assumed per request with a LeadingKeys session policy (row-level security)",
       assumedBy: new iam.AccountPrincipal(account).withConditions({
-        ArnEquals: { "aws:PrincipalArn": props.apiTaskRole.roleArn },
+        ArnEquals: {
+          "aws:PrincipalArn": [props.apiTaskRole.roleArn, ...(props.turnWorkerRoleArn ? [props.turnWorkerRoleArn] : [])],
+        },
       }),
       maxSessionDuration: Duration.hours(1),
     });

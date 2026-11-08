@@ -11,6 +11,7 @@ import { OperationalAlarms, OperationalAlarmsProps } from "../constructs/operati
 import { RemoteMcpApi } from "../constructs/remote-mcp-api.js";
 import { RemoteRelease } from "../constructs/remote-release.js";
 import { TraceReader, TraceReaderProps } from "../constructs/trace-reader.js";
+import { TurnWorker, TurnWorkerProps } from "../constructs/turn-worker.js";
 
 /**
  * Stacks nested in Core (D99). CloudFormation counts at most 500 resources per template, and a
@@ -179,6 +180,25 @@ export class EvalsStack extends CoreNestedStack {
   constructor(scope: Construct, id: string, props: EvalJudgeProps) {
     super(scope, id, "evals evaluator");
     this.judge = new EvalJudge(this, "EvalJudge", {
+      ...props,
+      installation: this.namespaceOf(props.installation),
+    });
+  }
+}
+
+/**
+ * The turn worker (D121 (3)): the service `Mango-<ns>-turn-worker`, its task definition, its log
+ * group, its security group and its task role `Mango-<ns>-TurnWorker` (decided 2026-11-07, by
+ * menu, to keep Core under its budget of resources). Nothing here holds data: the queue of chat
+ * turns, its dead-letter queue and its key stay in Core (`ChatTurnQueue`, D99 (2)), which names
+ * the role by its fixed name, and the alarms of the worker are in Operations, by names.
+ */
+export class TurnWorkerStack extends CoreNestedStack {
+  readonly worker: TurnWorker;
+
+  constructor(scope: Construct, id: string, props: TurnWorkerProps) {
+    super(scope, id, "turn worker");
+    this.worker = new TurnWorker(this, "TurnWorker", {
       ...props,
       installation: this.namespaceOf(props.installation),
     });

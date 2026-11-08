@@ -74,6 +74,12 @@ export const OPERATIONAL_THRESHOLDS = {
    * times): whoever got it retries and passes. A table that does not answer refuses every call.
    */
   rateLimitStoreRefusals: 2,
+  /**
+   * Seconds the oldest message of `ChatTurns` may be old (D121, TM-TW10). The metric counts a
+   * message until it is deleted, so a turn that is running counts too: the longest turn
+   * (600 s) and one minute of waiting for a free worker.
+   */
+  chatTurnOldestSeconds: 660,
 };
 
 /**
@@ -112,6 +118,16 @@ export interface OperationalAlarmsProps {
   readonly refusingFunctions: Record<string, lambda.IFunction>;
   /** Dead-letter queues without an alarm of their own, by the name of what failed. */
   readonly deadLetterQueues: Record<string, sqs.IQueue>;
+  /**
+   * `mango-turn-worker` and the queue of chat turns (D121). The service by its name: it lives in
+   * another stack nested in Core, which this one does not read (D99 (4)).
+   */
+  readonly turnWorker?: {
+    readonly clusterName: string;
+    readonly serviceName: string;
+    readonly queue: sqs.IQueue;
+    readonly deadLetters: sqs.IQueue;
+  };
   /**
    * Alarms of the other stacks nested in Core, without `Mango-<ns>-`: the dashboard names them,
    * so that this stack reads nothing of a sibling (D99 (4)).
@@ -158,6 +174,7 @@ export class OperationalAlarms extends Construct {
     const data = this.tableAlarms(tables);
     const models = this.modelAlarms(props);
     this.queueAlarms(props.deadLetterQueues);
+    const worker = props.turnWorker ? this.turnWorkerAlarms(props.turnWorker) : [];
     // An alarm only reads metrics of its own Region. A template for another Region goes
     // without these two; the load balancer alarms still see what reaches the API.
     const edge = global ? this.edgeAlarms(props) : [];
@@ -188,6 +205,7 @@ export class OperationalAlarms extends Construct {
         [...functions, ...data],
         [...edge, ...userPool],
         models,
+        worker,
       ].filter((row) => row.length > 0),
     });
   }
@@ -572,6 +590,86 @@ export class OperationalAlarms extends Construct {
         },
       );
     }
+  }
+
+  /**
+   * The turn worker (D121): a turn in the dead-letter queue, turns that wait for a worker, and
+   * fewer tasks than the service asks for. With the service at zero tasks nothing alarms.
+   */
+  private turnWorkerAlarms(worker: NonNullable<OperationalAlarmsProps["turnWorker"]>): cloudwatch.IWidget[] {
+    const failed = this.alarm(
+      "ChatTurnsDeadLetters",
+      "ChatTurns-failed",
+      "A chat turn reached the dead-letter queue: a worker took it and never finished it (it fell or lost the " +
+        "queue), and it is never retried (D121 (7)). The message holds the access token of a person, which expires " +
+        "within the hour; the queue keeps it one hour and nobody may read it. Look first at the stopped tasks of " +
+        "the turn worker and at its log, by turn id.",
+      {
+        metric: worker.deadLetters.metricApproximateNumberOfMessagesVisible({
+          statistic: cloudwatch.Stats.MAXIMUM,
+          period: FIVE_MINUTES,
+        }),
+        threshold: 1,
+        comparisonOperator: AT_LEAST,
+        evaluationPeriods: 1,
+      },
+    );
+    const oldest = this.alarm(
+      "ChatTurnsWaiting",
+      "ChatTurns-waiting",
+      `The oldest chat turn in the queue has been there more than ${OPERATIONAL_THRESHOLDS.chatTurnOldestSeconds} s ` +
+        "(the longest turn and one minute) for 3 minutes: people wait for a free worker, or no worker reads. Look " +
+        "first at the running tasks of the turn worker, then at its log.",
+      {
+        metric: worker.queue.metricApproximateAgeOfOldestMessage({
+          statistic: cloudwatch.Stats.MAXIMUM,
+          period: MINUTE,
+        }),
+        threshold: OPERATIONAL_THRESHOLDS.chatTurnOldestSeconds,
+        comparisonOperator: ABOVE,
+        evaluationPeriods: 3,
+      },
+    );
+    const tasks = (metricName: string) =>
+      new cloudwatch.Metric({
+        namespace: "ECS/ContainerInsights",
+        metricName,
+        dimensionsMap: {
+          ClusterName: worker.clusterName,
+          ServiceName: worker.serviceName,
+        },
+        statistic: cloudwatch.Stats.MINIMUM,
+        period: MINUTE,
+      });
+    const below = this.alarm(
+      "TurnWorkerTasksBelowDesired",
+      "TurnWorker-tasks-below-desired",
+      "The turn worker has been running fewer tasks than the service asks for (two), for 5 minutes: chat turns " +
+        "wait or are not answered. Look first at the events of the ECS service and at the stopped tasks (image " +
+        "pull, entry point, out of memory).",
+      {
+        metric: new cloudwatch.MathExpression({
+          expression: "desired - running",
+          usingMetrics: {
+            desired: tasks("DesiredTaskCount").with({ statistic: cloudwatch.Stats.MAXIMUM }),
+            running: tasks("RunningTaskCount"),
+          },
+          label: "turn worker tasks missing",
+          period: MINUTE,
+        }),
+        threshold: 1,
+        comparisonOperator: AT_LEAST,
+        evaluationPeriods: 5,
+      },
+    );
+    return [
+      new cloudwatch.GraphWidget({
+        title: "Chat turns",
+        left: [failed.metric, oldest.metric],
+        width: 12,
+      }),
+      new cloudwatch.GraphWidget({ title: "Turn worker tasks", left: [below.metric], width: 12 }),
+    ];
   }
 
   /** CloudFront and its web ACL. Their metrics only exist in `GLOBAL_METRICS_REGION`. */

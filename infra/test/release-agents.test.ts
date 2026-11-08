@@ -302,10 +302,12 @@ describe("FinOps is not a resource of the stack any more (D32, D34)", () => {
       .filter((r) => r.Type === "AWS::IAM::Policy")
       .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
       .filter((s) => JSON.stringify(s.Action).includes("bedrock-agentcore:InvokeHarness"));
-    // Besides mango-api, only the evaluator invokes a harness: the evals one, for its canary (D110).
-    expect(invoke.map((s) => s.Sid).sort()).toEqual(["InvokeAgentHarnesses", "InvokeTheEvalsHarness"]);
-    const agents = invoke.find((s) => s.Sid === "InvokeAgentHarnesses")!;
-    expect(JSON.stringify(agents.Resource)).toContain(`harness/Mango_${ns}_a_*`);
+    // Besides mango-api and the turn worker (D121), which run the turns of provisioned agents,
+    // only the evaluator invokes a harness: the evals one, for its canary (D110).
+    expect(invoke.map((s) => s.Sid).sort()).toEqual(["InvokeAgentHarnesses", "InvokeAgentHarnesses", "InvokeTheEvalsHarness"]);
+    for (const agents of invoke.filter((s) => s.Sid === "InvokeAgentHarnesses")) {
+      expect(JSON.stringify(agents.Resource)).toContain(`harness/Mango_${ns}_a_*`);
+    }
     const canary = invoke.find((s) => s.Sid === "InvokeTheEvalsHarness")!;
     expect(JSON.stringify(canary.Resource)).toContain(`harness/Mango_${ns}_a_evals-*`);
     expect(JSON.stringify(canary.Resource)).not.toContain(`_a_*`);

@@ -297,7 +297,7 @@ describe("knowledge bases: fixed resources in Core", () => {
       expect(apiStatements.flatMap(actions)).not.toContain(forbidden);
     }
     expect(Object.keys(resources).some((id) => id.startsWith("ApiTaskRoleOverflowPolicy"))).toBe(false);
-    const [, service] = only("AWS::ECS::TaskDefinition", {});
+    const [, service] = only("AWS::ECS::TaskDefinition", { Family: `Mango-${ns}-api` });
     const env = JSON.stringify(service.Properties.ContainerDefinitions);
     expect(env).toContain("KNOWLEDGE_TABLE");
     expect(env).toContain("KNOWLEDGE_BUCKET");
@@ -476,7 +476,7 @@ describe("knowledge bases: fixed resources in Core", () => {
     const source = readFileSync(resolve(import.meta.dirname, "../../apps/api/src/mango_api/knowledge.py"), "utf8");
     expect(source).toContain('SEARCH_THROTTLED_LOG = "knowledge search throttled"');
     expect(source).toContain('logger.warning("%s; kb %s", SEARCH_THROTTLED_LOG, kb.kb_id)');
-    const [, service] = only("AWS::ECS::TaskDefinition", {});
+    const [, service] = only("AWS::ECS::TaskDefinition", { Family: `Mango-${ns}-api` });
     const variables = service.Properties.ContainerDefinitions[0].Environment as { Name: string; Value: unknown }[];
     expect(variables.find((v) => v.Name === "KNOWLEDGE_BASE_ID")?.Value).toEqual({
       "Fn::GetAtt": [kbId, "KnowledgeBaseId"],

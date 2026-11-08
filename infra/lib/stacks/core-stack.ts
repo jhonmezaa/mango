@@ -54,6 +54,12 @@ import { RemoteRelease } from "../constructs/remote-release.js";
 import { ReleaseAgents, releaseAgents, releaseVersion } from "../constructs/release-agents.js";
 import { TaskReports } from "../constructs/task-reports.js";
 import { TaskPlatform } from "../constructs/tasks.js";
+import {
+  ChatTurnQueue,
+  CHAT_TURNS_QUEUE_ENV,
+  turnWorkerRoleArn,
+  turnWorkerServiceName,
+} from "../constructs/turn-worker.js";
 import { Tools } from "../constructs/tools.js";
 import { UninstallGuard } from "../constructs/uninstall-guard.js";
 import { WriteTools } from "../constructs/write-tools.js";
@@ -73,6 +79,7 @@ import {
   ObservabilityStack,
   OperationsStack,
   RemoteMcpStack,
+  TurnWorkerStack,
 } from "./core-nested.js";
 
 export interface CoreStackProps extends StackProps {
@@ -125,6 +132,8 @@ export class CoreStack extends Stack {
     const governance = new Governance(this, "Governance", {
       installation: cfg,
       apiTaskRole,
+      // D121: the turn worker takes a person's rows the same way.
+      turnWorkerRoleArn: turnWorkerRoleArn(this, cfg.namespace),
       ...(release ? { auditLockMode: release.auditLockMode } : {}),
     });
     // D99: the Cedar policies of the store, in a stack nested in Core.
@@ -609,10 +618,85 @@ export class CoreStack extends Stack {
       })),
     );
 
+    // D121: the queue every chat turn starts from (TM-TW1). It holds data: it stays in Core (D99).
+    const chatTurns = new ChatTurnQueue(this, "ChatTurns", { installation: cfg, apiTaskRole });
+
     // The release agent: the default of a chat that names no agent. Its definition is data
     // (Agents table); mango-api only needs to know which one it is.
     const releaseAgent = shipped[0]!;
     const target = props.release;
+    const apiEnvironment: Record<string, string> = {
+      MANGO_NAMESPACE: cfg.namespace,
+      COGNITO_ISSUER: identity.issuer,
+      COGNITO_CLIENT_ID: identity.webClient.userPoolClientId,
+      COGNITO_USER_POOL_ID: identity.userPool.userPoolId,
+      GATEWAY_URL: tools.gatewayUrl,
+      AGENT_ID: releaseAgent.id,
+      AGENT_MODEL: cfg.models.agent,
+      GUARDRAIL_ID: agentPlatform.guardrail.attrGuardrailId,
+      GUARDRAIL_VERSION: agentPlatform.guardrailVersion.attrVersion,
+      AGENT_SESSION_IDLE_SECONDS: String(SESSION_IDLE_SECONDS),
+      AGENT_SESSION_MAX_SECONDS: String(SESSION_MAX_SECONDS),
+      AUXILIARY_MODEL: cfg.models.auxiliary,
+      MODEL_PRICES: JSON.stringify(cfg.modelPrices),
+      POLICY_STORE_ID: governance.policyStore.attrPolicyStoreId,
+      CONVERSATIONS_TABLE: governance.conversations.tableName,
+      CONVERSATIONS_TABLE_ARN: governance.conversations.tableArn,
+      DATA_KEY_ARN: governance.dataKey.keyArn,
+      AUDIT_INDEX_TABLE: governance.auditIndex.tableName,
+      ALLOWED_HOSTS: network.alb.loadBalancerDnsName,
+      INVOCATION_KEY_SECRET_ARN: tools.invocationKey.secretArn,
+      BUDGETS_TABLE: governance.budgets.tableName,
+      DATA_ACCESS_ROLE_ARN: governance.dataAccessRole.roleArn,
+      AUDIT_STREAM: governance.auditStream.deliveryStreamName,
+      USER_MONTHLY_BUDGET_USD: String(cfg.budgets.userMonthlyUsd),
+      AGENT_MONTHLY_BUDGET_USD: String(cfg.budgets.agentMonthlyUsd),
+      SETTINGS_TABLE: governance.settings.tableName,
+      AGENTS_TABLE: governance.agents.tableName,
+      PROVISIONER_STATE_MACHINE_ARN: provisioner.stateMachine.stateMachineArn,
+      DEPROVISIONER_STATE_MACHINE_ARN: deprovisioner.stateMachine.stateMachineArn,
+      PACK_PROVISIONER_STATE_MACHINE_ARN: packProvisioner.stateMachine.stateMachineArn,
+      ...packPlatform.apiEnvironment,
+      ...writeTools.apiEnvironment,
+      ...tasks.apiEnvironment,
+      ...taskReports.apiEnvironment,
+      ...knowledge.apiEnvironment,
+      ...skills.apiEnvironment,
+      ...evals.apiEnvironment,
+      // D110: the evaluator mango-api asks for the verdict of a judge case, and its judges.
+      EVAL_JUDGE_FUNCTION: evalsCapture.judgeFunctionName,
+      EVAL_JUDGE_MODELS: judgeModels(cfg).join(","),
+      EVALUATION_FEE_USD: EVALUATION_FEE_USD,
+      ...tickets.apiEnvironment,
+      ...presign.apiEnvironment,
+      ...observability.reader.apiEnvironment,
+      // D98: the remote MCP catalog, its provisioner and key, and whether it is on (D98 (4)).
+      ...remoteMcp.api.environment,
+      REMOTE_MCP_ENABLED: release ? release.remoteMcpEnabled : String(cfg.remoteMcp.enabled),
+      ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
+      // D60: who may be invited, and what Settings > General > Installation shows to
+      // administrators (served by mango-api, not by the public config.json of the SPA).
+      SIGN_UP_DOMAINS: cfg.auth.signUpDomains.join(","),
+      // D63: the web session cookie. The only `Origin` its endpoints accept, where the
+      // session records live and how long a session may last (the refresh token validity).
+      APP_ORIGIN: edge.origin,
+      WEB_SESSIONS_TABLE: governance.webSessions.tableName,
+      SESSION_HOURS: String(SESSION_HOURS),
+      // D70: mango-api does not start without it.
+      RATE_LIMITS_TABLE: governance.rateLimits.tableName,
+      MANGO_VERSION: releaseVersion(),
+      // The label tells two builds of one version apart (`v0.1.0-g1a2b3c4`).
+      ...(target ? { MANGO_RELEASE: target.label } : {}),
+      ORGANIZATION_ID: cfg.organizationId,
+      MANAGEMENT_ACCOUNT_ID: cfg.managementAccountId,
+      ALERTS_EMAIL: cfg.alerts.emails.join(","),
+      FIRST_ADMIN_EMAILS: [
+        ...cfg.users.filter((u) => !u.e2e && u.groups.includes("mango-admin")).map((u) => u.email),
+        ...(release ? [release.secondAdminEmail] : []),
+      ].join(","),
+      // D121: where mango-api sends the chat turns.
+      [CHAT_TURNS_QUEUE_ENV]: chatTurns.queue.queueUrl,
+    };
     const api = new ApiService(this, "Api", {
       installation: cfg,
       ...(target
@@ -626,79 +710,40 @@ export class CoreStack extends Stack {
         : {}),
       network,
       taskRole: apiTaskRole,
-      environment: {
-        MANGO_NAMESPACE: cfg.namespace,
-        COGNITO_ISSUER: identity.issuer,
-        COGNITO_CLIENT_ID: identity.webClient.userPoolClientId,
-        COGNITO_USER_POOL_ID: identity.userPool.userPoolId,
-        GATEWAY_URL: tools.gatewayUrl,
-        AGENT_ID: releaseAgent.id,
-        AGENT_MODEL: cfg.models.agent,
-        GUARDRAIL_ID: agentPlatform.guardrail.attrGuardrailId,
-        GUARDRAIL_VERSION: agentPlatform.guardrailVersion.attrVersion,
-        AGENT_SESSION_IDLE_SECONDS: String(SESSION_IDLE_SECONDS),
-        AGENT_SESSION_MAX_SECONDS: String(SESSION_MAX_SECONDS),
-        AUXILIARY_MODEL: cfg.models.auxiliary,
-        MODEL_PRICES: JSON.stringify(cfg.modelPrices),
-        POLICY_STORE_ID: governance.policyStore.attrPolicyStoreId,
-        CONVERSATIONS_TABLE: governance.conversations.tableName,
-        CONVERSATIONS_TABLE_ARN: governance.conversations.tableArn,
-        DATA_KEY_ARN: governance.dataKey.keyArn,
-        AUDIT_INDEX_TABLE: governance.auditIndex.tableName,
-        ALLOWED_HOSTS: network.alb.loadBalancerDnsName,
-        INVOCATION_KEY_SECRET_ARN: tools.invocationKey.secretArn,
-        BUDGETS_TABLE: governance.budgets.tableName,
-        DATA_ACCESS_ROLE_ARN: governance.dataAccessRole.roleArn,
-        AUDIT_STREAM: governance.auditStream.deliveryStreamName,
-        USER_MONTHLY_BUDGET_USD: String(cfg.budgets.userMonthlyUsd),
-        AGENT_MONTHLY_BUDGET_USD: String(cfg.budgets.agentMonthlyUsd),
-        SETTINGS_TABLE: governance.settings.tableName,
-        AGENTS_TABLE: governance.agents.tableName,
-        PROVISIONER_STATE_MACHINE_ARN: provisioner.stateMachine.stateMachineArn,
-        DEPROVISIONER_STATE_MACHINE_ARN: deprovisioner.stateMachine.stateMachineArn,
-        PACK_PROVISIONER_STATE_MACHINE_ARN: packProvisioner.stateMachine.stateMachineArn,
-        ...packPlatform.apiEnvironment,
-        ...writeTools.apiEnvironment,
-        ...tasks.apiEnvironment,
-        ...taskReports.apiEnvironment,
-        ...knowledge.apiEnvironment,
-        ...skills.apiEnvironment,
-        ...evals.apiEnvironment,
-        // D110: the evaluator mango-api asks for the verdict of a judge case, and its judges.
-        EVAL_JUDGE_FUNCTION: evalsCapture.judgeFunctionName,
-        EVAL_JUDGE_MODELS: judgeModels(cfg).join(","),
-        EVALUATION_FEE_USD: EVALUATION_FEE_USD,
-        ...tickets.apiEnvironment,
-        ...presign.apiEnvironment,
-        ...observability.reader.apiEnvironment,
-        // D98: the remote MCP catalog, its provisioner and key, and whether it is on (D98 (4)).
-        ...remoteMcp.api.environment,
-        REMOTE_MCP_ENABLED: release ? release.remoteMcpEnabled : String(cfg.remoteMcp.enabled),
-        ADMIN_PROBE_FUNCTION: tools.adminProbe.functionName,
-        // D60: who may be invited, and what Settings > General > Installation shows to
-        // administrators (served by mango-api, not by the public config.json of the SPA).
-        SIGN_UP_DOMAINS: cfg.auth.signUpDomains.join(","),
-        // D63: the web session cookie. The only `Origin` its endpoints accept, where the
-        // session records live and how long a session may last (the refresh token validity).
-        APP_ORIGIN: edge.origin,
-        WEB_SESSIONS_TABLE: governance.webSessions.tableName,
-        SESSION_HOURS: String(SESSION_HOURS),
-        // D70: mango-api does not start without it.
-        RATE_LIMITS_TABLE: governance.rateLimits.tableName,
-        MANGO_VERSION: releaseVersion(),
-        // The label tells two builds of one version apart (`v0.1.0-g1a2b3c4`).
-        ...(target ? { MANGO_RELEASE: target.label } : {}),
-        ORGANIZATION_ID: cfg.organizationId,
-        MANAGEMENT_ACCOUNT_ID: cfg.managementAccountId,
-        ALERTS_EMAIL: cfg.alerts.emails.join(","),
-        FIRST_ADMIN_EMAILS: [
-          ...cfg.users.filter((u) => !u.e2e && u.groups.includes("mango-admin")).map((u) => u.email),
-          ...(release ? [release.secondAdminEmail] : []),
-        ].join(","),
-      },
+      environment: apiEnvironment,
     });
     // New tasks only start once the release agents are in the table.
     api.node.addDependency(...releaseAgentSeeds.seeds);
+    // D121 (3): the turn worker, with the image and in the cluster of mango-api, in a stack
+    // nested in Core with the permissions of the turn only (D99).
+    const turnWorker = new TurnWorkerStack(this, "TurnWorker", {
+      installation: cfg,
+      network,
+      cluster: api.cluster,
+      image: api.image,
+      queue: chatTurns,
+      apiEnvironment,
+      turn: {
+        auxiliaryModel: cfg.models.auxiliary,
+        policyStoreArn: governance.policyStore.attrArn,
+        dataAccessRole: governance.dataAccessRole,
+        dataKey: governance.dataKey,
+        budgets: governance.budgets,
+        auditIndex: governance.auditIndex,
+        auditStream: governance.auditStream,
+        settings: governance.settings,
+        agents: governance.agents,
+        approvals: writeTools.approvals,
+        skills: skills.table,
+        invocationKey: tools.invocationKey,
+        configKey: tools.configKey,
+        grantCatalog: (grantee) => {
+          packPlatform.grantReadStatements(grantee);
+          remoteRelease.grantRead(grantee);
+        },
+      },
+    });
+    turnWorker.node.addDependency(...releaseAgentSeeds.seeds);
 
     // D71: what would otherwise fail in silence. Last, so that it sees every table of the stack.
     // In a stack nested in Core, with names of their own (D99).
@@ -719,6 +764,13 @@ export class CoreStack extends Stack {
       },
       refusingFunctions: { PreSignUp: identity.preSignUp },
       deadLetterQueues: { UninstallGuard: uninstallGuard.deadLetters },
+      // D121: the turn worker, its queue and the turns that were cut.
+      turnWorker: {
+        clusterName: api.cluster.clusterName,
+        serviceName: turnWorkerServiceName(cfg.namespace),
+        queue: chatTurns.queue,
+        deadLetters: chatTurns.deadLetters,
+      },
       // Alarms of the other nested stacks, by name: each nested stack is a leaf (D99 (4)).
       nestedAlarms: [...Object.values(CUR_RECONCILER_ALARMS), ...Object.values(EVAL_JUDGE_ALARMS)],
     });

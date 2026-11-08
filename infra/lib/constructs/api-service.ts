@@ -45,6 +45,10 @@ export const API_DRAIN_SECONDS = 120;
  */
 export class ApiService extends Construct {
   readonly service: ecs.FargateService;
+  /** The cluster of mango-api; the turn worker runs in it too (D121 (3)). */
+  readonly cluster: ecs.Cluster;
+  /** The image of mango-api: the turn worker runs the same one with another command (D121 (3)). */
+  readonly image: ecs.ContainerImage;
   /** Where the container writes: one line per log record, in the format of `app.main`. */
   readonly logGroup: logs.ILogGroup;
 
@@ -53,11 +57,11 @@ export class ApiService extends Construct {
     const cfg = props.installation;
     const { vpc, listener } = props.network;
 
-    const cluster = new ecs.Cluster(this, "Cluster", {
+    const cluster = (this.cluster = new ecs.Cluster(this, "Cluster", {
       clusterName: mangoName(cfg.namespace, "api"),
       vpc,
       containerInsightsV2: ecs.ContainerInsights.ENABLED,
-    });
+    }));
 
     const taskDef = new ecs.FargateTaskDefinition(this, "Task", {
       family: mangoName(cfg.namespace, "api"),
@@ -76,22 +80,23 @@ export class ApiService extends Construct {
       removalPolicy: cfg.retainData ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
     });
     this.logGroup = logGroup;
-    taskDef.addContainer("api", {
-      image: props.image
-        ? // The execution role gets pull on that one repository; the repository policy of the
-          // provider admits the customer's organization.
-          ecs.ContainerImage.fromEcrRepository(
-            ecr.Repository.fromRepositoryAttributes(this, "Image", {
-              repositoryArn: props.image.repositoryArn,
-              repositoryName: props.image.repositoryName,
-            }),
-            props.image.digest,
-          )
-        : ecs.ContainerImage.fromAsset(REPO_ROOT, {
-            file: "apps/api/Dockerfile",
-            platform: ecrAssets.Platform.LINUX_ARM64,
-            exclude: ["**/node_modules", "**/.venv", "**/cdk.out", "apps/web", "infra", "docs", ".git"],
+    this.image = props.image
+      ? // The execution role gets pull on that one repository; the repository policy of the
+        // provider admits the customer's organization.
+        ecs.ContainerImage.fromEcrRepository(
+          ecr.Repository.fromRepositoryAttributes(this, "Image", {
+            repositoryArn: props.image.repositoryArn,
+            repositoryName: props.image.repositoryName,
           }),
+          props.image.digest,
+        )
+      : ecs.ContainerImage.fromAsset(REPO_ROOT, {
+          file: "apps/api/Dockerfile",
+          platform: ecrAssets.Platform.LINUX_ARM64,
+          exclude: ["**/node_modules", "**/.venv", "**/cdk.out", "apps/web", "infra", "docs", ".git"],
+        });
+    taskDef.addContainer("api", {
+      image: this.image,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "api", logGroup }),
       environment: { ...props.environment, AWS_DEFAULT_REGION: Stack.of(this).region },
       portMappings: [{ containerPort: 8000 }],

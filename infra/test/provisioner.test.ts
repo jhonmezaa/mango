@@ -508,7 +508,7 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
     expect(invoke.Resource).toEqual([harnesses, `${harnesses}/harness-endpoint/*`, runtimes, `${runtimes}/*`]);
   });
 
-  it("is the only role that can invoke a harness, but for the evals canary on the evals harness", () => {
+  it("is the only role that can invoke a harness, but for the turn worker and the evals canary on the evals harness", () => {
     const judgeRole = Object.keys(resources).find(
       (id) => resources[id]!.Type === "AWS::IAM::Role" && resources[id]!.Properties.RoleName === `Mango-${ns}-EvalJudge`,
     );
@@ -523,6 +523,14 @@ describe("mango-api and the provisioner (TM-M2, TM-M11)", () => {
         expect(JSON.stringify(invoking.map((s) => s.Resource)), id).toMatch(/harness\/Mango_[a-z0-9]+_a_evals-\*/);
         expect(JSON.stringify(invoking.map((s) => s.Resource)), id).not.toMatch(/_a_\*/);
         expect(JSON.stringify(invoking.map((s) => s.Resource)), id).toMatch(/runtime\/harness_Mango_[a-z0-9]+_a_evals-\*/);
+        continue;
+      }
+      // D121 (3): the turn worker runs the chat turns, with the same harnesses as mango-api.
+      const worker = Object.keys(resources).find(
+        (r) => resources[r]!.Type === "AWS::IAM::Role" && resources[r]!.Properties.RoleName === `Mango-${ns}-TurnWorker`,
+      );
+      if (JSON.stringify(resource.Properties.Roles) === JSON.stringify([{ Ref: worker }])) {
+        expect(JSON.stringify(invoking.map((s) => s.Resource)), id).toMatch(/harness\/Mango_[a-z0-9]+_a_\*/);
         continue;
       }
       expect(resource.Properties.Roles, id).toEqual([{ Ref: apiRoleId }]);

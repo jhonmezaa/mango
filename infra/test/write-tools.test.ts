@@ -66,6 +66,7 @@ function grants(): { roles: string[]; statement: Statement }[] {
 
 const apiRoleId = logicalId("AWS::IAM::Role", { RoleName: `Mango-${ns}-ApiTask` });
 const executorRoleId = logicalId("AWS::IAM::Role", { RoleName: `Mango-${ns}-ApprovalExecutor` });
+const workerRoleId = logicalId("AWS::IAM::Role", { RoleName: `Mango-${ns}-TurnWorker` });
 const brokerId = logicalId("AWS::IAM::Role", { RoleName: `Mango-${ns}-OperateBroker` });
 const tableId = logicalId("AWS::DynamoDB::GlobalTable", { TableName: `Mango-${ns}-Approvals` });
 const executorFnId = logicalId("AWS::Lambda::Function", { FunctionName: `Mango-${ns}-ApprovalExecutor` });
@@ -125,10 +126,19 @@ describe("approvals table", () => {
     expect(onTable.map((g) => [g.statement.Sid, g.roles]).sort()).toEqual(
       [
         ["ApprovalsTable", [apiRoleId]],
+        // D121: the turn worker creates requests and marks their outcome noticed (below).
+        ["ApprovalOutcomeNoticed", [workerRoleId]],
+        ["ApprovalRequests", [workerRoleId]],
         ["SpendApprovalAtTheExecutor", [executorRoleId]],
         ["SpendApprovalAtTheGateway", [interceptorRoleId]],
       ].sort(),
     );
+    const noticed = onTable.find((g) => g.statement.Sid === "ApprovalOutcomeNoticed")!.statement;
+    expect(actions(noticed)).toEqual(["dynamodb:UpdateItem"]);
+    expect(noticed.Condition).toEqual({
+      "ForAllValues:StringEquals": { "dynamodb:Attributes": ["PK", "SK", "notified"] },
+      StringEqualsIfExists: { "dynamodb:ReturnValues": "NONE" },
+    });
     const claim = ["PK", "SK"];
     const expected: Record<string, string[]> = {
       SpendApprovalAtTheGateway: [...claim, "gateway_used_at"],

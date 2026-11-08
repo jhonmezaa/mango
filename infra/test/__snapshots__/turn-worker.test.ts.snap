@@ -1,0 +1,417 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the role of the turn worker > is only granted by the identity policies of this stack 1`] = `
+"[
+ {
+  "Action": [
+   "dynamodb:BatchGetItem",
+   "dynamodb:BatchWriteItem",
+   "dynamodb:ConditionCheckItem",
+   "dynamodb:DeleteItem",
+   "dynamodb:DescribeTable",
+   "dynamodb:GetItem",
+   "dynamodb:PutItem",
+   "dynamodb:Query",
+   "dynamodb:Scan",
+   "dynamodb:UpdateItem"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceBudgets381464C4",
+    "Arn"
+   ]
+  }
+ },
+ {
+  "Action": [
+   "dynamodb:BatchGetItem",
+   "dynamodb:BatchWriteItem",
+   "dynamodb:ConditionCheckItem",
+   "dynamodb:DeleteItem",
+   "dynamodb:DescribeTable",
+   "dynamodb:GetItem",
+   "dynamodb:PutItem",
+   "dynamodb:Query",
+   "dynamodb:Scan",
+   "dynamodb:UpdateItem"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceAuditIndex46BC3F00",
+    "Arn"
+   ]
+  }
+ },
+ {
+  "Action": [
+   "dynamodb:GetRecords",
+   "dynamodb:GetShardIterator"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceBudgets381464C4",
+    "Arn"
+   ]
+  }
+ },
+ {
+  "Action": [
+   "dynamodb:GetRecords",
+   "dynamodb:GetShardIterator"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceAuditIndex46BC3F00",
+    "Arn"
+   ]
+  }
+ },
+ {
+  "Action": [
+   "firehose:PutRecord",
+   "firehose:PutRecordBatch"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceAuditStream5E786922",
+    "Arn"
+   ]
+  }
+ },
+ {
+  "Action": [
+   "kms:Decrypt",
+   "kms:DescribeKey",
+   "kms:Encrypt",
+   "kms:GenerateDataKey*",
+   "kms:ReEncrypt*"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceDataKeyA7CD2429",
+    "Arn"
+   ]
+  }
+ },
+ {
+  "Action": [
+   "dynamodb:UpdateItem"
+  ],
+  "Condition": {
+   "ForAllValues:StringEquals": {
+    "dynamodb:Attributes": [
+     "PK",
+     "SK",
+     "notified"
+    ]
+   },
+   "StringEqualsIfExists": {
+    "dynamodb:ReturnValues": "NONE"
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "WriteToolsApprovals5FF2BF2F",
+    "Arn"
+   ]
+  },
+  "Sid": "ApprovalOutcomeNoticed"
+ },
+ {
+  "Action": [
+   "dynamodb:GetItem",
+   "dynamodb:PutItem",
+   "dynamodb:Query"
+  ],
+  "Effect": "Allow",
+  "Resource": [
+   {
+    "Fn::GetAtt": [
+     "WriteToolsApprovals5FF2BF2F",
+     "Arn"
+    ]
+   },
+   {
+    "Fn::Join": [
+     "",
+     [
+      {
+       "Fn::GetAtt": [
+        "WriteToolsApprovals5FF2BF2F",
+        "Arn"
+       ]
+      },
+      "/index/ByRequester"
+     ]
+    ]
+   }
+  ],
+  "Sid": "ApprovalRequests"
+ },
+ {
+  "Action": [
+   "bedrock:InvokeModel"
+  ],
+  "Effect": "Allow",
+  "Resource": [
+   "arn:aws:bedrock:us-east-1:111111111111:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+   "arn:aws:bedrock:*::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0"
+  ],
+  "Sid": "AuxiliaryModel"
+ },
+ {
+  "Action": [
+   "sts:AssumeRole",
+   "sts:TagSession"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceDataAccessRoleF019E99D",
+    "Arn"
+   ]
+  },
+  "Sid": "ConversationDataRls"
+ },
+ {
+  "Action": [
+   "dynamodb:GetItem",
+   "dynamodb:UpdateItem"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "Skills01318460",
+    "Arn"
+   ]
+  },
+  "Sid": "CountSkills"
+ },
+ {
+  "Action": [
+   "secretsmanager:DescribeSecret",
+   "secretsmanager:GetSecretValue"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Ref": "ToolsInvocationKey80A8511B"
+  },
+  "Sid": "InvocationKey"
+ },
+ {
+  "Action": [
+   "kms:Decrypt"
+  ],
+  "Condition": {
+   "StringEquals": {
+    "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com"
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "ToolsConfigKey1E79320B",
+    "Arn"
+   ]
+  },
+  "Sid": "InvocationKeyDecrypt"
+ },
+ {
+  "Action": [
+   "bedrock-agentcore:InvokeAgentRuntime",
+   "bedrock-agentcore:InvokeHarness"
+  ],
+  "Effect": "Allow",
+  "Resource": [
+   "arn:aws:bedrock-agentcore:us-east-1:111111111111:harness/Mango_poc_a_*",
+   "arn:aws:bedrock-agentcore:us-east-1:111111111111:harness/Mango_poc_a_*/harness-endpoint/*",
+   "arn:aws:bedrock-agentcore:us-east-1:111111111111:runtime/harness_Mango_poc_a_*",
+   "arn:aws:bedrock-agentcore:us-east-1:111111111111:runtime/harness_Mango_poc_a_*/*"
+  ],
+  "Sid": "InvokeAgentHarnesses"
+ },
+ {
+  "Action": [
+   "ecs:GetTaskProtection",
+   "ecs:UpdateTaskProtection"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::Join": [
+    "",
+    [
+     "arn:",
+     {
+      "Ref": "AWS::Partition"
+     },
+     ":ecs:us-east-1:111111111111:task/Mango-poc-api/*"
+    ]
+   ]
+  },
+  "Sid": "OwnTaskProtection"
+ },
+ {
+  "Action": [
+   "verifiedpermissions:IsAuthorized"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernancePolicyStore6D469F79",
+    "Arn"
+   ]
+  },
+  "Sid": "PlatformAuthorization"
+ },
+ {
+  "Action": [
+   "dynamodb:BatchGetItem",
+   "dynamodb:GetItem",
+   "dynamodb:Query"
+  ],
+  "Effect": "Allow",
+  "Resource": [
+   {
+    "Fn::GetAtt": [
+     "GovernanceAgents4AEDC5BA",
+     "Arn"
+    ]
+   },
+   {
+    "Fn::Join": [
+     "",
+     [
+      {
+       "Fn::GetAtt": [
+        "GovernanceAgents4AEDC5BA",
+        "Arn"
+       ]
+      },
+      "/index/ByStatus"
+     ]
+    ]
+   },
+   {
+    "Fn::Join": [
+     "",
+     [
+      {
+       "Fn::GetAtt": [
+        "GovernanceAgents4AEDC5BA",
+        "Arn"
+       ]
+      },
+      "/index/ByCreator"
+     ]
+    ]
+   }
+  ],
+  "Sid": "ReadAgents"
+ },
+ {
+  "Action": [
+   "sqs:ChangeMessageVisibility",
+   "sqs:DeleteMessage",
+   "sqs:ReceiveMessage"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "ChatTurnsQueue8485694C",
+    "Arn"
+   ]
+  },
+  "Sid": "ReadChatTurns"
+ },
+ {
+  "Action": [
+   "kms:Decrypt"
+  ],
+  "Condition": {
+   "StringEquals": {
+    "kms:ViaService": "sqs.us-east-1.amazonaws.com",
+    "kms:EncryptionContext:aws:sqs:arn": {
+     "Fn::GetAtt": [
+      "ChatTurnsQueue8485694C",
+      "Arn"
+     ]
+    }
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "ChatTurnsKeyDE228776",
+    "Arn"
+   ]
+  },
+  "Sid": "ReadChatTurnsKey"
+ },
+ {
+  "Action": [
+   "dynamodb:BatchGetItem",
+   "dynamodb:GetItem",
+   "dynamodb:Query"
+  ],
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceSettings764FAD34",
+    "Arn"
+   ]
+  },
+  "Sid": "ReadSettings"
+ },
+ {
+  "Action": [
+   "kms:GetPublicKey"
+  ],
+  "Condition": {
+   "StringEquals": {
+    "kms:RequestAlias": "alias/Mango-poc-remote-mcp"
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::Join": [
+    "",
+    [
+     "arn:",
+     {
+      "Ref": "AWS::Partition"
+     },
+     ":kms:us-east-1:111111111111:key/*"
+    ]
+   ]
+  },
+  "Sid": "RemoteMcpPublicKey"
+ },
+ {
+  "Action": [
+   "kms:Decrypt",
+   "kms:Encrypt",
+   "kms:GenerateDataKey"
+  ],
+  "Condition": {
+   "StringEquals": {
+    "kms:ViaService": "dynamodb.us-east-1.amazonaws.com"
+   }
+  },
+  "Effect": "Allow",
+  "Resource": {
+   "Fn::GetAtt": [
+    "GovernanceDataKeyA7CD2429",
+    "Arn"
+   ]
+  },
+  "Sid": "TablesKey"
+ }
+]"
+`;

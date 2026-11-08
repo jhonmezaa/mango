@@ -48,10 +48,19 @@ const STATEFUL = [
 ];
 
 describe("stacks nested in Core (D99)", () => {
-  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces and EvalJudge, and keep Core of a release under 400 resources", () => {
-    expect([...nested.keys()].sort()).toEqual(["Authorization", "CurReconciliation", "EvalJudge", "Operations", "RemoteMcp", "Traces"]);
-    expect(stackResources).toHaveLength(6);
-    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(400);
+  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge and TurnWorker, and keep Core of a release under 405 resources", () => {
+    expect([...nested.keys()].sort()).toEqual([
+      "Authorization",
+      "CurReconciliation",
+      "EvalJudge",
+      "Operations",
+      "RemoteMcp",
+      "Traces",
+      "TurnWorker",
+    ]);
+    expect(stackResources).toHaveLength(7);
+    // 405 since the turn worker (D121): its queues and key hold data and stay in Core (D99 (2)).
+    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(405);
   });
 
   it("are created from a template of the release's assets bucket, named by its content (D25, D69)", () => {

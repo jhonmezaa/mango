@@ -1,9 +1,9 @@
 # D99 · `Core` se parte en stacks anidados: alarmas operativas, políticas Cedar y MCP remotos
 
 - **Estado:** vigente
-- **Fecha:** 2026-10-27 (elegida por el dueño ese día, por menú: «Anidar además algo grande de hoy»; y el bloque, «Cedar + alarms renamed»)
+- **Fecha:** 2026-10-27 (elegida por el dueño ese día, por menú: «Anidar además algo grande de hoy»; y el bloque, «Cedar + alarms renamed»); precisada el 2026-11-07 por D121 (el stack anidado `TurnWorker` y el tope de `Core` de una release, elegidos por el dueño ese día, por menú: «Anidado TurnWorker + 405 (Recomendada)»)
 - **Precisa / reemplaza a:** precisa [D25](D025-recursos-creados-en-runtime.md) (las plantillas anidadas son plantillas pre-sintetizadas de la release), [D58](D058-distribucion-para-clientes.md) (qué publica una release y qué verifica quien instala), [D69](D069-assets-por-contenido-y-prefijo-unico.md) (nombre por contenido también para las plantillas anidadas), [D71](D071-alarmas-operativas-y-tablero.md) (nombres de las alarmas operativas y del tablero) y [D77](D077-tags-del-stack-en-lo-que-cloudformation-no-etiqueta.md) (el etiquetador lee los stacks anidados)
-- **Precisada por:** —
+- **Precisada por:** [D121](D121-trabajador-de-turnos.md) (10) (un stack anidado más, `TurnWorker`, y el tope de recursos de `Core` de una release en el test, de 400 a 405; el de 450 con packs no cambia)
 
 ## Decisión
 
