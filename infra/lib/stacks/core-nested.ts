@@ -80,6 +80,26 @@ abstract class CoreNestedStack extends NestedStack {
     this.setParameter("Namespace", installation.namespace);
     return { ...installation, namespace: parameter.valueAsString };
   }
+
+  /**
+   * The Availability Zone ids as this stack names them. In a release they are items of Core's
+   * `AvailabilityZoneIds` list parameter; a nested stack only takes strings, so each id goes in
+   * a `String` parameter of its own and Core picks the item (`Fn::Select` in Core).
+   */
+  protected zonesOf(installation: Installation): Installation {
+    const zones = installation.availabilityZoneIds;
+    if (!zones.some((zone) => Token.isUnresolved(zone))) return installation;
+    const named = zones.map((zone, index) => {
+      const name = `AvailabilityZoneId${index + 1}`;
+      const parameter = new CfnParameter(this, name, {
+        type: "String",
+        description: `Availability Zone id ${index + 1} of Core`,
+      });
+      this.setParameter(name, zone);
+      return parameter.valueAsString as typeof zone;
+    });
+    return { ...installation, availabilityZoneIds: named };
+  }
 }
 
 /** The operational alarms and the dashboard of the installation (D71), `Mango-<ns>-ops-…`. */
@@ -296,7 +316,7 @@ export class SandboxStack extends CoreNestedStack {
 
   constructor(scope: Construct, id: string, props: SandboxStackProps) {
     super(scope, id, "code sandbox");
-    const installation = this.namespaceOf(props.installation);
+    const installation = this.zonesOf(this.namespaceOf(props.installation));
     this.sandbox = new CodeSandbox(this, "CodeSandbox", {
       installation,
       vpcId: props.vpcId,

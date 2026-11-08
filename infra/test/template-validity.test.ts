@@ -35,11 +35,19 @@ const stacks: Stack[] = [
   new MemberStack(app, "Member"),
   new OrgAccessStack(app, "OrgAccess", {}),
 ];
+interface Parameter {
+  Type: string;
+}
 const templates = new Map<string, Record<string, Resource>>();
+const parameters = new Map<string, Record<string, Parameter>>();
 for (const stack of stacks) {
-  templates.set(stack.node.id, (Template.fromStack(stack).toJSON() as { Resources: Record<string, Resource> }).Resources);
+  const root = Template.fromStack(stack).toJSON() as { Resources: Record<string, Resource>; Parameters?: Record<string, Parameter> };
+  templates.set(stack.node.id, root.Resources);
+  parameters.set(stack.node.id, root.Parameters ?? {});
   for (const nested of nestedStacks(stack)) {
-    templates.set(`${stack.node.id}/${nested.node.id}`, nestedTemplate(nested).Resources as Record<string, Resource>);
+    const template = nestedTemplate(nested);
+    templates.set(`${stack.node.id}/${nested.node.id}`, template.Resources as Record<string, Resource>);
+    parameters.set(`${stack.node.id}/${nested.node.id}`, (template.Parameters ?? {}) as Record<string, Parameter>);
   }
 }
 
@@ -47,6 +55,31 @@ describe("templates CloudFormation accepts", () => {
   it("cover every stack of the release and the stacks nested in Core", () => {
     expect([...templates.keys()]).toEqual(expect.arrayContaining(["Core", "PackNetwork", "Payer", "Member", "OrgAccess"]));
     expect([...templates.keys()].filter((name) => name.startsWith("Core/")).length).toBeGreaterThan(0);
+  });
+
+  // A nested stack takes only strings: a list parameter of Core passed whole is rejected when the
+  // change set is created ("Value of property Parameters must be an object with String (or
+  // simple type) properties"). Seen updating a customer's Core to v0.1.0-g41f0f27, 2026-11-08.
+  it("pass only strings to the parameters of a nested stack", () => {
+    const lists: string[] = [];
+    let nestedResources = 0;
+    for (const [name, resources] of templates) {
+      const own = parameters.get(name) ?? {};
+      for (const [id, resource] of Object.entries(resources)) {
+        if (resource.Type !== "AWS::CloudFormation::Stack") continue;
+        nestedResources += 1;
+        const passed = (resource.Properties?.Parameters ?? {}) as Record<string, unknown>;
+        for (const [key, value] of Object.entries(passed)) {
+          const ref = (value as { Ref?: unknown } | null)?.Ref;
+          const type = typeof ref === "string" ? own[ref]?.Type : undefined;
+          if (Array.isArray(value) || (type !== undefined && type !== "String" && type !== "Number")) {
+            lists.push(`${name}: ${id}.${key}`);
+          }
+        }
+      }
+    }
+    expect(nestedResources).toBeGreaterThan(0);
+    expect(lists).toEqual([]);
   });
 
   it("never give a metric filter an empty list of dimensions", () => {
