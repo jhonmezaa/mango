@@ -225,6 +225,7 @@ describe("the memory once on", () => {
     });
     for (const sid of ["WorkerMemoryEvents", "WorkerMemoryRecall"]) expect(policy[sid]!.Resource).toEqual(memoryArn);
     expect([...WORKER_MEMORY_ACTIONS].sort()).toEqual(["bedrock-agentcore:CreateEvent", "bedrock-agentcore:RetrieveMemoryRecords"]);
+    expect(actions(policy.WorkerMemoryKey!).sort()).toEqual(["kms:Decrypt", "kms:DescribeKey", "kms:GenerateDataKey"]);
     expect(policy.WorkerMemoryKey!.Condition).toEqual({
       StringEquals: { "kms:ViaService": `bedrock-agentcore.${cfg.region}.amazonaws.com` },
     });
@@ -236,7 +237,11 @@ describe("the memory once on", () => {
     expect(policy.ApiMemory!.Resource).toEqual(memoryArn);
     // A condition on the namespace would deny every call by record id, even on one's own (M0).
     expect(policy.ApiMemory!.Condition).toBeUndefined();
-    expect(actions(policy.ApiMemoryKey!).sort()).toEqual(["kms:Decrypt", "kms:GenerateDataKey"]);
+    // DescribeKey: AgentCore asks for it with the caller's identity on every read of records.
+    expect(actions(policy.ApiMemoryKey!).sort()).toEqual(["kms:Decrypt", "kms:DescribeKey", "kms:GenerateDataKey"]);
+    expect(policy.ApiMemoryKey!.Condition).toEqual({
+      StringEquals: { "kms:ViaService": `bedrock-agentcore.${cfg.region}.amazonaws.com` },
+    });
     for (const s of Object.values(policy)) {
       expect(actions(s).some((a) => a.endsWith(":*"))).toBe(false);
       expect(s.Resource).not.toBe("*");

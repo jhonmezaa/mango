@@ -163,11 +163,16 @@ export class AgentMemory extends Construct {
     };
   }
 
-  /** The key through the service only: callers never decrypt the memory themselves. */
+  /**
+   * The key through the service only: callers never decrypt the memory themselves. Reading
+   * records (`RetrieveMemoryRecords`, the listings of mango-api) makes AgentCore call
+   * `kms:DescribeKey` with the caller's identity: without it every read is `AccessDeniedException`
+   * while writing events still works (seen in CloudTrail on a customer install).
+   */
   private keyStatement(sid: string): iam.PolicyStatement {
     return new iam.PolicyStatement({
       sid,
-      actions: ["kms:Decrypt", "kms:GenerateDataKey"],
+      actions: ["kms:Decrypt", "kms:DescribeKey", "kms:GenerateDataKey"],
       resources: [this.key.keyArn],
       conditions: { StringEquals: { "kms:ViaService": `bedrock-agentcore.${Stack.of(this).region}.amazonaws.com` } },
     });

@@ -582,6 +582,7 @@ exports[`the role of the turn worker > is only granted by the identity policies 
  {
   "Action": [
    "kms:Decrypt",
+   "kms:DescribeKey",
    "kms:GenerateDataKey"
   ],
   "Condition": {
