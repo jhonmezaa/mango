@@ -293,3 +293,13 @@ def test_the_tool_schema_names_the_tools_of_the_target() -> None:
     from mango_core.textdocs import KINDS  # noqa: PLC0415
 
     assert tuple(kinds) == KINDS
+
+
+def test_create_says_it_is_not_for_charts() -> None:
+    """D118 (8): a chart or a table of data goes in the answer, never in a Canvas document."""
+    from pathlib import Path  # noqa: PLC0415
+
+    schema = json.loads((Path(__file__).parents[1] / "tool-schema.json").read_text())
+    create = schema[0]["description"]
+    assert "Never for a chart or a table of data" in create
+    assert "mango-chart" in create

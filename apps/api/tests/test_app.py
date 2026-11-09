@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mango_api import app as app_module
+from mango_api import harness
 from mango_api.agents_store import AgentVersion
 from mango_api.audit import AuditPage
 from mango_api.authz import ConversationResource
@@ -764,7 +765,9 @@ def test_harness_request_is_built_server_side(h: Harness) -> None:
         1000,
         300,
     )
-    assert request["systemPrompt"][0]["text"].startswith("You are FinOps.\n\nCurrent date")
+    assert request["systemPrompt"][0]["text"].startswith(
+        f"You are FinOps.\n\n{harness.CHARTS_LINE}\n\nCurrent date"
+    )
     (tool,) = request["tools"]
     assert (tool["type"], tool["name"]) == ("remote_mcp", "mango")
     remote = tool["config"]["remoteMcp"]

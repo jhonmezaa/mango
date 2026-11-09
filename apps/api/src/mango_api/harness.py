@@ -303,6 +303,26 @@ REMOTE_CONNECT_LINE = (
 """Platform line for agents with remote MCP tools: a model told to connect invents a link."""
 
 
+CHARTS_LINE = (
+    "Charts and tables of data go in your answer, where the user reads them. For a chart, "
+    "write a fenced block with the language mango-chart and one JSON object: chartType "
+    "(bar, line, pie or scatter), data (a list of row objects), xKey (the category or x "
+    "field), series (a list of {key, label}), optional valueFormat (compact, integer or raw), "
+    "valuePrefix or valueSuffix (such as $ or %) and meta {title, subtitle}; Mango draws it "
+    "there, interactive, at most 5000 rows and 20 series. A table of data is a Markdown "
+    "table. When you compute the data with run_python, draw it from the cell with "
+    "display_chart and display_table instead."
+)
+"""Platform line for every agent (D118 (8)): without it a model never writes the
+``mango-chart`` block the chat draws, and puts charts in a Canvas document instead."""
+
+CANVAS_CHARTS_LINE = (
+    "Never use the Canvas for a chart or a table of data: the Canvas is only for a document, "
+    "an app or code the user asked for, to edit or iterate on."
+)
+"""Platform line for versions with the Canvas tools (D124 (6), D118 (8))."""
+
+
 def _runs_code(allowed_tools: Iterable[str]) -> bool:
     return any(tool in allowed_tools for tool in code_allowed_tools())
 
@@ -340,6 +360,10 @@ def build_request(
     from the stored version. Invoke-time skills are added to the harness's, so an agent's own
     harness never gets them (D92 (4))."""
     date_line = f"Current date (UTC): {today or datetime.now(UTC).date().isoformat()}."
+    charts = CHARTS_LINE
+    if textdoc_names(agent.allowed_tools):
+        charts = f"{charts} {CANVAS_CHARTS_LINE}"
+    date_line = f"{charts}\n\n{date_line}"
     if _has_remote_tools(agent.allowed_tools):
         # The model never gets the consent URL (D94); left alone it invents one.
         date_line = f"{REMOTE_CONNECT_LINE}\n\n{date_line}"

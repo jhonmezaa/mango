@@ -1,7 +1,7 @@
 # D118 · Gráficas y tablas por un spec JSON cerrado, dibujadas por componentes propios
 
 - **Estado:** vigente
-- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; ninguna de las preguntas del dueño de ese día la eligió por sí sola) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)» · notas de la construcción W1, 2026-11-08, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07 · la construcción, punto 7, 2026-11-08, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07 (PR G1 + T1 del plan)
+- **Fecha:** 2026-11-07 (propuesta por un agente en el plan de capacidades del chat; ninguna de las preguntas del dueño de ese día la eligió por sí sola) · aceptada por el dueño el 2026-11-07, por menú: «Aceptar las cuatro (Recomendada)» · notas de la construcción W1, 2026-11-08, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07 · la construcción, punto 7, 2026-11-08, elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07 (PR G1 + T1 del plan) · las gráficas en el mensaje, punto 8, propuesto por un agente el 2026-11-08
 - **Precisa / reemplaza a:** — (ninguna regla cambia: el modelo solo produce datos JSON, nunca código ni HTML que se ejecute en la SPA); respeta [D24](D024-diseno-de-la-ui.md)
 - **Precisada por:** —
 
@@ -40,6 +40,11 @@ Origen: el plan de capacidades del chat ([`docs/specs/chat-capacidades-plan.md`]
 
   Además, como en el diseño, una gráfica sin título no tiene cabecera, así que tampoco «Copiar datos».
 
+
+**(8) Las gráficas, en el mensaje (2026-11-08; propuesto por un agente, pendiente de que el dueño lo acepte).** En la instalación del cliente, pedida una tabla y una gráfica, el agente escribió la tabla en el chat y la gráfica como un documento React del Canvas: el modelo nunca recibía instrucciones del bloque ```` ```mango-chart ```` (solo lo conocían la SPA y la documentación), y la descripción de `textdoc.create` lo invitaba a usar el Canvas para «un componente React» con Recharts. Desde este punto:
+- Toda versión recibe una línea de la plataforma en su prompt de sistema (`harness.CHARTS_LINE`, después de las instrucciones del creador): las gráficas y las tablas de datos van en la respuesta; una gráfica, como bloque `mango-chart` con su JSON (los campos del punto 1); una tabla, como tabla Markdown; y si los datos salen de `run_python`, con `display_chart` y `display_table` desde la celda.
+- Las versiones con el Canvas reciben además que el Canvas nunca es para una gráfica ni una tabla de datos ([D124](D124-canvas.md) (7)).
+- Instrucciones de la plataforma, iguales para todos los clientes (regla 8): ningún agente las cambia. Tests que fijan las dos líneas y la descripción de `textdoc.create`.
 ## Notas de la construcción (W1, 2026-11-08; elegida la opción recomendada por el agente principal, por delegación expresa del dueño del 2026-11-07)
 
 El bloque «Analizando» y la tarjeta de archivo de la ronda 40 están construidos ([D114](D114-code-interpreter-detras-del-gateway.md) (14), [D116](D116-archivos-del-chat.md) (13)). La gráfica y la tabla (G1 y T1 del plan) llevarán al pie la misma tarjeta para su CSV, con sus estados: no cambia nada de esta decisión.

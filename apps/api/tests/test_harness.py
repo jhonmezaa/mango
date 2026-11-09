@@ -12,7 +12,7 @@ import pytest
 from botocore.exceptions import ClientError, EventStreamError, ReadTimeoutError
 
 from mango_api import harness
-from mango_core.harness_tools import code_allowed_tools
+from mango_core.harness_tools import code_allowed_tools, textdoc_allowed_tools
 
 from .harness_wire import event_frame, wire_stream
 
@@ -1375,3 +1375,22 @@ def test_an_agent_with_remote_tools_is_told_never_to_write_a_connect_link() -> N
     assert text.endswith("Current date (UTC): 2026-10-25.")
     plain = _request(_invocation())["systemPrompt"][0]["text"]
     assert harness.REMOTE_CONNECT_LINE not in plain
+
+
+def test_every_agent_is_told_to_draw_charts_in_the_answer() -> None:
+    """D118 (8): without the platform line a model never writes the ``mango-chart`` block the
+    chat draws, and put a chart in a Canvas React document instead (seen on a customer install)."""
+    text = _request(_invocation())["systemPrompt"][0]["text"]
+    assert harness.CHARTS_LINE in text
+    assert "mango-chart" in harness.CHARTS_LINE
+    assert "display_chart" in harness.CHARTS_LINE
+    # Without the Canvas tools, nothing about the Canvas.
+    assert harness.CANVAS_CHARTS_LINE not in text
+    assert text.startswith("Eres un analista.\n\n" + harness.CHARTS_LINE)
+    assert text.endswith("Current date (UTC): 2026-10-25.")
+
+
+def test_a_version_with_the_canvas_is_told_it_is_not_for_charts() -> None:
+    agent = dataclasses.replace(_invocation(), allowed_tools=textdoc_allowed_tools())
+    text = _request(agent)["systemPrompt"][0]["text"]
+    assert f"{harness.CHARTS_LINE} {harness.CANVAS_CHARTS_LINE}" in text
