@@ -300,6 +300,9 @@ export interface SandboxStackProps extends CodeSandboxProps {
   readonly apiTaskRole: iam.IRole;
   /** The base guardrail, which mango-api asks about the texts of a chart or a table (D118 (7)). */
   readonly guardrailArn: string;
+  /** Its id and pinned version: the Canvas masks what it stores with them (D124 (8)). */
+  readonly guardrailId: string;
+  readonly guardrailVersion: string;
   /** The code connector behind the Gateway (D114 (1)): what it reaches of Core. */
   readonly connector: Omit<
     CodeConnectorProps,
@@ -356,6 +359,7 @@ export class SandboxStack extends CoreNestedStack {
       tasksClientId: c.tasksClientId,
       gateway: c.gateway,
       policyEngineId: c.policyEngineId,
+      guardrail: { arn: props.guardrailArn, id: props.guardrailId, version: props.guardrailVersion },
     });
     // D114 (16): the Code Interpreter waits for what in this stack does not read it. Its network
     // interfaces (`agentic_ai`) can stay attached for hours after it is deleted, and a rollback

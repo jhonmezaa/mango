@@ -126,3 +126,8 @@ Fijados el 2026-11-08 con la opción recomendada, por delegación expresa del du
 - Entradas cubiertas: las tres tools, las cinco rutas, el evento del turno, la nota, la exportación.
 - Fronteras representadas: modelo→conector (CV1, CV2, CV8), navegador→mango-api (CV1, CV6, CV7), mango-api→render (CV6), turno→modelo (CV4), SPA→segundo origen (CV3, y `ui-sandbox-threat-model.md`).
 - Runtime separado de CI: no hay piezas de build nuevas.
+
+## Precisión (2026-11-09): el guardrail base sobre lo que se guarda (D124 (8))
+
+Un documento con una contraseña cortaba cada turno siguiente de su conversación (el harness lo reenvía y su contenido no se enmascara). Ahora el conector pasa cada versión que escribe el agente por `ApplyGuardrail` (`OUTPUT`, versión fijada) antes de guardarla: guarda lo enmascarado, no guarda lo bloqueado (`blocked`) y no escribe si el guardrail no responde (falla cerrado). Efecto de seguridad: el Canvas ya no puede guardar una llave de AWS ni un número de tarjeta que el modelo escriba, y una contraseña queda enmascarada. Permiso nuevo del rol: `bedrock:ApplyGuardrail` solo sobre el guardrail base. Riesgo residual: lo que el detector no reconozca como contraseña sigue guardándose, como antes; las versiones de la persona no pasan por aquí.
+

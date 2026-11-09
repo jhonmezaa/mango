@@ -52,6 +52,7 @@ from mango_core.textdocs import (
     TextdocStoreUnavailableError,
 )
 from mango_textdoc.audit import AuditWriter
+from mango_textdoc.screen import ScreenUnavailableError, make_screen
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -134,6 +135,8 @@ class Settings:
     audit_stream: str
     audit_index_table: str
     region: str
+    guardrail_id: str
+    guardrail_version: str
     tasks_client_id: str = ""
 
     @staticmethod
@@ -150,6 +153,8 @@ class Settings:
             audit_stream=env["AUDIT_STREAM"],
             audit_index_table=env["AUDIT_INDEX_TABLE"],
             region=env["AWS_REGION"],
+            guardrail_id=env["GUARDRAIL_ID"],
+            guardrail_version=env["GUARDRAIL_VERSION"],
             tasks_client_id=env.get("TASKS_CLIENT_ID", ""),
         )
 
@@ -233,6 +238,8 @@ class Deps:
     """The documents of one person (``sub``), with their row-level security credentials."""
     calls: SharedRateLimiter
     audit: AuditWriter
+    screen: Callable[[str], str]
+    """A version as it may be stored: masked or refused by the base guardrail (``screen``)."""
 
 
 @cache
@@ -263,6 +270,11 @@ def _deps() -> Deps:
             settings.audit_stream,
             dynamodb,
             settings.audit_index_table,
+        ),
+        screen=make_screen(
+            boto3.client("bedrock-runtime", config=_AWS_CONFIG),
+            settings.guardrail_id,
+            settings.guardrail_version,
         ),
     )
 
@@ -370,7 +382,7 @@ def _create(call: _Call, store: TextdocStore, deps: Deps) -> dict[str, Any]:
         call.signed.conversation_id,
         title=args.title,
         kind=args.kind,
-        content=args.content,
+        content=deps.screen(args.content),
         by="agent",
         note="",
         turn_id=call.signed.turn_id,
@@ -405,6 +417,7 @@ def _update(call: _Call, store: TextdocStore, deps: Deps) -> dict[str, Any]:
         )
     else:
         content = args.content or ""
+    content = deps.screen(content)
     if content == latest.content:
         raise TextdocError("unchanged", "the new text is the same as the latest version")
     version = store.add_version(
@@ -488,6 +501,9 @@ def _answer(call: _Call, deps: Deps) -> dict[str, Any]:
         return _error(exc.code, str(exc))
     except TextdocStoreUnavailableError:
         logger.exception("the Canvas store could not be reached")
+        raise _UNAVAILABLE from None
+    except ScreenUnavailableError:
+        logger.exception("the base guardrail could not check a Canvas version")
         raise _UNAVAILABLE from None
     _log(call, "ok")
     return answer

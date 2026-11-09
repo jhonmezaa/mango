@@ -449,6 +449,8 @@ export class CoreStack extends Stack {
       apiTaskRole,
       // D118 (7): mango-api asks the base guardrail about the texts of a chart or a table.
       guardrailArn: agentPlatform.guardrail.attrGuardrailArn,
+      guardrailId: agentPlatform.guardrail.attrGuardrailId,
+      guardrailVersion: agentPlatform.guardrailVersion.attrVersion,
       connector: {
         conversations: governance.conversations,
         dataKey: governance.dataKey,

@@ -6,12 +6,13 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any
 
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from moto import mock_aws
 
 from mango_core.identity import IdentityError
@@ -26,6 +27,7 @@ from mango_textdoc.handler import (
     Settings,
     handle,
 )
+from mango_textdoc.screen import CHUNK_CHARS, make_screen
 
 REGION = "us-east-1"
 CONV = "c" * 32
@@ -35,6 +37,40 @@ USERS = {
     "token-ana": {"sub": "user-ana", "cognito:groups": ["ventas"]},
     "token-bob": {"sub": "user-bob", "cognito:groups": ["ventas"]},
 }
+
+
+PASSWORD = "Clave#Prueba2026!"
+ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
+
+
+class FakeGuardrail:
+    """``apply_guardrail`` of the base guardrail as the install has it (D34, 2026-11-09): a
+    password is masked, an access key is blocked; ``fail`` makes the call fail."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.fail = False
+
+    def apply_guardrail(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        if self.fail:
+            raise ClientError({"Error": {"Code": "ThrottlingException"}}, "ApplyGuardrail")
+        text = kwargs["content"][0]["text"]["text"]
+        if ACCESS_KEY in text:
+            pii = [{"type": "AWS_ACCESS_KEY", "action": "BLOCKED"}]
+            return {
+                "action": "GUARDRAIL_INTERVENED",
+                "outputs": [{"text": "No puedo mostrar esta respuesta."}],
+                "assessments": [{"sensitiveInformationPolicy": {"piiEntities": pii}}],
+            }
+        if PASSWORD in text:
+            pii = [{"type": "PASSWORD", "action": "ANONYMIZED"}]
+            return {
+                "action": "GUARDRAIL_INTERVENED",
+                "outputs": [{"text": text.replace(PASSWORD, "{PASSWORD}")}],
+                "assessments": [{"sensitiveInformationPolicy": {"piiEntities": pii}}],
+            }
+        return {"action": "NONE", "outputs": [], "assessments": []}
 
 
 @dataclass
@@ -84,6 +120,8 @@ def world() -> Iterator[World]:
             audit_stream="audit",
             audit_index_table="audit-index",
             region=REGION,
+            guardrail_id="guardrail",
+            guardrail_version="2",
         )
         deps = Deps(
             settings=settings,
@@ -93,6 +131,7 @@ def world() -> Iterator[World]:
                 RateLimitStore(db, "rate-limits"), "textdoc.write", CALLS_PER_MINUTE, 60
             ),
             audit=AuditWriter(firehose, "audit", db, "audit-index"),
+            screen=make_screen(FakeGuardrail(), "guardrail", "2"),
         )
         yield World(deps, db, records)
 
@@ -303,3 +342,74 @@ def test_create_says_it_is_not_for_charts() -> None:
     create = schema[0]["description"]
     assert "Never for a chart or a table of data" in create
     assert "mango-chart" in create
+
+
+# --- The base guardrail on what is stored (D124 (8)) -----------------------------------------
+
+
+def _latest_text(world: World, doc_id: str) -> str:
+    store = world.deps.store_for("user-ana")
+    latest = store.latest(CONV, doc_id)
+    assert latest is not None and latest.content is not None
+    return latest.content
+
+
+def test_a_password_the_agent_writes_is_stored_masked(world: World) -> None:
+    """A password left in a document came back on every turn and cut the conversation."""
+    doc_id = _create(world, content=f"## Contraseñas\n\nEjemplo: {PASSWORD}\n")
+    assert PASSWORD not in _latest_text(world, doc_id)
+    assert "{PASSWORD}" in _latest_text(world, doc_id)
+    result = _call(
+        world,
+        "update",
+        {"textdoc_id": doc_id, "edits": [{"find": "{PASSWORD}", "replace": PASSWORD}]},
+    )
+    # The edit only put the password back: once masked, the text is the same, so nothing is new.
+    assert result["error"]["code"] == "unchanged"
+    _call(world, "update", {"textdoc_id": doc_id, "content": f"Nueva: {PASSWORD} y más texto."})
+    assert _latest_text(world, doc_id) == "Nueva: {PASSWORD} y más texto."
+
+
+def test_what_the_guardrail_blocks_is_not_stored(world: World) -> None:
+    result = _call(
+        world,
+        "create",
+        {"title": "Llaves", "kind": "document", "content": f"La llave es {ACCESS_KEY}."},
+    )
+    assert result["error"]["code"] == "blocked"
+    assert ACCESS_KEY not in json.dumps(result)
+
+
+def test_nothing_is_written_when_the_guardrail_cannot_be_asked(world: World) -> None:
+    guardrail = FakeGuardrail()
+    guardrail.fail = True
+    world_deps = replace(world.deps, screen=make_screen(guardrail, "g", "2"))
+    result = handle(
+        {"title": "x", "kind": "document", "content": "texto", RESERVED_CONTEXT_ARG: _ctx()},
+        SimpleNamespace(
+            client_context=SimpleNamespace(custom={"bedrockAgentCoreToolName": "textdoc___create"})
+        ),
+        world_deps,
+    )
+    assert result["error"]["code"] == "unavailable"
+
+
+def test_a_long_document_is_checked_piece_by_piece_at_line_ends() -> None:
+    guardrail = FakeGuardrail()
+    screen = make_screen(guardrail, "g", "2")
+    line = "x" * 99 + "\n"
+    text = line * (CHUNK_CHARS // len(line) * 2 + 3) + f"fin {PASSWORD}"
+    stored = screen(text)
+    assert len(guardrail.calls) >= 3
+    for call in guardrail.calls:
+        piece = call["content"][0]["text"]["text"]
+        assert len(piece) <= CHUNK_CHARS
+        assert call["source"] == "OUTPUT" and call["guardrailVersion"] == "2"
+    assert stored == text.replace(PASSWORD, "{PASSWORD}")
+
+
+def test_create_says_documents_never_hold_passwords() -> None:
+    from pathlib import Path  # noqa: PLC0415
+
+    schema = json.loads((Path(__file__).parents[1] / "tool-schema.json").read_text())
+    assert "Never put a password in a document" in schema[0]["description"]

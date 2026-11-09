@@ -70,6 +70,9 @@ export interface TextdocConnectorProps {
   };
   /** Cedar policy engine of the Gateway (L2, default deny). */
   readonly policyEngineId: string;
+  /** The base guardrail and its pinned version: every version a document gets is masked with it
+   * before it is stored (D124 (8)), so a password never stays in the Canvas. */
+  readonly guardrail: { readonly arn: string; readonly id: string; readonly version: string };
 }
 
 /**
@@ -136,6 +139,11 @@ export class TextdocConnector extends Construct {
           },
         }),
         new iam.PolicyStatement({
+          sid: "MaskWithBaseGuardrail",
+          actions: ["bedrock:ApplyGuardrail"],
+          resources: [props.guardrail.arn],
+        }),
+        new iam.PolicyStatement({
           sid: "WriteAuditTrail",
           actions: ["firehose:PutRecord"],
           resources: [props.auditStream.deliveryStreamArn],
@@ -173,6 +181,8 @@ export class TextdocConnector extends Construct {
         RATE_LIMITS_TABLE: props.rateLimits.tableName,
         AUDIT_STREAM: props.auditStream.deliveryStreamName,
         AUDIT_INDEX_TABLE: props.auditIndex.tableName,
+        GUARDRAIL_ID: props.guardrail.id,
+        GUARDRAIL_VERSION: props.guardrail.version,
       },
       environmentEncryption: props.configKey,
     }).function;

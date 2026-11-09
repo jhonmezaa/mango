@@ -96,7 +96,9 @@ describe("Canvas connector (D124)", () => {
     expect(bySid("OnePersonsRows")).toMatchObject({ Action: "sts:AssumeRole" });
     const all = statements.flatMap(actions);
     expect(all.some((a) => a.startsWith("s3:"))).toBe(false);
-    expect(all.some((a) => a.startsWith("bedrock"))).toBe(false);
+    // Bedrock only to mask what it stores with the base guardrail (D124 (8)): never a model.
+    expect(all.filter((a) => a.startsWith("bedrock"))).toEqual(["bedrock:ApplyGuardrail"]);
+    expect(JSON.stringify(bySid("MaskWithBaseGuardrail").Resource)).toContain("GuardrailArn");
     expect(all.some((a) => a.startsWith("lambda:"))).toBe(false);
     const tables = statements.filter((s) =>
       actions(s).some((a) => a.startsWith("dynamodb:")),
@@ -171,6 +173,8 @@ describe("Canvas connector (D124)", () => {
     expect(Object.keys(env).some((k) => /SECRET|TOKEN|PASSWORD/.test(k))).toBe(
       false,
     );
+    // The pinned version of the base guardrail it masks with (D124 (8)), as a parameter of Core.
+    expect(Object.keys(env)).toEqual(expect.arrayContaining(["GUARDRAIL_ID", "GUARDRAIL_VERSION"]));
     expect(
       role.Properties.AssumeRolePolicyDocument.Statement[0].Principal,
     ).toEqual({ Service: "lambda.amazonaws.com" });
