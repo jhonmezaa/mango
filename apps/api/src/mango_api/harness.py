@@ -304,14 +304,17 @@ REMOTE_CONNECT_LINE = (
 
 
 CHARTS_LINE = (
-    "Charts and tables of data go in your answer, where the user reads them. For a chart, "
-    "write a fenced block with the language mango-chart and one JSON object: chartType "
-    "(bar, line, pie or scatter), data (a list of row objects), xKey (the category or x "
-    "field), series (a list of {key, label}), optional valueFormat (compact, integer or raw), "
-    "valuePrefix or valueSuffix (such as $ or %) and meta {title, subtitle}; Mango draws it "
+    "Charts and tables of data go in your answer, where the user reads them. When the data is "
+    "already in the conversation (the user's message or a tool's answer), draw it without "
+    "running code: write a fenced block with the language mango-chart and one JSON object: "
+    "chartType (bar, line, pie or scatter), data (a list of row objects), xKey (the category "
+    "or x field), series (a list of {key, label}), optional layout vertical for horizontal "
+    "bars when the category names are long, valueFormat (compact, integer or raw), "
+    "valuePrefix or valueSuffix (such as $ or %) and meta {title, subtitle}. Mango draws it "
     "there, interactive, at most 5000 rows and 20 series. A table of data is a Markdown "
-    "table. When you compute the data with run_python, draw it from the cell with "
-    "display_chart and display_table instead."
+    "table. Use run_python only when something has to be computed; then draw the result "
+    "from the cell with display_chart and display_table, and use matplotlib only for a "
+    "figure those cannot draw."
 )
 """Platform line for every agent (D118 (8)): without it a model never writes the
 ``mango-chart`` block the chat draws, and puts charts in a Canvas document instead."""

@@ -59,8 +59,35 @@ def setup(data: str, out: str) -> None:
         import matplotlib  # type: ignore[import-not-found]  # noqa: PLC0415
 
         matplotlib.use("Agg")
+        _track_saved_figures()
     except Exception:  # noqa: BLE001, S110 - without matplotlib there is nothing to set
         pass
+
+
+_SAVED: set[int] = set()
+"""Figures (``id``) the cell itself saved as an image: not captured again at its end."""
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg")
+
+
+def _track_saved_figures() -> None:
+    """Note each figure the cell saves as a PNG or JPEG: the same figure left open is that
+    image, so the end of the cell does not add a second copy of it (one figure, one image)."""
+    from matplotlib.figure import Figure  # type: ignore[import-not-found]  # noqa: PLC0415
+
+    original = Figure.savefig
+    if getattr(original, "_mango_tracked", False):
+        return
+
+    def savefig(self: Any, fname: Any, *args: Any, **kwargs: Any) -> Any:
+        result = original(self, fname, *args, **kwargs)
+        target = os.fspath(fname) if isinstance(fname, str | os.PathLike) else ""
+        fmt = str(kwargs.get("format") or "").lower()
+        if target.lower().endswith(_IMAGE_SUFFIXES) or fmt in {"png", "jpg", "jpeg"}:
+            _SAVED.add(id(self))
+        return result
+
+    savefig._mango_tracked = True  # type: ignore[attr-defined]
+    Figure.savefig = savefig
 
 
 def _safe_name(name: object, default: str) -> str:
@@ -164,6 +191,8 @@ def _save_figures(tag: str) -> None:
         return
     for index, number in enumerate(pyplot.get_fignums(), start=1):
         figure = pyplot.figure(number)
+        if id(figure) in _SAVED:
+            continue  # the cell saved it as an image already: that file is this figure
         figure.savefig(os.path.join(OUT, f"figure-{tag}-{index}.png"), dpi=110)
     pyplot.close("all")
 
@@ -208,6 +237,7 @@ def run(code: str, nonce: str, seconds: int) -> None:
     """Run one cell in the session's namespace, with a cutoff of ``seconds``, then report on
     one line after ``nonce`` what it did and which files it wrote."""
     _clear_out()
+    _SAVED.clear()
     started = time.time()
     status, error = "ok", None
     previous: Any = None

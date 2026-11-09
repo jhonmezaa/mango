@@ -56,3 +56,14 @@ def test_render_document_says_its_limits_and_what_it_takes() -> None:
     assert f"1 to {MAX_RENDER_PAGES}" in render["inputSchema"]["properties"]["pages"]["description"]
     for kind in ("Word", "Excel", "PowerPoint", "mango_docs.inspect_render"):
         assert kind in render["description"]
+
+
+def test_run_python_is_not_for_drawing_data_the_model_already_has() -> None:
+    """D118 (9): data already in the turn is drawn with a mango-chart block, not with code; from
+    code, display_chart before matplotlib."""
+    from pathlib import Path  # noqa: PLC0415
+
+    schema = json.loads((Path(__file__).parents[1] / "tool-schema.json").read_text())
+    run = next(t for t in schema if t["name"] == "run_python")["description"]
+    assert "Do not run code only to draw data you already have" in run
+    assert "preferred over matplotlib" in run

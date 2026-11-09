@@ -1422,6 +1422,10 @@ def test_every_agent_is_told_to_draw_charts_in_the_answer() -> None:
     assert harness.CHARTS_LINE in text
     assert "mango-chart" in harness.CHARTS_LINE
     assert "display_chart" in harness.CHARTS_LINE
+    # Data already in the turn is drawn without code (as ChatGPT does); code only to compute.
+    assert "without running code" in harness.CHARTS_LINE
+    assert "run_python only when something has to be computed" in harness.CHARTS_LINE
+    assert "layout vertical for horizontal bars" in harness.CHARTS_LINE
     # Without the Canvas tools, nothing about the Canvas.
     assert harness.CANVAS_CHARTS_LINE not in text
     assert text.startswith("Eres un analista.\n\n" + harness.CHARTS_LINE)
