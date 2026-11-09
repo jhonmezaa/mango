@@ -1502,3 +1502,34 @@ def test_a_guardrail_cut_without_a_trace_says_so(caplog: pytest.LogCaptureFixtur
 def test_the_invocation_asks_for_the_guardrail_trace() -> None:
     config = _request(_invocation())["model"]["bedrockModelConfig"]["additionalParams"]
     assert config["guardrailConfig"]["trace"] == "enabled"
+
+
+def _guardrail_end(text: str) -> harness.InvocationResult:
+    stream = [_text(text), {"messageStop": {"stopReason": "guardrail_intervened"}}]
+    result = harness.InvocationResult()
+    list(harness.run(_Client(stream), {}, result))  # type: ignore[arg-type]
+    return result
+
+
+def test_an_answer_the_guardrail_only_masked_is_not_a_cut() -> None:
+    """D34 (2026-11-09): masking a password ends the model's call in guardrail_intervened, yet
+    the whole answer arrived; the chat must not say «se cortó»."""
+    result = _guardrail_end("La guía cubre cuatro secciones; ejemplo: {PASSWORD}.")
+    assert result.stop_reason == harness.GUARDRAIL_MASKED
+
+
+@pytest.mark.parametrize("message", [harness.BLOCKED_INPUT_MESSAGE, harness.BLOCKED_OUTPUT_MESSAGE])
+def test_a_blocked_turn_is_still_a_cut(message: str) -> None:
+    assert _guardrail_end(message).stop_reason == "guardrail_intervened"
+    assert _guardrail_end("").stop_reason == "guardrail_intervened"
+
+
+def test_the_blocked_messages_are_the_guardrails() -> None:
+    """The texts the base guardrail answers with, as infra configures them."""
+    from pathlib import Path  # noqa: PLC0415
+
+    source = (Path(__file__).parents[3] / "infra/lib/constructs/agent-platform.ts").read_text(
+        encoding="utf-8"
+    )
+    assert f'"{harness.BLOCKED_INPUT_MESSAGE}"' in source
+    assert f'"{harness.BLOCKED_OUTPUT_MESSAGE}"' in source

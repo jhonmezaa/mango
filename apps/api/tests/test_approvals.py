@@ -1402,10 +1402,13 @@ def test_a_message_that_did_not_end_as_a_tool_call_asks_for_no_confirmation(
     assert env.executor.calls == []
     # The turn ends on that message, with its usage: answered, and nothing of the input.
     assert "error" not in kinds and kinds[-1] == "done"
-    assert events[-1][1]["stop_reason"] == stop_reason
+    # Text arrived and it is not the guardrail's blocked message: the guardrail only masked
+    # (D34, 2026-11-09), which still asks for nothing.
+    expected = "guardrail_masked" if stop_reason == "guardrail_intervened" else stop_reason
+    assert events[-1][1]["stop_reason"] == expected
     assert "team" not in json.dumps(events) and "team" not in json.dumps(env.audit.events)
     ((_user, completed),) = env.audit.named("agent.completed", outcome=None)
-    assert (completed["stop_reason"], completed["settlement"]) == (stop_reason, "final")
+    assert (completed["stop_reason"], completed["settlement"]) == (expected, "final")
     conversation = next(data for kind, data in events if kind == "conversation")
     assert env.conversations.sessions[("user-10", conversation["conversation_id"])].used_at == 0
 

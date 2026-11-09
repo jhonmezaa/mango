@@ -1764,7 +1764,7 @@ class ChatTurns:
         if (
             answered
             and services.memory is not None
-            and result.stop_reason != sessions.GUARDRAIL_STOP
+            and result.stop_reason not in (sessions.GUARDRAIL_STOP, sessions.GUARDRAIL_MASKED)
         ):
             memory.remember(
                 services.memory,

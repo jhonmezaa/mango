@@ -26,6 +26,8 @@ IDLE_MARGIN_SECONDS = 60
 """Reuse stops this long before AgentCore's idle timeout: the clocks are not the same."""
 LIFETIME_MARGIN_SECONDS = 60
 GUARDRAIL_STOP = "guardrail_intervened"
+GUARDRAIL_MASKED = "guardrail_masked"
+"""A turn whose answer the guardrail only masked (``harness.GUARDRAIL_MASKED``)."""
 CAP_STOP = "max_tokens"
 
 
@@ -143,12 +145,15 @@ def can_continue(result: InvocationResult) -> bool:
 
     Only asked of a turn that was answered: one that failed never gets here, and its session,
     which may hold a half-finished turn, is not continued. After a guardrail intervention the
-    session holds content that would be evaluated again on every later call. A turn that
+    session holds content that would be evaluated again on every later call; after one that
+    only masked the answer, it holds the answer as the model wrote it, before the mask. A turn that
     ended on a write tool call left the harness waiting for that tool. A turn cut at its
     token cap (D74) ended as an error in the harness: what its session kept of the cut
     message is not known, and the stored history is.
     """
     return not result.interrupted and result.stop_reason not in (
         GUARDRAIL_STOP,
+        # The harness's session keeps the model's answer as it wrote it, before the mask.
+        GUARDRAIL_MASKED,
         CAP_STOP,
     )

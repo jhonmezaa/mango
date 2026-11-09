@@ -184,6 +184,8 @@ def test_binding_changes_with_the_fingerprint_and_with_the_users_access() -> Non
         # The harness ends an invocation that reached its token cap as an error (D74).
         ("max_tokens", False),
         ("guardrail_intervened", False),
+        # The harness's session keeps the answer as the model wrote it, before the mask.
+        ("guardrail_masked", False),
     ],
 )
 def test_can_continue(stop_reason: str, ok: bool) -> None:

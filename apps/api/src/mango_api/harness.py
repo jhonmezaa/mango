@@ -310,6 +310,21 @@ REMOTE_CONNECT_LINE = (
 """Platform line for agents with remote MCP tools: a model told to connect invents a link."""
 
 
+BLOCKED_INPUT_MESSAGE = (
+    "No puedo procesar esta solicitud porque infringe las políticas de uso de Mango."
+)
+BLOCKED_OUTPUT_MESSAGE = (
+    "No puedo mostrar esta respuesta porque infringe las políticas de uso de Mango."
+)
+"""What the base guardrail answers when it blocks (``blockedInputMessaging`` and
+``blockedOutputsMessaging`` of ``infra/lib/constructs/agent-platform.ts``; a test keeps them
+equal)."""
+
+GUARDRAIL_MASKED = "guardrail_masked"
+"""Stop reason of a turn the guardrail only masked: the model reports ``guardrail_intervened``
+also when it masked a password in an answer that arrived whole (D34, 2026-11-09). Not a cut:
+the chat shows the answer as it is, without «se cortó»."""
+
 CHARTS_LINE = (
     "Charts and tables of data go in your answer, where the user reads them. When the data is "
     "already in the conversation (the user's message or a tool's answer), draw it without "
@@ -1157,6 +1172,11 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             "guardrail intervened: %s",
             json.dumps(result.guardrail or [{"trace": "none"}], separators=(",", ":")),
         )
+        if result.text.strip() and not any(
+            message in result.text for message in (BLOCKED_INPUT_MESSAGE, BLOCKED_OUTPUT_MESSAGE)
+        ):
+            # The whole answer arrived, with what the guardrail masked: not a cut.
+            result.stop_reason = GUARDRAIL_MASKED
     result.calls = recorded.done()
     if not result.interrupted:
         result.usage_final = reported and not owed
