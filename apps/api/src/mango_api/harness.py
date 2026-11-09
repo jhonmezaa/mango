@@ -503,6 +503,9 @@ class _SkillCalls:
     def start(self, index: int, tool_id: str, raw_name: str) -> bool:
         """Whether the call is one of these (and so must not be shown)."""
         if raw_name != SKILLS_TOOL:
+            # Block indexes start again with every message of the model: an index a skills call
+            # used earlier in the turn now belongs to this other call.
+            self._blocks.pop(index, None)
             return False
         self._blocks[index] = tool_id
         self._inputs[tool_id] = ""
@@ -510,8 +513,9 @@ class _SkillCalls:
 
     def add(self, index: int, piece: str) -> None:
         tool_id = self._blocks.get(index)
-        if tool_id is not None and len(self._inputs[tool_id]) < MAX_SKILL_INPUT_CHARS:
-            self._inputs[tool_id] = (self._inputs[tool_id] + piece)[:MAX_SKILL_INPUT_CHARS]
+        current = self._inputs.get(tool_id) if tool_id is not None else None
+        if tool_id is not None and current is not None and len(current) < MAX_SKILL_INPUT_CHARS:
+            self._inputs[tool_id] = (current + piece)[:MAX_SKILL_INPUT_CHARS]
 
     def answer(self, tool_id: str, *, failed: bool) -> bool:
         """Whether the answer belongs to one of these calls (and so must not be shown)."""

@@ -1290,6 +1290,44 @@ def test_loading_a_skill_is_counted_and_never_shown() -> None:
     ]
 
 
+def test_a_tool_call_at_the_index_a_loaded_skill_used_is_not_a_skill_call() -> None:
+    """Block indexes start again with every message of the model: after a skill is loaded (and
+    answered), a call to another tool at the same index must not be taken for it. It was a
+    KeyError that ended the turn (a Word document on a customer install, D119)."""
+    stream = [
+        *_skill_call("s1", 1, '{"skill_name": "docx"}'),
+        _tool_result("s1"),
+        _tool_at("t1", 1),
+        {"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"toolUse": {"input": '{"a":'}}}},
+        {"contentBlockDelta": {"contentBlockIndex": 1, "delta": {"toolUse": {"input": " 1}"}}}},
+        _stop(1),
+        _tool_result("t1"),
+        _text("Listo"),
+    ]
+    loaded: list[str] = []
+    calls: list[harness.ToolCall] = []
+    result = harness.InvocationResult()
+    request = {"allowedTools": ["@mango/x___t", "skills"]}
+    events = list(
+        harness.run(
+            _Client(stream),  # type: ignore[arg-type]
+            request,
+            result,
+            on_call=calls.append,
+            skills=frozenset({"docx"}),
+            on_skill=loaded.append,
+            clock=lambda: 0.0,
+        )
+    )
+    assert loaded == ["docx"]
+    assert [c.name for c in calls] == ["t"]
+    assert [e.data for e in events if e.kind == "tool"] == [
+        {"name": "t", "status": "started"},
+        {"name": "t", "status": "completed"},
+    ]
+    assert result.text == "Listo"
+
+
 def _invocation(**extra: Any) -> harness.AgentInvocation:
     return harness.AgentInvocation(
         harness_arn="arn:aws:bedrock-agentcore:us-east-1:111122223333:harness/h",
