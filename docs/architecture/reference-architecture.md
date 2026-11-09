@@ -543,7 +543,7 @@ Límites a tener presentes:
 - Los eventos de ingreso de Cognito se exportan a un log group propio, con retención de 365 días por defecto (D31).
 
 **Guardrails:**
-- **Hoy:** un guardrail base **compartido por todos los agentes** (D34), que el provisioner fija en cada harness. Bloquea ataques de prompt en la entrada, contenido dañino, llaves de AWS y datos de tarjetas; las contraseñas las enmascara (`ANONYMIZE`) en la entrada y en la salida, y la plataforma pide al modelo no escribirlas (excepción acordada con el dueño el 2026-11-09, D34). Cada cambio de su política crea una versión nueva, que es la que usan los turnos. Corre en modo síncrono: la respuesta se revisa antes de mostrarse y llega en bloques (D39).
+- **Hoy:** un guardrail base **compartido por todos los agentes** (D34), que el provisioner fija en cada harness. Bloquea ataques de prompt en la entrada, contenido dañino, llaves de AWS y datos de tarjetas; las contraseñas no las evalúa en la entrada y las enmascara (`ANONYMIZE`) en la salida, y la plataforma pide al modelo no escribirlas (excepción acordada con el dueño el 2026-11-09, D34; riesgo aceptado: una contraseña que pegue la persona llega al modelo sin enmascarar). Cada cambio de su política crea una versión nueva, que es la que usan los turnos. Corre en modo síncrono: la respuesta se revisa antes de mostrarse y llega en bloques (D39).
 - **Previsto:** forzarlo a nivel de cuenta u organización, un guardrail por agente y `ApplyGuardrail` sobre las salidas de tools y RAG (indirect prompt injection).
 - Los guardrails son el costo de gobernanza dominante: ~1 000 USD por 1M de turnos (estimación del plan, sin medir), y hoy no entran en ningún presupuesto.
 
@@ -1183,7 +1183,7 @@ Cada decisión vive en su propio archivo, en [`decisions/`](decisions/README.md)
 | D31 | Logs de actividad de Cognito y `BLOCK` en riesgo alto | vigente | 2026-10-01 | [D031-logs-de-cognito-y-block.md](decisions/D031-logs-de-cognito-y-block.md) |
 | D32 | Harness por agente e id del agente | vigente | 2026-10-01 | [D032-harness-por-agente.md](decisions/D032-harness-por-agente.md) |
 | D33 | Autorización de agentes y de sus tools | vigente | 2026-10-01 | [D033-autorizacion-de-agentes-y-tools.md](decisions/D033-autorizacion-de-agentes-y-tools.md) |
-| D34 | Guardrail y agentes de la release | vigente | 2026-10-01 · `PASSWORD` enmascarada y no bloqueada, 2026-11-09 (decisión del dueño, por menú) | [D034-guardrail-y-agentes-de-la-release.md](decisions/D034-guardrail-y-agentes-de-la-release.md) |
+| D34 | Guardrail y agentes de la release | vigente | 2026-10-01 · `PASSWORD` enmascarada y no bloqueada, 2026-11-09 (decisión del dueño, por menú) · `PASSWORD` solo en la salida, 2026-11-09 (decisión del dueño, por menú) | [D034-guardrail-y-agentes-de-la-release.md](decisions/D034-guardrail-y-agentes-de-la-release.md) |
 | D35 | Grupos de acceso y regla de datos de cuentas | vigente | 2026-10-01 | [D035-grupos-de-acceso.md](decisions/D035-grupos-de-acceso.md) |
 | D36 | Artefacto y firma de los MCP packs | vigente | 2026-10-01 · qué dispara la firma, del 2026-10-09 | [D036-artefacto-y-firma-de-packs.md](decisions/D036-artefacto-y-firma-de-packs.md) |
 | D37 | Packs de datos de cuentas: identidad y primer pack | vigente | 2026-10-01 | [D037-packs-de-datos-de-cuentas.md](decisions/D037-packs-de-datos-de-cuentas.md) |

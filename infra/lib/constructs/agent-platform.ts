@@ -142,10 +142,19 @@ export class AgentPlatform extends Construct {
           ...["AWS_ACCESS_KEY", "AWS_SECRET_KEY", "CREDIT_DEBIT_CARD_NUMBER", "CREDIT_DEBIT_CARD_CVV"].map(
             (type) => ({ type, action: "BLOCK" }),
           ),
-          // Decision of the owner, 2026-11-09 (AGENTS.md exceptions, D34): a password is masked,
-          // not blocked, in and out. Blocked, one example password in a Canvas document cut every
-          // later turn of its conversation, since the harness sends that document again.
-          { type: "PASSWORD", action: "ANONYMIZE", inputAction: "ANONYMIZE", outputAction: "ANONYMIZE" },
+          // Decisions of the owner, 2026-11-09 (AGENTS.md exceptions, D34): a password is masked in
+          // the output and not evaluated in the input. Blocked, and later even masked in the input,
+          // one example password in a Canvas document cut every later turn of its conversation (the
+          // harness sends that document again). Accepted risk: a password a person pastes reaches
+          // the model unmasked; the answer is still masked.
+          {
+            type: "PASSWORD",
+            action: "ANONYMIZE",
+            inputAction: "NONE",
+            inputEnabled: false,
+            outputAction: "ANONYMIZE",
+            outputEnabled: true,
+          },
         ],
       },
     });

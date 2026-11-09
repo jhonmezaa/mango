@@ -346,7 +346,8 @@ PASSWORDS_LINE = (
     "what a strong password looks like, or use a placeholder such as <password>."
 )
 """Platform line for every agent (decision of the owner, 2026-11-09, D34): the base guardrail
-masks passwords (``ANONYMIZE``) and an example password in a Canvas document came back in every
+masks passwords (``ANONYMIZE``) only in the output, so a password the model writes is not masked
+in what the harness sends back, and an example password in a Canvas document came back in every
 later turn of its conversation."""
 
 CANVAS_CHARTS_LINE = (

@@ -513,23 +513,29 @@ describe("shared agent resources keep their identity (no replacement on upgrade)
     template.resourceCountIs("AWS::Bedrock::Guardrail", 1);
   });
 
-  it("masks passwords and blocks keys and cards, and versions the guardrail with its policy", () => {
-    // Decision of the owner, 2026-11-09 (AGENTS.md exceptions, D34): PASSWORD masked, not blocked.
+  it("masks passwords only in the output, blocks keys and cards, and versions the guardrail with its policy", () => {
+    // Decisions of the owner, 2026-11-09 (AGENTS.md exceptions, D34): PASSWORD not evaluated in the
+    // input, masked in the output.
     const guardrail = resources.FinOpsAgentGuardrailEC59A646!.Properties;
     const pii = guardrail.SensitiveInformationPolicyConfig.PiiEntitiesConfig as {
       Type: string;
       Action: string;
       InputAction?: string;
+      InputEnabled?: boolean;
       OutputAction?: string;
+      OutputEnabled?: boolean;
     }[];
     expect(pii.find((e) => e.Type === "PASSWORD")).toEqual({
       Type: "PASSWORD",
       Action: "ANONYMIZE",
-      InputAction: "ANONYMIZE",
+      InputAction: "NONE",
+      InputEnabled: false,
       OutputAction: "ANONYMIZE",
+      OutputEnabled: true,
     });
+    // Keys and cards stay blocked both ways (the defaults: no per-direction override).
     for (const type of ["AWS_ACCESS_KEY", "AWS_SECRET_KEY", "CREDIT_DEBIT_CARD_NUMBER", "CREDIT_DEBIT_CARD_CVV"]) {
-      expect(pii.find((e) => e.Type === type)?.Action).toBe("BLOCK");
+      expect(pii.find((e) => e.Type === type)).toEqual({ Type: type, Action: "BLOCK" });
     }
     // The turns use the pinned version: a new policy must make a new one.
     const version = resources.FinOpsAgentGuardrailVersion2A836BE7!.Properties.Description as string;
