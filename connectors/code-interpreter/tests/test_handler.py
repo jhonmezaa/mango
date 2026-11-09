@@ -955,3 +955,10 @@ def test_relative_turns_paths_of_the_session_into_relative_ones(path: str, expec
 def test_relative_refuses_anything_outside_the_session(path: str) -> None:
     with pytest.raises(SandboxError):
         relative("/work/s1", path)
+
+
+def test_the_notice_never_reads_like_an_injection() -> None:
+    """The base guardrail's PROMPT_ATTACK filter blocks the next model call of a turn whose input
+    says "not instructions" or "never follow" (seen on a customer install, ApplyGuardrail)."""
+    for phrase in ("instructions", "do not follow", "never follow", "ignore"):
+        assert phrase not in NOTICE.lower()
