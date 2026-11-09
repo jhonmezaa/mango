@@ -1,6 +1,7 @@
 import contextlib
 import dataclasses
 import json
+import logging
 import socket
 import threading
 from collections.abc import Iterator
@@ -1444,3 +1445,60 @@ def test_every_agent_is_told_not_to_write_passwords() -> None:
     assert harness.PASSWORDS_LINE in text
     assert text.index(harness.CHARTS_LINE) < text.index(harness.PASSWORDS_LINE)
     assert text.endswith("Current date (UTC): 2026-10-25.")
+
+
+SECRET = "Clave#Prueba2026!"
+"""A password the guardrail found: its trace carries it in ``match``, which is never kept."""
+
+
+def _guardrail_trace() -> dict[str, Any]:
+    return {
+        "inputAssessment": {
+            "g": {
+                "sensitiveInformationPolicy": {
+                    "piiEntities": [{"type": "PASSWORD", "action": "BLOCKED", "match": SECRET}]
+                },
+                "contentPolicy": {
+                    "filters": [{"type": "PROMPT_ATTACK", "action": "NONE", "confidence": "LOW"}]
+                },
+            }
+        },
+        "outputAssessments": {"g": [{"wordPolicy": {"customWords": [{"match": SECRET}]}}]},
+    }
+
+
+def test_a_guardrail_cut_logs_what_was_decided_never_what_was_found(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Why a turn was cut (trace on, D34 2026-11-09), without the text the guardrail found."""
+    stream = [
+        {"messageStop": {"stopReason": "guardrail_intervened"}},
+        {"metadata": {"usage": {}, "trace": {"guardrail": _guardrail_trace()}}},
+    ]
+    result = harness.InvocationResult()
+    with caplog.at_level(logging.WARNING, logger="mango_api.harness"):
+        list(harness.run(_Client(stream), {}, result))  # type: ignore[arg-type]
+    assert {
+        "where": "input",
+        "policy": "sensitiveInformationPolicy",
+        "type": "PASSWORD",
+        "action": "BLOCKED",
+        "confidence": "",
+    } in result.guardrail
+    assert any(e["policy"] == "wordPolicy" and e["where"] == "output" for e in result.guardrail)
+    logged = caplog.text
+    assert "PASSWORD" in logged and "BLOCKED" in logged
+    assert SECRET not in logged
+    assert SECRET not in json.dumps(result.guardrail)
+
+
+def test_a_guardrail_cut_without_a_trace_says_so(caplog: pytest.LogCaptureFixture) -> None:
+    stream = [{"messageStop": {"stopReason": "guardrail_intervened"}}, {"metadata": {"usage": {}}}]
+    with caplog.at_level(logging.WARNING, logger="mango_api.harness"):
+        list(harness.run(_Client(stream), {}, harness.InvocationResult()))  # type: ignore[arg-type]
+    assert '"trace":"none"' in caplog.text
+
+
+def test_the_invocation_asks_for_the_guardrail_trace() -> None:
+    config = _request(_invocation())["model"]["bedrockModelConfig"]["additionalParams"]
+    assert config["guardrailConfig"]["trace"] == "enabled"

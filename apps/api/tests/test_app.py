@@ -785,7 +785,7 @@ def test_harness_request_is_built_server_side(h: Harness) -> None:
     assert model["additionalParams"]["guardrailConfig"] == {
         "guardrailIdentifier": "gr-base",
         "guardrailVersion": "1",
-        "trace": "disabled",
+        "trace": "enabled",
     }
     # The token never reaches the model context.
     assert "good" not in json.dumps(request["messages"] + request["systemPrompt"])

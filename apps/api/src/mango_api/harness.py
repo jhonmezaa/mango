@@ -10,6 +10,7 @@ only as the Authorization header of the ``remote_mcp`` tool pointing at the Gate
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import time
@@ -46,6 +47,8 @@ from mango_core.harness_tools import (
 
 if TYPE_CHECKING:
     from mypy_boto3_bedrock_agentcore import BedrockAgentCoreClient
+
+logger = logging.getLogger(__name__)
 
 MAX_HISTORY_MESSAGES = 20
 PARAGRAPH_BREAK = "\n\n"
@@ -261,6 +264,10 @@ class InvocationResult:
     app_calls: list[AppCall] = field(default_factory=list)
     """Calls of remote tools with an MCP App that answered (D125), in order, at most
     ``MAX_APP_CALLS``: what their app gets as ``tool-input`` and ``tool-result``."""
+    guardrail: list[dict[str, str]] = field(default_factory=list)
+    """What the base guardrail decided in this turn, from its trace: where (``input`` or
+    ``output``), the policy, the type, the action and the confidence. Never the text it found
+    (the trace's ``match`` holds it): only this summary is kept, to know why a turn was cut."""
     usage_final: bool = False
     """``usage`` is everything the turn cost: the stream was read to its end and every model
     call reported its usage. False after an error, a cut or a call whose usage never arrived:
@@ -344,6 +351,57 @@ def _has_remote_tools(allowed_tools: Iterable[str]) -> bool:
     )
 
 
+_TRACE_POLICIES: Mapping[str, tuple[str, ...]] = {
+    "contentPolicy": ("filters",),
+    "sensitiveInformationPolicy": ("piiEntities", "regexes"),
+    "topicPolicy": ("topics",),
+    "wordPolicy": ("customWords", "managedWordLists"),
+    "contextualGroundingPolicy": ("filters",),
+}
+
+
+def guardrail_summary(trace: Any) -> list[dict[str, str]]:
+    """The decisions of the base guardrail in a Converse ``trace.guardrail``, without what it
+    found: where, the policy, the type (or name), the action and the confidence. The ``match``
+    of a sensitive entity (the password itself) and any text are never copied."""
+    if not isinstance(trace, Mapping):
+        return []
+    found: list[dict[str, str]] = []
+
+    def assessments(where: str, value: Any) -> None:
+        items = value.values() if isinstance(value, Mapping) else []
+        for item in items:
+            for assessment in item if isinstance(item, list) else [item]:
+                if not isinstance(assessment, Mapping):
+                    continue
+                for policy, lists in _TRACE_POLICIES.items():
+                    section = assessment.get(policy)
+                    if not isinstance(section, Mapping):
+                        continue
+                    for name in lists:
+                        for entry in section.get(name) or []:
+                            if not isinstance(entry, Mapping):
+                                continue
+                            found.append(
+                                {
+                                    "where": where,
+                                    "policy": policy,
+                                    "type": str(entry.get("type") or entry.get("name") or name)[
+                                        :64
+                                    ],
+                                    "action": str(entry.get("action", ""))[:32],
+                                    "confidence": str(entry.get("confidence", ""))[:16],
+                                }
+                            )
+
+    assessments("input", trace.get("inputAssessment"))
+    assessments("output", trace.get("outputAssessments"))
+    return found[:MAX_GUARDRAIL_ENTRIES]
+
+
+MAX_GUARDRAIL_ENTRIES = 20
+
+
 def build_request(
     agent: AgentInvocation,
     *,
@@ -396,7 +454,7 @@ def build_request(
         "guardrailConfig": {
             "guardrailIdentifier": agent.guardrail_id,
             "guardrailVersion": agent.guardrail_version,
-            "trace": "disabled",
+            "trace": "enabled",
         }
     }
     request: dict[str, Any] = {
@@ -1086,9 +1144,19 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
             owed = True
         elif "metadata" in event:
             result.usage.add(Usage.from_bedrock(event["metadata"].get("usage", {})))
+            trace_info = event["metadata"].get("trace")
+            trace = trace_info.get("guardrail") if isinstance(trace_info, dict) else None
+            if trace:
+                result.guardrail.extend(guardrail_summary(trace))
             at_cap = owed and result.stop_reason == CAP_STOP
             reported, owed = True, False
     yield from remote_calls.end()
+    if result.stop_reason == "guardrail_intervened":
+        # Why the turn was cut, without the text (D16): types, actions and where only.
+        logger.warning(
+            "guardrail intervened: %s",
+            json.dumps(result.guardrail or [{"trace": "none"}], separators=(",", ":")),
+        )
     result.calls = recorded.done()
     if not result.interrupted:
         result.usage_final = reported and not owed
