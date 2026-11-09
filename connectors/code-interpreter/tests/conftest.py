@@ -22,6 +22,24 @@ SLOW_MARKER = "# fake: never returns"
 """A cell with this line makes the fake time out like a read timeout of the client."""
 
 
+_TRAVERSAL = {
+    "result": {
+        "content": [
+            {
+                "type": "text",
+                "text": "Error executing tool: Invalid file path: potential path traversal",
+            }
+        ],
+        "isError": True,
+    }
+}
+
+
+def _relative_ok(path: str) -> bool:
+    """What the real file tools accept: a path relative to the session's folder, without ``..``."""
+    return bool(path) and not path.startswith("/") and ".." not in path.split("/")
+
+
 @dataclass
 class _Session:
     process: subprocess.Popen[str]
@@ -32,8 +50,11 @@ class _Session:
 @dataclass
 class FakeAgentCore:
     """``start/stop_code_interpreter_session`` and ``invoke_code_interpreter`` over local
-    processes. ``/mnt/data`` in the code is mapped to a folder of the session (the test machine
-    has no such folder, and must not get one)."""
+    processes. ``/mnt/data`` in the code is mapped to the session's ``data`` folder (the test
+    machine has no such folder, and must not get one). Like the real service, the file tools take
+    only paths relative to the session's folder: an absolute path or one with ``..`` answers
+    ``isError`` («potential path traversal detected»), and paths come back as
+    ``file:///<relative path>``."""
 
     base: Path
     interpreter_id: str = "Mango_poc_sandbox-abcdefghij"
@@ -72,7 +93,7 @@ class FakeAgentCore:
             session.process.wait()
         return {}
 
-    def invoke_code_interpreter(self, **kwargs: Any) -> dict[str, Any]:
+    def invoke_code_interpreter(self, **kwargs: Any) -> dict[str, Any]:  # noqa: PLR0911
         self.calls.append((kwargs["name"], kwargs))
         if self.invoke_error:
             raise ClientError({"Error": {"Code": self.invoke_error, "Message": "x"}}, "Invoke")
@@ -85,22 +106,28 @@ class FakeAgentCore:
         if name == "executeCode":
             return {"stream": [self._execute(session, args["code"])]}
         if name == "readFiles":
+            if not all(_relative_ok(p) for p in args["paths"]):
+                return {"stream": [_TRAVERSAL]}
             return {"stream": [self._read(session, args["paths"])]}
         if name == "writeFiles":
+            if not all(_relative_ok(item["path"]) for item in args["content"]):
+                return {"stream": [_TRAVERSAL]}
             for item in args["content"]:
-                real = Path(self._map(session, item["path"]))
+                real = session.root / item["path"]
                 real.parent.mkdir(parents=True, exist_ok=True)
                 real.write_bytes(item["blob"])
             return {"stream": [{"result": {"content": []}}]}
         if name == "listFiles":
+            if not _relative_ok(args["directoryPath"]):
+                return {"stream": [_TRAVERSAL]}
             return {"stream": [self._list(session, args["directoryPath"])]}
         raise AssertionError(name)
 
     def data_root(self, session_id: str) -> Path:
-        return self.sessions[session_id].root / "mntdata"
+        return self.sessions[session_id].root / "data"
 
     def _map(self, session: _Session, text: str) -> str:
-        return text.replace("/mnt/data", str(session.root / "mntdata"))
+        return text.replace("/mnt/data", str(session.root / "data"))
 
     def _execute(self, session: _Session, code: str) -> dict[str, Any]:
         if SLOW_MARKER in code:
@@ -121,22 +148,22 @@ class FakeAgentCore:
     def _read(self, session: _Session, paths: list[str]) -> dict[str, Any]:
         content = []
         for path in paths:
-            real = Path(self._map(session, path))
+            real = session.root / path
             if real.is_file():
                 content.append(
                     {
                         "type": "resource",
-                        "resource": {"uri": f"file://{path}", "blob": real.read_bytes()},
+                        "resource": {"uri": f"file:///{path}", "blob": real.read_bytes()},
                     }
                 )
         return {"result": {"content": content}}
 
     def _list(self, session: _Session, directory: str) -> dict[str, Any]:
-        real = Path(self._map(session, directory))
+        real = session.root / directory
         content = [
             {
                 "type": "resource_link",
-                "uri": f"file://{directory}/{p.name}",
+                "uri": f"file:///{directory}/{p.name}",
                 "name": p.name,
                 "size": p.stat().st_size,
             }

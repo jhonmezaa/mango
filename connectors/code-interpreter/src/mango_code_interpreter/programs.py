@@ -4,6 +4,7 @@ wrapper of a cell. Values go in as Python literals (``repr``), never pasted into
 from __future__ import annotations
 
 import json
+import posixpath
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,28 +15,28 @@ _HELPER = (Path(__file__).parent / "sandbox_helper.py").read_text(encoding="utf-
 
 @dataclass(frozen=True)
 class Layout:
-    """Where the session works: ``data`` (``/mnt/data`` if the sandbox lets it be made, or a
-    folder of its working directory), ``out`` and ``lib`` (Mango's own, hidden)."""
+    """Where the session works, all inside its working directory (``root``): ``data`` (what the
+    model and the person see as ``/mnt/data``), ``out`` and ``lib`` (Mango's own, hidden). The
+    file tools of the sandbox only reach paths inside ``root``."""
 
     data: str
     out: str
     lib: str
 
+    @property
+    def root(self) -> str:
+        """The session's working directory: ``lib`` is ``<root>/.mango/lib``."""
+        return posixpath.dirname(posixpath.dirname(self.lib.rstrip("/")))
+
 
 def bootstrap(nonce: str) -> str:
     """Code of the first call of a session: write ``_mango``, set the folders up and report
-    them on one line after ``nonce``."""
+    them on one line after ``nonce``. Every folder is inside the working directory, the only
+    place the file tools reach (``/mnt/data`` is never made: the service does not let it be)."""
     return f"""
 import json as _j, os as _o, sys as _s
 _base = _o.getcwd()
-try:
-    _o.makedirs({LOGICAL_ROOT!r}, exist_ok=True)
-    _probe = _o.path.join({LOGICAL_ROOT!r}, ".mango-probe")
-    open(_probe, "w").close()
-    _o.remove(_probe)
-    _data = {LOGICAL_ROOT!r}
-except OSError:
-    _data = _o.path.join(_base, "data")
+_data = _o.path.join(_base, "data")
 _lib = _o.path.join(_base, ".mango", "lib")
 _out = _o.path.join(_base, ".mango", "out")
 _o.makedirs(_lib, exist_ok=True)

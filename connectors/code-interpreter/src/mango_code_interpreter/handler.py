@@ -447,7 +447,7 @@ def _start(deps: Deps, user: UserContext) -> tuple[str, programs.Layout]:
         # The helpers of the document skills, from the release (D119 (2)): importable as
         # ``mango_docs``, since ``lib`` is on the path of every cell.
         deps.sandbox.write_file(
-            session_id, posixpath.join(layout.lib, DOCS_HELPER), deps.docs_helper
+            session_id, posixpath.join(layout.lib, DOCS_HELPER), deps.docs_helper, root=layout.root
         )
     except SandboxError:
         deps.sandbox.stop(session_id)
@@ -517,7 +517,12 @@ def _hydrate(deps: Deps, store: SessionStore, session: Session, call: _Call) -> 
         if data is None:
             notes.append(f"- {name} (attached, could not be loaded)")
             continue
-        deps.sandbox.write_file(session.session_id, posixpath.join(session.layout.data, name), data)
+        deps.sandbox.write_file(
+            session.session_id,
+            posixpath.join(session.layout.data, name),
+            data,
+            root=session.layout.root,
+        )
         written.append(f.file_id)
         notes.append(f"- {_logical(name)} (attached by the user, id {f.file_id})")
     store.mark_hydrated(conversation, session, written)
@@ -585,7 +590,9 @@ def _files(
     )
     if not wanted:
         return [], refused
-    read = deps.sandbox.read_files(session.session_id, [c.path for c in wanted])
+    read = deps.sandbox.read_files(
+        session.session_id, [c.path for c in wanted], root=session.layout.root
+    )
     by_path = {b.path: b.data for b in read.blobs}
     by_path.update({p: t.encode() for p, t in read.texts})
     exported: list[outputs.Exported] = []
@@ -1040,7 +1047,7 @@ def _deliver(deps: Deps, session: Session, keys: list[str], folder: str) -> str 
             return None
         name = "document.pdf" if key.endswith(".pdf") else posixpath.basename(key)
         files.append((posixpath.join(session.layout.data, folder, name), data))
-    deps.sandbox.write_files(session.session_id, files)
+    deps.sandbox.write_files(session.session_id, files, root=session.layout.root)
     return folder
 
 
@@ -1117,7 +1124,9 @@ def _browse(call: _Call, deps: Deps) -> dict[str, Any]:
 
 
 def _listing(deps: Deps, session: Session) -> str:
-    result = deps.sandbox.list_files(session.session_id, session.layout.data)
+    result = deps.sandbox.list_files(
+        session.session_id, session.layout.data, root=session.layout.root
+    )
     root = session.layout.data.rstrip("/") + "/"
     lines = []
     for entry in result.listing[:500]:
@@ -1131,7 +1140,7 @@ def _listing(deps: Deps, session: Session) -> str:
 
 def _reading(deps: Deps, session: Session, name: str) -> str:
     path = posixpath.join(session.layout.data, name)
-    result = deps.sandbox.read_files(session.session_id, [path])
+    result = deps.sandbox.read_files(session.session_id, [path], root=session.layout.root)
     for _, text in result.texts:
         shown, cut = _cap(text, READ_FILE_CHARS)
         return f"{_logical(name)}:\n{shown}" + ("\n[truncated]" if cut else "")

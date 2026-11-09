@@ -1,8 +1,15 @@
 """The Code Interpreter of the installation, as the connector uses it (D114 (3), (4)).
 
 Four calls only: start a session, invoke one of its tools (``executeCode``, ``listFiles``,
-``readFiles``), stop it. A ``sessionId`` goes in and out of this module and nowhere else: no
-error, log or result here carries it (TM-CI1). Service errors are rewritten to the kinds of
+``readFiles``, ``writeFiles``), stop it.
+
+The file tools take paths relative to the session's working directory (``root``): the service
+refuses an absolute path («potential path traversal», seen on a customer install), and answers
+``file:///<relative path>``. The rest of the connector keeps absolute paths (the ones the cells
+see); this module turns them into relative ones going in and back into absolute ones coming out.
+
+A ``sessionId`` goes in and out of this module and nowhere else: no error, log or result here
+carries it (TM-CI1). Service errors are rewritten to the kinds of
 ``SandboxError``, never their message.
 """
 
@@ -10,6 +17,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import posixpath
 import secrets
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -70,6 +78,31 @@ class Result:
     listing: list[Listing] = field(default_factory=list)
 
 
+def relative(root: str, path: str) -> str:
+    """``path`` (absolute, inside ``root``) as the file tools take it: relative to ``root``.
+    Anything outside ``root`` is refused here, before the service sees it."""
+    base = posixpath.normpath(root)
+    full = posixpath.normpath(path if path.startswith("/") else posixpath.join(base, path))
+    if not base.startswith("/") or not full.startswith(base.rstrip("/") + "/"):
+        raise SandboxError("unavailable")
+    return posixpath.relpath(full, base)
+
+
+def _absolute(root: str, path: str) -> str:
+    """A path the service answered (``/<relative>`` once ``file://`` is gone) as the cells see
+    it: under ``root``."""
+    base = posixpath.normpath(root).rstrip("/")
+    if path == base or path.startswith(base + "/"):
+        return path
+    return posixpath.join(base, path.lstrip("/"))
+
+
+def _absolute_paths(result: Result, root: str) -> Result:
+    result.blobs = [Blob(_absolute(root, b.path), b.data, b.mime) for b in result.blobs]
+    result.texts = [(_absolute(root, p), t) for p, t in result.texts]
+    return result
+
+
 def _kind(exc: ClientError) -> ErrorKind:
     code = exc.response.get("Error", {}).get("Code", "")
     if code in _BUSY_CODES:
@@ -117,18 +150,22 @@ class Sandbox:
             self._slow, session_id, "executeCode", {"code": code, "language": "python"}
         )
 
-    def list_files(self, session_id: str, directory: str) -> Result:
-        return self._invoke(self._client, session_id, "listFiles", {"directoryPath": directory})
-
-    def write_file(self, session_id: str, path: str, data: bytes) -> None:
-        """One file into the session (``writeFiles``, up to 100 MB a call)."""
+    def list_files(self, session_id: str, directory: str, *, root: str) -> Result:
         result = self._invoke(
-            self._client, session_id, "writeFiles", {"content": [{"path": path, "blob": data}]}
+            self._client, session_id, "listFiles", {"directoryPath": relative(root, directory)}
         )
+        return _absolute_paths(result, root)
+
+    def write_file(self, session_id: str, path: str, data: bytes, *, root: str) -> None:
+        """One file into the session (``writeFiles``, up to 100 MB a call)."""
+        content = [{"path": relative(root, path), "blob": data}]
+        result = self._invoke(self._client, session_id, "writeFiles", {"content": content})
         if result.is_error:
             raise SandboxError("unavailable")
 
-    def write_files(self, session_id: str, files: Iterable[tuple[str, bytes]]) -> None:
+    def write_files(
+        self, session_id: str, files: Iterable[tuple[str, bytes]], *, root: str
+    ) -> None:
         """Several files into the session, in as few ``writeFiles`` calls as their size
         allows (each one under ``WRITE_CALL_BYTES``)."""
         batch: list[dict[str, Any]] = []
@@ -137,7 +174,7 @@ class Sandbox:
             if batch and size + len(data) > WRITE_CALL_BYTES:
                 self._write(session_id, batch)
                 batch, size = [], 0
-            batch.append({"path": path, "blob": data})
+            batch.append({"path": relative(root, path), "blob": data})
             size += len(data)
         if batch:
             self._write(session_id, batch)
@@ -147,8 +184,10 @@ class Sandbox:
         if result.is_error:
             raise SandboxError("unavailable")
 
-    def read_files(self, session_id: str, paths: Iterable[str]) -> Result:
-        return self._invoke(self._client, session_id, "readFiles", {"paths": list(paths)})
+    def read_files(self, session_id: str, paths: Iterable[str], *, root: str) -> Result:
+        wanted = [relative(root, p) for p in paths]
+        result = self._invoke(self._client, session_id, "readFiles", {"paths": wanted})
+        return _absolute_paths(result, root)
 
     def _invoke(self, client: Any, session_id: str, name: str, arguments: dict[str, Any]) -> Result:
         try:

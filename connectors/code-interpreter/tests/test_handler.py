@@ -25,7 +25,7 @@ from mango_code_interpreter.handler import (
     Settings,
     handle,
 )
-from mango_code_interpreter.sandbox import Sandbox
+from mango_code_interpreter.sandbox import Sandbox, SandboxError, relative
 from mango_code_interpreter.sessions import RlsClients, SessionStore
 from mango_core import chat_files
 from mango_core.code_sandbox import Prices, cell_use, cost, run_sk, session_sk, turn_prefix
@@ -771,7 +771,8 @@ def test_a_new_session_gets_the_helpers_of_the_document_skills(world: World) -> 
     assert "'a-bc'" in text
     [(_, write)] = [c for c in world.agentcore.calls if c[0] == "writeFiles"]
     [item] = write["arguments"]["content"]
-    assert item["path"].endswith("/.mango/lib/mango_docs.py")
+    # Relative to the session folder: the real service refuses absolute paths.
+    assert item["path"] == ".mango/lib/mango_docs.py"
 
 
 def test_a_document_is_rendered_into_the_session_by_name(world: World, render: FakeRender) -> None:
@@ -909,3 +910,48 @@ def test_the_pinned_digest_is_the_reviewed_file() -> None:
     import hashlib  # noqa: PLC0415
 
     assert hashlib.sha256(code._DOCS_SOURCE).hexdigest() == code.DOCS_SHA256
+
+
+# --- Paths of the file tools (the service refuses absolute ones) ------------------------------
+
+
+def test_the_file_tools_only_get_paths_relative_to_the_session(world: World) -> None:
+    """A cell, an attachment, list_files and read_file: every path sent to ``writeFiles``,
+    ``listFiles`` and ``readFiles`` is relative to the session folder, never absolute."""
+    _attach(world, READY, "ventas.csv", b"x,y\n1,2\n")
+    _run(world, "open('salida.csv', 'w').write('a,b\\n1,2\\n')")
+    _call(world, "list_files", {})
+    _call(world, "read_file", {"file": "salida.csv"})
+    sent: list[str] = []
+    for name, kwargs in world.agentcore.calls:
+        arguments = kwargs.get("arguments", {})
+        if name == "writeFiles":
+            sent += [item["path"] for item in arguments["content"]]
+        elif name == "readFiles":
+            sent += arguments["paths"]
+        elif name == "listFiles":
+            sent.append(arguments["directoryPath"])
+    assert sent
+    for path in sent:
+        assert not path.startswith("/"), path
+        assert ".." not in path.split("/"), path
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("/work/s1/data/a.csv", "data/a.csv"),
+        ("/work/s1/.mango/lib/mango_docs.py", ".mango/lib/mango_docs.py"),
+        ("data/a.csv", "data/a.csv"),
+    ],
+)
+def test_relative_turns_paths_of_the_session_into_relative_ones(path: str, expected: str) -> None:
+    assert relative("/work/s1", path) == expected
+
+
+@pytest.mark.parametrize(
+    "path", ["/work/s1", "/work/s2/a.csv", "/work/s1/../s2/a.csv", "../a.csv", "/etc/passwd"]
+)
+def test_relative_refuses_anything_outside_the_session(path: str) -> None:
+    with pytest.raises(SandboxError):
+        relative("/work/s1", path)
