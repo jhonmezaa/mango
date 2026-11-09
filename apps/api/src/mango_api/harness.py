@@ -316,6 +316,14 @@ CHARTS_LINE = (
 """Platform line for every agent (D118 (8)): without it a model never writes the
 ``mango-chart`` block the chat draws, and puts charts in a Canvas document instead."""
 
+PASSWORDS_LINE = (
+    "Do not write passwords in your answers or documents, not even made-up examples: describe "
+    "what a strong password looks like, or use a placeholder such as <password>."
+)
+"""Platform line for every agent (decision of the owner, 2026-11-09, D34): the base guardrail
+masks passwords (``ANONYMIZE``) and an example password in a Canvas document came back in every
+later turn of its conversation."""
+
 CANVAS_CHARTS_LINE = (
     "Never use the Canvas for a chart or a table of data: the Canvas is only for a document, "
     "an app or code the user asked for, to edit or iterate on."
@@ -363,7 +371,7 @@ def build_request(
     charts = CHARTS_LINE
     if textdoc_names(agent.allowed_tools):
         charts = f"{charts} {CANVAS_CHARTS_LINE}"
-    date_line = f"{charts}\n\n{date_line}"
+    date_line = f"{charts}\n\n{PASSWORDS_LINE}\n\n{date_line}"
     if _has_remote_tools(agent.allowed_tools):
         # The model never gets the consent URL (D94); left alone it invents one.
         date_line = f"{REMOTE_CONNECT_LINE}\n\n{date_line}"

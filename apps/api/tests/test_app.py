@@ -766,7 +766,7 @@ def test_harness_request_is_built_server_side(h: Harness) -> None:
         300,
     )
     assert request["systemPrompt"][0]["text"].startswith(
-        f"You are FinOps.\n\n{harness.CHARTS_LINE}\n\nCurrent date"
+        f"You are FinOps.\n\n{harness.CHARTS_LINE}\n\n{harness.PASSWORDS_LINE}\n\nCurrent date"
     )
     (tool,) = request["tools"]
     assert (tool["type"], tool["name"]) == ("remote_mcp", "mango")

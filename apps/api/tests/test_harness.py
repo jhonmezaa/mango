@@ -1432,3 +1432,11 @@ def test_a_version_with_the_canvas_is_told_it_is_not_for_charts() -> None:
     agent = dataclasses.replace(_invocation(), allowed_tools=textdoc_allowed_tools())
     text = _request(agent)["systemPrompt"][0]["text"]
     assert f"{harness.CHARTS_LINE} {harness.CANVAS_CHARTS_LINE}" in text
+
+
+def test_every_agent_is_told_not_to_write_passwords() -> None:
+    """D34 (2026-11-09): the guardrail masks passwords; the model is asked not to write any."""
+    text = _request(_invocation())["systemPrompt"][0]["text"]
+    assert harness.PASSWORDS_LINE in text
+    assert text.index(harness.CHARTS_LINE) < text.index(harness.PASSWORDS_LINE)
+    assert text.endswith("Current date (UTC): 2026-10-25.")

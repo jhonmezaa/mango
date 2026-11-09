@@ -513,6 +513,31 @@ describe("shared agent resources keep their identity (no replacement on upgrade)
     template.resourceCountIs("AWS::Bedrock::Guardrail", 1);
   });
 
+  it("masks passwords and blocks keys and cards, and versions the guardrail with its policy", () => {
+    // Decision of the owner, 2026-11-09 (AGENTS.md exceptions, D34): PASSWORD masked, not blocked.
+    const guardrail = resources.FinOpsAgentGuardrailEC59A646!.Properties;
+    const pii = guardrail.SensitiveInformationPolicyConfig.PiiEntitiesConfig as {
+      Type: string;
+      Action: string;
+      InputAction?: string;
+      OutputAction?: string;
+    }[];
+    expect(pii.find((e) => e.Type === "PASSWORD")).toEqual({
+      Type: "PASSWORD",
+      Action: "ANONYMIZE",
+      InputAction: "ANONYMIZE",
+      OutputAction: "ANONYMIZE",
+    });
+    for (const type of ["AWS_ACCESS_KEY", "AWS_SECRET_KEY", "CREDIT_DEBIT_CARD_NUMBER", "CREDIT_DEBIT_CARD_CVV"]) {
+      expect(pii.find((e) => e.Type === type)?.Action).toBe("BLOCK");
+    }
+    // The turns use the pinned version: a new policy must make a new one.
+    const version = resources.FinOpsAgentGuardrailVersion2A836BE7!.Properties.Description as string;
+    expect(version).toMatch(/^Pinned base guardrail \(policy [0-9a-f]{12}\)$/);
+    // The old version stays when it is replaced: published harnesses keep it in their config.
+    expect(resources.FinOpsAgentGuardrailVersion2A836BE7!.UpdateReplacePolicy).toBe("Retain");
+  });
+
   it("lets CloudWatch Logs use the key only for agent runtime log groups", () => {
     const statements = resources.FinOpsAgentRuntimeLogsKey5A378BE8!.Properties.KeyPolicy.Statement as (Statement & {
       Principal: { Service?: string };

@@ -234,6 +234,7 @@ flowchart LR
 - Un harness por agente, con versiones y endpoint `live`; `mango-api` arma la invocación desde la versión publicada (TM-M6, TM-M11).
 - `UseAgent` por atributos; tools por agente con firma v2 e interceptor, no con Cedar por agente (TM-M12).
 - Guardrail base compartido; agentes de la release preaprobados (TM-M16).
+- **Guardrail base, `PASSWORD` (2026-11-09, excepción de seguridad acordada con el dueño, `AGENTS.md`):** pasa de `BLOCK` a `ANONYMIZE` en la entrada y en la salida. Bloqueada, una contraseña de ejemplo en un documento del Canvas cortaba todos los turnos siguientes de su conversación (el harness reenvía el documento). Riesgo residual: una contraseña real que alguien pegue en el chat ya no corta el turno, pero llega enmascarada al modelo y a la respuesta, y la conversación guardada conserva lo que escribió la persona (como antes). Las llaves de AWS y las tarjetas siguen bloqueadas. Mitigación adicional: la línea de la plataforma `PASSWORDS_LINE` pide al modelo no escribir contraseñas, ni de ejemplo.
 - Grupos de Cognito con registro de tipos; regla de datos de cuentas por modo de identidad y por tool (TM-M3, TM-M13).
 - Packs como zip firmado con KMS; la cuenta de management del laboratorio hace de proveedor por ahora (TM-M4, TM-M15).
 - `SourceIdentity` = usuario en packs `central_only`; Billing como primer pack de datos de cuentas (TM-M3).

@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import * as bedrock from "aws-cdk-lib/aws-bedrock";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
-import { CfnResource, RemovalPolicy, Stack } from "aws-cdk-lib";
+import { CfnDeletionPolicy, CfnResource, RemovalPolicy, Stack } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import { CHECKOV_EXCEPTIONS, suppressCheckov } from "../checkov.js";
 import { Installation } from "../config/schema.js";
@@ -138,18 +139,31 @@ export class AgentPlatform extends Construct {
       },
       sensitiveInformationPolicyConfig: {
         piiEntitiesConfig: [
-          "AWS_ACCESS_KEY",
-          "AWS_SECRET_KEY",
-          "CREDIT_DEBIT_CARD_NUMBER",
-          "CREDIT_DEBIT_CARD_CVV",
-          "PASSWORD",
-        ].map((type) => ({ type, action: "BLOCK" })),
+          ...["AWS_ACCESS_KEY", "AWS_SECRET_KEY", "CREDIT_DEBIT_CARD_NUMBER", "CREDIT_DEBIT_CARD_CVV"].map(
+            (type) => ({ type, action: "BLOCK" }),
+          ),
+          // Decision of the owner, 2026-11-09 (AGENTS.md exceptions, D34): a password is masked,
+          // not blocked, in and out. Blocked, one example password in a Canvas document cut every
+          // later turn of its conversation, since the harness sends that document again.
+          { type: "PASSWORD", action: "ANONYMIZE", inputAction: "ANONYMIZE", outputAction: "ANONYMIZE" },
+        ],
       },
     });
+    // A change of the policy needs a new version (the turns use the pinned one): its
+    // description carries a digest of the policy, so CloudFormation makes one when it changes.
+    const policy = {
+      content: this.guardrail.contentPolicyConfig,
+      sensitive: this.guardrail.sensitiveInformationPolicyConfig,
+      blocked: [this.guardrail.blockedInputMessaging, this.guardrail.blockedOutputsMessaging],
+    };
+    const digest = createHash("sha256").update(JSON.stringify(policy)).digest("hex").slice(0, 12);
     this.guardrailVersion = new bedrock.CfnGuardrailVersion(this, "GuardrailVersion", {
       guardrailIdentifier: this.guardrail.attrGuardrailId,
-      description: "Pinned base guardrail",
+      description: `Pinned base guardrail (policy ${digest})`,
     });
+    // A new policy replaces the version: the old one stays, since a harness published before
+    // keeps it in its default configuration (mango-api sends the new one with every turn).
+    this.guardrailVersion.cfnOptions.updateReplacePolicy = CfnDeletionPolicy.RETAIN;
 
     this.runtimeLogsKey = new kms.Key(this, "RuntimeLogsKey", {
       alias: `alias/Mango-${ns}-agent-runtime-logs`,
