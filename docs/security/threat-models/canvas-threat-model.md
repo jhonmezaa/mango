@@ -134,7 +134,7 @@ Un documento con una contraseña cortaba cada turno siguiente de su conversació
 Desde 2026-11-09 (D124 (9)), el agente ve el id de un documento en minúsculas, en la nota del turno y en las respuestas del conector: en mayúsculas, junto a un título sobre seguridad, el guardrail lo tomaba por una llave secreta de AWS y bloqueaba cada pregunta siguiente. El conector normaliza el id a mayúsculas antes de buscar, y sigue buscando solo dentro de la conversación firmada: aceptar otro caso no da acceso a nada nuevo (un id sigue siendo de una sola conversación y persona).
 
 
-## Precisión (2026-11-10): la tool `read` (D124 (10), propuesta)
+## Precisión (2026-11-10): la tool `read` (D124 (10))
 
 Una cuarta tool, `textdoc___read`, le da al agente el texto de un documento cuando su sesión del harness se renovó y la nota solo lo lista. Es solo lectura y no cambia ninguna frontera: modelo → conector, con el mismo contexto firmado. Cómo queda cada amenaza:
 
