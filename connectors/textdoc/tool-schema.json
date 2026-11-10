@@ -30,7 +30,7 @@
       "properties": {
         "textdoc_id": {
           "type": "string",
-          "description": "The id create returned."
+          "description": "The id create returned (in lowercase)."
         },
         "content": {
           "type": "string",
@@ -72,7 +72,7 @@
       "properties": {
         "textdoc_id": {
           "type": "string",
-          "description": "The id create returned."
+          "description": "The id create returned (in lowercase)."
         },
         "comments": {
           "type": "array",

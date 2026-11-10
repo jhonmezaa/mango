@@ -38,7 +38,14 @@ from typing import Annotated, Any, Literal
 
 import boto3
 from botocore.config import Config
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+)
 
 from mango_core import textdocs
 from mango_core.harness_tools import TEXTDOC_TOOLS
@@ -87,8 +94,14 @@ class EditArgument(_Strict):
     all: bool = False
 
 
+# The id the agent was told is in lowercase (``textdocs.told_id``); it is stored in capitals.
+TextdocId = Annotated[
+    str, StringConstraints(min_length=1, max_length=64), AfterValidator(textdocs.stored_id)
+]
+
+
 class UpdateArguments(_Strict):
-    textdoc_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    textdoc_id: TextdocId
     content: Text | None = None
     edits: Annotated[list[EditArgument], Field(max_length=textdocs.MAX_EDITS)] | None = None
     note: Annotated[str, StringConstraints(max_length=400)] = ""
@@ -100,7 +113,7 @@ class CommentArgument(_Strict):
 
 
 class CommentArguments(_Strict):
-    textdoc_id: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    textdoc_id: TextdocId
     comments: Annotated[
         list[CommentArgument], Field(min_length=1, max_length=textdocs.MAX_COMMENTS_PER_CALL)
     ]
@@ -394,7 +407,8 @@ def _create(call: _Call, store: TextdocStore, deps: Deps) -> dict[str, Any]:
     )
     return {
         "text": (
-            f"Created the Canvas document «{doc.title}» (id {doc.textdoc_id}, {doc.kind}, v1). "
+            f"Created the Canvas document «{doc.title}» (id {textdocs.told_id(doc.textdoc_id)}, "
+            f"{doc.kind}, v1). "
             "The user sees it next to the chat; do not repeat its text in the answer."
         )
     }
@@ -442,7 +456,8 @@ def _update(call: _Call, store: TextdocStore, deps: Deps) -> dict[str, Any]:
     )
     return {
         "text": (
-            f"Wrote v{version.number} of «{doc.title}» (id {doc.textdoc_id}). The user sees it "
+            f"Wrote v{version.number} of «{doc.title}» (id {textdocs.told_id(doc.textdoc_id)}). "
+            "The user sees it "
             "and what changed next to the chat."
         )
     }

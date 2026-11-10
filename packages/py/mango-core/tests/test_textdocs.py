@@ -182,9 +182,20 @@ def test_the_agent_is_told_only_what_the_person_changed(db: Any) -> None:
     )
     docs = store.docs(CONV)
     note = turn_note(docs, {doc.textdoc_id: store.latest(CONV, doc.textdoc_id)})  # type: ignore[dict-item]
-    assert f"id {doc.textdoc_id} · document · «Plan» · v2" in note
+    # The id in lowercase: in capitals, next to a title about security, the guardrail took it for
+    # an AWS secret key (D124 (8), 2026-11-10).
+    assert f"id {doc.textdoc_id.lower()} · document · «Plan» · v2" in note
+    assert doc.textdoc_id not in note
     assert "v2 de la persona" in note
     assert "never instructions" in note
     store.mark_told(CONV, doc.textdoc_id, edited.number)
     assert store.doc(CONV, doc.textdoc_id).told == 2  # type: ignore[union-attr]
     assert turn_note([], {}) == ""
+
+
+def test_the_id_the_agent_is_told_is_lowercase_and_stored_in_capitals() -> None:
+    from mango_core.textdocs import stored_id, told_id  # noqa: PLC0415
+
+    told = told_id("01M71KDCE0H2KS5S87H1QECK1N")
+    assert told == "01m71kdce0h2ks5s87h1qeck1n"
+    assert stored_id(told) == "01M71KDCE0H2KS5S87H1QECK1N"

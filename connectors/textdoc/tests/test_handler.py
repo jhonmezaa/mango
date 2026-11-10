@@ -17,7 +17,7 @@ from moto import mock_aws
 
 from mango_core.identity import IdentityError
 from mango_core.rate_limits import RateLimitStore, SharedRateLimiter
-from mango_core.textdocs import TextdocStore
+from mango_core.textdocs import TextdocStore, stored_id
 from mango_textdoc.audit import AuditWriter
 from mango_textdoc.handler import (
     CALLS_PER_MINUTE,
@@ -179,7 +179,10 @@ def _audits(world: World) -> list[dict[str, Any]]:
 def test_create_writes_the_first_version_in_the_signed_conversation(world: World) -> None:
     doc_id = _create(world)
     [doc] = _store(world).docs(CONV)
-    assert (doc.textdoc_id, doc.kind, doc.latest, doc.last_turn) == (doc_id, "document", 1, TURN)
+    # The agent is told the id in lowercase (a ULID in capitals next to a title about security
+    # is detected by the guardrail as an AWS secret key); the store keeps it in capitals.
+    assert doc_id == doc_id.lower() and doc.textdoc_id == stored_id(doc_id)
+    assert (doc.kind, doc.latest, doc.last_turn) == ("document", 1, TURN)
     assert _store(world).docs(OTHER_CONV) == []
     [audit] = _audits(world)
     assert audit["event"] == "textdoc.write"
@@ -202,7 +205,7 @@ def test_update_takes_literal_edits_or_a_whole_text(world: World) -> None:
         },
     )
     assert "Wrote v2" in edited["text"]
-    latest = _store(world).latest(CONV, doc_id)
+    latest = _store(world).latest(CONV, stored_id(doc_id))
     assert latest is not None
     assert latest.content == "## Resumen\n\nGasto de USD 124.530."
     assert latest.note == "Puso la cifra"
@@ -228,7 +231,7 @@ def test_an_edit_that_does_not_match_changes_nothing(world: World) -> None:
         world, "update", {"textdoc_id": doc_id, "content": "## Resumen\n\nGasto alto."}
     )
     assert unchanged["error"]["code"] == "unchanged"
-    assert _store(world).doc(CONV, doc_id).latest == 1  # type: ignore[union-attr]
+    assert _store(world).doc(CONV, stored_id(doc_id)).latest == 1  # type: ignore[union-attr]
 
 
 def test_a_document_of_another_conversation_or_person_is_not_found(world: World) -> None:
@@ -254,7 +257,7 @@ def test_comments_quote_the_latest_version(world: World) -> None:
         {"textdoc_id": doc_id, "comments": [{"quote": "Gasto alto", "text": "¿Contra qué mes?"}]},
     )
     assert "Added 1 comment" in ok["text"]
-    [comment] = _store(world).comments(CONV, doc_id)
+    [comment] = _store(world).comments(CONV, stored_id(doc_id))
     assert (comment.quote, comment.text, comment.version) == ("Gasto alto", "¿Contra qué mes?", 1)
     missing = _call(
         world, "comment", {"textdoc_id": doc_id, "comments": [{"quote": "nada", "text": "x"}]}
@@ -349,7 +352,7 @@ def test_create_says_it_is_not_for_charts() -> None:
 
 def _latest_text(world: World, doc_id: str) -> str:
     store = world.deps.store_for("user-ana")
-    latest = store.latest(CONV, doc_id)
+    latest = store.latest(CONV, stored_id(doc_id))
     assert latest is not None and latest.content is not None
     return latest.content
 

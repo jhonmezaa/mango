@@ -493,7 +493,8 @@ def test_the_next_turn_tells_the_agent_what_the_person_changed_once(env: Env) ->
     # Told once: the next turn lists it without its text.
     again = api.turn_note(store, CONVERSATION)
     assert "texto de la persona" not in again
-    assert f"id {doc}" in again
+    # The agent is told the id in lowercase (D124 (9)).
+    assert f"id {doc.lower()}" in again and doc not in again
 
 
 def test_the_cards_of_a_stored_answer_read_the_titles_again(env: Env) -> None:
