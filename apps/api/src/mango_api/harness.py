@@ -109,6 +109,14 @@ HARNESS_NOT_FOUND = "ResourceNotFoundException"
 """Error of an invocation whose harness, or its endpoint, does not exist: deleted outside
 Mango, or by an uninstall that stopped halfway. AgentCore answers it instead of opening the
 stream, so nothing ran."""
+START_ERROR = "InternalServerException"
+"""What AgentCore answers when it could not start a turn's runtime session (an incident of
+AgentCore Runtime in us-east-1, 2026-11-09/10: «errors or timeouts when creating new agent
+runtime sessions … retries … may succeed»). It is an answer, before any stream: nothing ran."""
+
+START_RETRY_DELAYS = (1.0, 3.0)
+"""Waits before each new attempt after :data:`START_ERROR` (D121 (11)): two more at most."""
+
 _NAME_BOUNDARIES = "/_.: "
 """What may come before a Gateway tool name in the name the harness reports (its server
 prefix). Never a hyphen: `evil-ops___x` is a tool of another target, not `ops___x`."""
@@ -128,7 +136,8 @@ class TurnClients:
     The SDK never sends an invocation twice. Its default retries a request whose answer did
     not arrive, and the first one may be running: the turn would repeat on its own, in the same
     runtime session, with one budget reservation for two model bills. A turn that fails is
-    retried by the person.
+    retried by the person. The one exception is :func:`run`'s: AgentCore *answered* that it
+    could not start the turn (:data:`START_ERROR`), so nothing is running (D121 (11)).
     """
 
     def __init__(
@@ -975,6 +984,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     apps: frozenset[str] = frozenset(),
     clock: Callable[[], float] = time.monotonic,
     screen: Callable[[], list[dict[str, str]] | None] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> Iterator[StreamEvent]:
     """Invoke the harness and translate its event stream. Fills ``result`` as it goes.
 
@@ -1038,14 +1048,26 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     # has released the first block of the answer (or the first tool call).
     yield from progress.to(Phase.THINKING)
     result.started = True
-    try:
-        response = client.invoke_harness(**request)
-    except ClientError as error:
-        if error.response.get("Error", {}).get("Code") == HARNESS_NOT_FOUND:
-            # Answered before any stream: no model call was made, nothing was spent.
-            result.started = False
-            result.harness_missing = True
-        raise
+    attempt = 0
+    while True:
+        try:
+            response = client.invoke_harness(**request)
+            break
+        except ClientError as error:
+            code = error.response.get("Error", {}).get("Code")
+            if code == HARNESS_NOT_FOUND:
+                # Answered before any stream: no model call was made, nothing was spent.
+                result.started = False
+                result.harness_missing = True
+            elif code == START_ERROR and attempt < len(START_RETRY_DELAYS):
+                # AgentCore answered that it could not start the turn: nothing is running, so
+                # asking again cannot make two (D121 (11)). Never after a timeout or a lost
+                # answer, where the first invocation may be running.
+                logger.warning("the harness could not start the turn: asked again")
+                sleep(START_RETRY_DELAYS[attempt])
+                attempt += 1
+                continue
+            raise
     tool_names: dict[str, str] = {}
     # Tool call ids by their block, and when their block ended (the model finished the call).
     tool_blocks: dict[int, str] = {}

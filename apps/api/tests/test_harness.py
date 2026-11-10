@@ -1627,3 +1627,61 @@ def test_an_accepted_message_goes_on_to_the_harness() -> None:
     )
     assert result.text == "Bogotá." and result.stop_reason == "end_turn"
     assert any(e.kind == "delta" for e in events)
+
+
+# --- D121 (11): AgentCore answered that it could not start the turn ---------------------------
+
+
+class _Flaky:
+    def __init__(self, failures: list[Exception], stream: list[dict[str, Any]]) -> None:
+        self.failures = failures
+        self.stream = stream
+        self.calls = 0
+
+    def invoke_harness(self, **_request: Any) -> dict[str, Any]:
+        self.calls += 1
+        if self.failures:
+            raise self.failures.pop(0)
+        return {"stream": self.stream}
+
+
+def _client_error(code: str) -> Exception:
+    return ClientError({"Error": {"Code": code, "Message": "x"}}, "InvokeHarness")
+
+
+_ANSWER = [_text("Bogotá."), {"messageStop": {"stopReason": "end_turn"}}]
+
+
+def test_a_turn_agentcore_could_not_start_is_asked_again() -> None:
+    flaky = _Flaky([_client_error("InternalServerException")] * 2, _ANSWER)
+    waits: list[float] = []
+    result = harness.InvocationResult()
+    list(harness.run(flaky, {}, result, sleep=waits.append))  # type: ignore[arg-type]
+    assert flaky.calls == 3
+    assert waits == list(harness.START_RETRY_DELAYS)
+    assert result.text == "Bogotá." and result.stop_reason == "end_turn"
+
+
+def test_it_gives_up_after_the_last_retry() -> None:
+    flaky = _Flaky([_client_error("InternalServerException")] * 3, _ANSWER)
+    with pytest.raises(Exception, match="InternalServerException"):
+        list(harness.run(flaky, {}, harness.InvocationResult(), sleep=lambda _s: None))  # type: ignore[arg-type]
+    assert flaky.calls == 3
+
+
+@pytest.mark.parametrize(
+    "code", ["ValidationException", "ThrottlingException", "AccessDeniedException"]
+)
+def test_other_errors_are_never_asked_again(code: str) -> None:
+    flaky = _Flaky([_client_error(code)], _ANSWER)
+    with pytest.raises(Exception, match=code):
+        list(harness.run(flaky, {}, harness.InvocationResult(), sleep=lambda _s: None))  # type: ignore[arg-type]
+    assert flaky.calls == 1
+
+
+def test_a_lost_answer_is_never_asked_again() -> None:
+    # The first invocation may be running: two would bill twice for one reservation.
+    flaky = _Flaky([ReadTimeoutError(endpoint_url="https://x")], _ANSWER)
+    with pytest.raises(ReadTimeoutError):
+        list(harness.run(flaky, {}, harness.InvocationResult(), sleep=lambda _s: None))  # type: ignore[arg-type]
+    assert flaky.calls == 1
