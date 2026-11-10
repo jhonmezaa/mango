@@ -3,7 +3,7 @@
 # commit always builds on the same layers.
 FROM ghcr.io/astral-sh/uv:0.12.19@sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424 AS uv
 
-FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:3dd7cc108ec1493442514f5c2a871af6af0ec31d768ff6e378a93340c3b3db5f AS build
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS build
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
@@ -29,7 +29,7 @@ RUN uv export --frozen --no-dev --package mango-api --no-emit-workspace --no-hea
  # One date for every file: the layer depends on what the files hold, not on when it was built.
  && find /app -exec touch --no-dereference --date=@315532800 {} +
 
-FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:3dd7cc108ec1493442514f5c2a871af6af0ec31d768ff6e378a93340c3b3db5f
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app \
     MANGO_MCP_CATALOG_DIR=/app/mcp-catalog \
     MANGO_MODEL_CAPABILITIES=/app/model-capabilities.json

@@ -10,7 +10,7 @@
 # date for every file of the final image, which is a single layer copied from the runtime stage.
 FROM ghcr.io/astral-sh/uv:0.12.19@sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424 AS uv
 
-FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:3dd7cc108ec1493442514f5c2a871af6af0ec31d768ff6e378a93340c3b3db5f AS build
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS build
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
@@ -21,7 +21,7 @@ RUN uv export --frozen --no-dev --package mango-render-document --no-emit-worksp
  && uv pip install --system --no-cache --requirement /tmp/requirements.txt --target /app \
  && cp -R functions/render-document/src/. /app/
 
-FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:3dd7cc108ec1493442514f5c2a871af6af0ec31d768ff6e378a93340c3b3db5f AS runtime
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS runtime
 # The Debian archive as it was on this date: the same packages on every build. Change it to
 # take security updates (and say so in the release notes).
 ARG DEBIAN_SNAPSHOT=20261105T000000Z
