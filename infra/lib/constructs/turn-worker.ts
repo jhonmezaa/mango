@@ -88,6 +88,7 @@ export const TURN_WORKER_ENVIRONMENT = [
   "ADMIN_PROBE_FUNCTION",
   "GUARDRAIL_ID",
   "GUARDRAIL_VERSION",
+  "TURN_GUARDRAIL_VERSION",
   "RATE_LIMITS_TABLE",
   "ALLOWED_HOSTS",
   // The turn: its runtime session, approvals, skills, knowledge searches and the catalog of

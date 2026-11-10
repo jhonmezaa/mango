@@ -62,7 +62,7 @@ function readsInterpreter(resources: Record<string, Resource>, id: string, seen 
 }
 
 describe("stacks nested in Core (D99)", () => {
-  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge, TurnWorker, Sandbox, RenderDocument and UiSandbox, and keep Core of a release under 425 resources", () => {
+  it("are Operations, Authorization, RemoteMcp, CurReconciliation, Traces, EvalJudge, TurnWorker, Sandbox, RenderDocument and UiSandbox, and keep Core of a release under 430 resources", () => {
     expect([...nested.keys()].sort()).toEqual([
       "Authorization",
       "CurReconciliation",
@@ -85,7 +85,10 @@ describe("stacks nested in Core (D99)", () => {
     // policy, function and key value store, which the SPA's CSP names, stay in Core.
     // 425 since the key of the harnesses' runtime logs and its alias (D16, 2026-11-08): they
     // encrypt content.
-    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(425);
+    // 430 since the turn version of the base guardrail (decision 44, D34): its custom resource,
+    // function, role, policy and log group stay in Core, since mango-api's environment names the
+    // version it makes (a nested stack is a leaf: Core reads none of its outputs).
+    expect(Object.keys(template.Resources).length).toBeLessThanOrEqual(430);
   });
 
   it("are created from a template of the release's assets bucket, named by its content (D25, D69)", () => {

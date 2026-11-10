@@ -885,6 +885,8 @@ export class CoreStack extends Stack {
       AGENT_MODEL: cfg.models.agent,
       GUARDRAIL_ID: agentPlatform.guardrail.attrGuardrailId,
       GUARDRAIL_VERSION: agentPlatform.guardrailVersion.attrVersion,
+      // Decision 44 (D34): the version of the same guardrail the chat's harness carries.
+      TURN_GUARDRAIL_VERSION: agentPlatform.turnGuardrail.version,
       AGENT_SESSION_IDLE_SECONDS: String(SESSION_IDLE_SECONDS),
       AGENT_SESSION_MAX_SECONDS: String(SESSION_MAX_SECONDS),
       AUXILIARY_MODEL: cfg.models.auxiliary,

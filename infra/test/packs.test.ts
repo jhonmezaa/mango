@@ -742,7 +742,7 @@ describe("release packs (D36): only what the release key signed", () => {
 
   const raw = JSON.parse(readFileSync(examplePath, "utf8")) as Record<string, unknown>;
 
-  it("keeps Core under its budget of 470 resources with packs, of the 500 CloudFormation allows (D99)", () => {
+  it("keeps Core under its budget of 475 resources with packs, of the 500 CloudFormation allows (D99)", () => {
     const release = signedRelease({ also: [{ id: "aws-billing" }] });
     const lab = installationSchema.parse({
       ...raw,
@@ -759,7 +759,8 @@ describe("release packs (D36): only what the release key signed", () => {
     // 458 since the agents' memory, its key and alias (D122: data, so in Core, D99 (2)).
     // 468 since the second origin (D123 (9), precision of D99 of 2026-11-08).
     // 470 since the key of the harnesses' runtime logs and its alias (D16, 2026-11-08).
-    expect(Object.keys(own).length).toBeLessThanOrEqual(470);
+    // 475 since the turn version of the base guardrail (decision 44, D34), named by mango-api.
+    expect(Object.keys(own).length).toBeLessThanOrEqual(475);
   });
 
   it("ships the pack to the bucket and the catalog to the provisioner", () => {

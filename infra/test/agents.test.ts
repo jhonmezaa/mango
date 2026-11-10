@@ -247,7 +247,20 @@ describe("Brains: model catalog administration (D38)", () => {
     // The documents of the one knowledge base, for its synchronization only: knowledge.test.ts
     // pins them to that role and that base (D88 (32)).
     const documents = /^bedrock:((Get|Delete|Ingest|List)KnowledgeBaseDocuments|StartIngestionJob)$/;
-    const control = actions.filter((a) => /^bedrock:(List|Get|Create|Put|Delete|Update)/.test(a));
+    // The turn version of the base guardrail (decision 44, D34): its custom resource's role may
+    // only read, update and version that guardrail (provisioner.test.ts pins it).
+    const turnGuardrail = statements
+      .filter(({ statement }) => statement.Sid === "VersionTheBaseGuardrail")
+      .flatMap(({ statement }) => [statement.Action].flat());
+    expect(turnGuardrail.sort()).toEqual([
+      "bedrock:CreateGuardrailVersion",
+      "bedrock:GetGuardrail",
+      "bedrock:UpdateGuardrail",
+    ]);
+    const control = statements
+      .filter(({ statement }) => statement.Sid !== "VersionTheBaseGuardrail")
+      .flatMap(({ statement }) => [statement.Action].flat())
+      .filter((a) => /^bedrock:(List|Get|Create|Put|Delete|Update)/.test(a));
     expect(control.filter((a) => !documents.test(a)).sort()).toEqual([
       "bedrock:ListFoundationModels",
       "bedrock:ListInferenceProfiles",

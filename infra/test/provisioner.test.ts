@@ -513,6 +513,64 @@ describe("shared agent resources keep their identity (no replacement on upgrade)
     template.resourceCountIs("AWS::Bedrock::Guardrail", 1);
   });
 
+  it("pins a turn version of the same guardrail and puts the DRAFT back exactly on the base policy (decision 44)", () => {
+    const turn = Object.values(resources).filter((r) => r.Type === "Custom::MangoTurnGuardrail");
+    expect(turn).toHaveLength(1);
+    const props = turn[0]!.Properties;
+    expect(props.GuardrailId).toEqual({ "Fn::GetAtt": ["FinOpsAgentGuardrailEC59A646", "GuardrailId"] });
+    // Made after the pinned base version, and again whenever it changes.
+    expect(props.BaseVersion).toEqual({ "Fn::GetAtt": ["FinOpsAgentGuardrailVersion2A836BE7", "Version"] });
+    // What the function puts back in the DRAFT is, field by field, the guardrail of the template:
+    // the DRAFT never stays on the turn policy, nor drifts from what CloudFormation manages.
+    const camel = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(camel)
+        : value && typeof value === "object"
+          ? Object.fromEntries(
+              Object.entries(value).map(([k, v]) => [k.charAt(0).toLowerCase() + k.slice(1), camel(v)]),
+            )
+          : value;
+    const guardrail = camel(resources.FinOpsAgentGuardrailEC59A646!.Properties) as Record<string, unknown>;
+    const base = JSON.parse(props.Base as string) as Record<string, unknown>;
+    expect(base).toEqual(guardrail);
+    // The turn policy: the same without the input PROMPT_ATTACK filter, nothing else.
+    const turnPolicy = JSON.parse(props.Turn as string) as Record<string, any>;
+    const filters = (base.contentPolicyConfig as { filtersConfig: { type: string }[] }).filtersConfig;
+    expect(filters.map((f) => f.type)).toContain("PROMPT_ATTACK");
+    expect(turnPolicy).toEqual({
+      ...base,
+      contentPolicyConfig: { filtersConfig: filters.filter((f) => f.type !== "PROMPT_ATTACK") },
+    });
+    expect(props.Description).toEqual({
+      "Fn::Join": [
+        "",
+        [
+          expect.stringMatching(/^Turn guardrail \(policy [0-9a-f]{12}, base v$/),
+          { "Fn::GetAtt": ["FinOpsAgentGuardrailVersion2A836BE7", "Version"] },
+          ")",
+        ],
+      ],
+    });
+  });
+
+  it("lets the turn guardrail function only read, update and version the base guardrail", () => {
+    const role = Object.values(resources).find(
+      (r) => r.Type === "AWS::IAM::Role" && r.Properties.RoleName === `Mango-${ns}-TurnGuardrail`,
+    );
+    expect(role).toBeDefined();
+    const policies = Object.values(resources).filter((r) => r.Type === "AWS::IAM::Policy");
+    const statements = policies
+      .flatMap((p) => p.Properties.PolicyDocument.Statement as (Statement & { Sid?: string })[])
+      .filter((s) => s.Sid === "VersionTheBaseGuardrail");
+    expect(statements).toHaveLength(1);
+    expect(statements[0]!.Action).toEqual([
+      "bedrock:GetGuardrail",
+      "bedrock:UpdateGuardrail",
+      "bedrock:CreateGuardrailVersion",
+    ]);
+    expect(statements[0]!.Resource).toEqual({ "Fn::GetAtt": ["FinOpsAgentGuardrailEC59A646", "GuardrailArn"] });
+  });
+
   it("masks passwords only in the output, blocks keys and cards, and versions the guardrail with its policy", () => {
     // Decisions of the owner, 2026-11-09 (AGENTS.md exceptions, D34): PASSWORD not evaluated in the
     // input, masked in the output.

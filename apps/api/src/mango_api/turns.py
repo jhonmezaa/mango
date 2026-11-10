@@ -76,7 +76,7 @@ from mango_api.pricing import (
     turn_price,
 )
 from mango_api.published import AgentUnavailableError, PublishedAgent, usable_by
-from mango_api.settings import ModelPrice
+from mango_api.settings import ModelPrice, Settings
 from mango_api.settings_store import SettingsUnavailableError
 from mango_api.turns_store import ENDED, TurnEvent, TurnLog, TurnState, TurnStatus
 from mango_api.web import ApiError, Caller
@@ -208,9 +208,31 @@ def model_price(services: Services, model_id: str) -> ModelPrice:
     )
 
 
+def turn_guardrail_version(settings: Settings) -> str:
+    """The guardrail version a chat turn's harness carries (decision 44, D34): the turn version
+    when the installation has one (its new message is then checked with the base first, see
+    :func:`message_screen`), else the base version."""
+    return settings.turn_guardrail_version or settings.guardrail_version
+
+
+def message_screen(
+    services: Services, text: str
+) -> Callable[[], list[dict[str, str]] | None] | None:
+    """The check of the person's new message with the base guardrail, when the harness carries
+    the turn version (decision 44, D34); ``None`` when it carries the base itself."""
+    settings = services.settings
+    if not settings.turn_guardrail_version:
+        return None
+    return lambda: harness.screen_message(
+        services.bedrock, settings.guardrail_id, settings.guardrail_version, text
+    )
+
+
 def agent_invocation(
-    services: Services, agent: PublishedAgent, model_id: str
+    services: Services, agent: PublishedAgent, model_id: str, *, chat: bool = False
 ) -> harness.AgentInvocation:
+    """``chat``: a turn of a conversation, whose harness carries the turn version of the
+    guardrail (decision 44, D34). A task's run is one message in a new session: the base."""
     settings = services.settings
     return harness.AgentInvocation(
         harness_arn=agent.harness_arn,
@@ -221,7 +243,9 @@ def agent_invocation(
         allowed_tools=agent.allowed_tools,
         gateway_url=settings.gateway_url,
         guardrail_id=settings.guardrail_id,
-        guardrail_version=settings.guardrail_version,
+        guardrail_version=(
+            turn_guardrail_version(settings) if chat else settings.guardrail_version
+        ),
         skills=tuple(parse_skill_ref(ref)[0] for ref in agent.definition.skills),
     )
 
@@ -1413,7 +1437,7 @@ class ChatTurns:
         definition = agent.definition
         limits = definition.limits
         model_id, price = checked.model_id, checked.price
-        invocation_request = agent_invocation(services, agent, model_id)
+        invocation_request = agent_invocation(services, agent, model_id, chat=True)
 
         history_rows = [] if is_new else repo.messages(user.user_id, conversation_id)
         history = [harness.ChatTurn(m.role, m.content) for m in history_rows if m.content]
@@ -1499,7 +1523,7 @@ class ChatTurns:
             content_hash=agent.content_hash,
             model=model_id,
             guardrail_id=services.settings.guardrail_id,
-            guardrail_version=services.settings.guardrail_version,
+            guardrail_version=turn_guardrail_version(services.settings),
         )
         try:
             # One runtime session per conversation, bound to this user (D39). A turn that
@@ -1630,6 +1654,7 @@ class ChatTurns:
                 on_skill=skill_counter(services),
                 remotes=agent.remote_gateway_tools,
                 apps=mcp_apps.app_tools(services.mcp_apps, agent),
+                screen=message_screen(services, started.message.message),
             ):
                 if event.kind != harness.WRITE_CALL:
                     put(event.kind, event.data)

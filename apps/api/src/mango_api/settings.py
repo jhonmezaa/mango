@@ -81,6 +81,10 @@ class Settings:
     cognito_user_pool_id: str = ""
     guardrail_id: str = ""
     guardrail_version: str = ""
+    turn_guardrail_version: str = ""
+    """The turn version of the base guardrail (decision 44, D34): what the chat's harness
+    carries, without the input ``PROMPT_ATTACK`` filter; the person's new message is checked
+    with ``guardrail_version`` first. Empty: the chat carries the base version, as before."""
     model_capabilities_file: str = ""
     """``models/capabilities.json`` of the release (set by the image)."""
     agent_session_idle_seconds: int = 0
@@ -242,6 +246,7 @@ class Settings:
             cognito_user_pool_id=env["COGNITO_USER_POOL_ID"],
             guardrail_id=env["GUARDRAIL_ID"],
             guardrail_version=env["GUARDRAIL_VERSION"],
+            turn_guardrail_version=env.get("TURN_GUARDRAIL_VERSION", ""),
             agent_session_idle_seconds=int(env.get("AGENT_SESSION_IDLE_SECONDS", "0")),
             agent_session_max_seconds=int(env.get("AGENT_SESSION_MAX_SECONDS", "0")),
             approvals_table=env.get("APPROVALS_TABLE", ""),

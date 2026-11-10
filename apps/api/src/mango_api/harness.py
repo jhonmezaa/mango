@@ -19,7 +19,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 import boto3
 from botocore.config import Config
@@ -416,6 +416,39 @@ def guardrail_summary(trace: Any) -> list[dict[str, str]]:
 
 
 MAX_GUARDRAIL_ENTRIES = 20
+
+SCREEN_UNAVAILABLE: Final = [{"where": "input", "policy": "screen", "type": "unavailable"}]
+"""What :func:`screen_message` answers when the guardrail could not be asked: the turn is
+refused (fails closed)."""
+
+
+def screen_message(
+    client: Any, guardrail_id: str, version: str, text: str
+) -> list[dict[str, str]] | None:
+    """The base guardrail on the person's new message, before the harness (decision 44, D34).
+
+    The chat's harness carries the turn version of the guardrail, without the input
+    ``PROMPT_ATTACK`` filter: it evaluates the whole conversation, and that filter blocked
+    harmless second questions. What the person writes now is checked here with the base version,
+    every filter included. ``None`` when it may go on; otherwise what the guardrail decided,
+    without what it found (:func:`guardrail_summary`). Fails closed: a guardrail that could not
+    be asked refuses the turn. Never logs the text."""
+    try:
+        answer = client.apply_guardrail(
+            guardrailIdentifier=guardrail_id,
+            guardrailVersion=version,
+            source="INPUT",
+            content=[{"text": {"text": text}}],
+        )
+    except Exception:
+        logger.exception("the base guardrail could not check the new message")
+        return list(SCREEN_UNAVAILABLE)
+    if answer.get("action") == "NONE":
+        return None
+    assessments = answer.get("assessments") or []
+    return guardrail_summary({"inputAssessment": dict(enumerate(assessments))}) or [
+        {"where": "input", "policy": "screen", "type": "intervened"}
+    ]
 
 
 def build_request(
@@ -941,6 +974,7 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
     remotes: Mapping[str, str] | None = None,
     apps: frozenset[str] = frozenset(),
     clock: Callable[[], float] = time.monotonic,
+    screen: Callable[[], list[dict[str, str]] | None] | None = None,
 ) -> Iterator[StreamEvent]:
     """Invoke the harness and translate its event stream. Fills ``result`` as it goes.
 
@@ -977,7 +1011,25 @@ def run(  # noqa: PLR0912, PLR0915 - one branch per kind of stream event
 
     ``apps`` names the Gateway tools of the invocation that have an MCP App (D125): the input
     and the answer of their calls that answered are kept in ``result.app_calls``.
+
+    ``screen`` checks the person's new message with the base guardrail before the harness
+    (decision 44, D34: :func:`screen_message`). When it refuses it, the harness is never called:
+    the turn ends as one the guardrail blocked at its input (its message, ``guardrail_intervened``
+    and nothing spent).
     """
+    if screen is not None:
+        refused_by = screen()
+        if refused_by is not None:
+            result.guardrail.extend(refused_by)
+            result.text = BLOCKED_INPUT_MESSAGE
+            result.stop_reason = "guardrail_intervened"
+            result.usage_final = True
+            logger.warning(
+                "guardrail intervened: %s",
+                json.dumps([{"screen": "new message"}, *refused_by], separators=(",", ":")),
+            )
+            yield StreamEvent("delta", {"text": BLOCKED_INPUT_MESSAGE})
+            return
     progress = _Progress()
     # The tool name in the stream is written by the model and the guardrail does not check it:
     # progress only names tools of the published version (TM-LP1).

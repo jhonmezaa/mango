@@ -9,6 +9,7 @@ import { Installation } from "../config/schema.js";
 import { agentNames, roleNames } from "../names.js";
 import { acknowledge } from "../nag.js";
 import { AgentMemory } from "./agent-memory.js";
+import { GuardrailPolicy, TurnGuardrailVersion, turnPolicyOf } from "./turn-guardrail.js";
 
 /**
  * Runtime session lifecycle (D39). mango-api keeps one session per conversation and receives
@@ -37,6 +38,11 @@ export class AgentPlatform extends Construct {
   /** Base guardrail applied on every invocation (spec §6, D11) and stored in each harness. */
   readonly guardrail: bedrock.CfnGuardrail;
   readonly guardrailVersion: bedrock.CfnGuardrailVersion;
+  /**
+   * The turn version of the same guardrail (decision 44, D34): what the chat's harness carries,
+   * without the input PROMPT_ATTACK filter; the person's new message is checked with the base.
+   */
+  readonly turnGuardrail: TurnGuardrailVersion;
   /**
    * `alias/Mango-<ns>-agent-runtime-logs`: encrypted the runtime log groups of every harness until
    * 2026-11-08 and still encrypts the MCP packs' (D16). It stays: the events written before keep
@@ -120,7 +126,7 @@ export class AgentPlatform extends Construct {
       `arn:aws:logs:${stack.region}:${stack.account}:log-group:` +
       `/aws/bedrock-agentcore/runtimes/${agentNames.runtimePrefix(ns)}*`;
 
-    this.guardrail = new bedrock.CfnGuardrail(this, "Guardrail", {
+    const basePolicy: GuardrailPolicy = {
       name: `Mango-${ns}-base`,
       description: "Mango base guardrail: prompt attacks, harmful content and credentials",
       blockedInputMessaging:
@@ -157,7 +163,8 @@ export class AgentPlatform extends Construct {
           },
         ],
       },
-    });
+    };
+    this.guardrail = new bedrock.CfnGuardrail(this, "Guardrail", basePolicy);
     // A change of the policy needs a new version (the turns use the pinned one): its
     // description carries a digest of the policy, so CloudFormation makes one when it changes.
     const policy = {
@@ -173,6 +180,28 @@ export class AgentPlatform extends Construct {
     // A new policy replaces the version: the old one stays, since a harness published before
     // keeps it in its default configuration (mango-api sends the new one with every turn).
     this.guardrailVersion.cfnOptions.updateReplacePolicy = CfnDeletionPolicy.RETAIN;
+    // Decision 44 (D34): the chat's harness gets the turn version, a version of this same
+    // guardrail without the input PROMPT_ATTACK filter; mango-api checks the person's new
+    // message with the base version first.
+    // The same fields as the base digest (never the name, a token in a release).
+    const turnPolicy = turnPolicyOf(basePolicy);
+    const turnDigest = createHash("sha256")
+      .update(
+        JSON.stringify({
+          content: turnPolicy.contentPolicyConfig,
+          sensitive: turnPolicy.sensitiveInformationPolicyConfig,
+          blocked: [turnPolicy.blockedInputMessaging, turnPolicy.blockedOutputsMessaging],
+        }),
+      )
+      .digest("hex")
+      .slice(0, 12);
+    this.turnGuardrail = new TurnGuardrailVersion(this, "TurnGuardrail", {
+      installation: cfg,
+      guardrail: this.guardrail,
+      baseVersion: this.guardrailVersion,
+      basePolicy,
+      digest: turnDigest,
+    });
 
     this.runtimeLogsKey = new kms.Key(this, "RuntimeLogsKey", {
       alias: `alias/Mango-${ns}-agent-runtime-logs`,
