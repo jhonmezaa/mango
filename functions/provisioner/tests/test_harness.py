@@ -206,6 +206,7 @@ def test_a_version_that_runs_code_gets_the_code_tools_and_nothing_of_the_harness
         "@mango/finops___get_cost_and_usage",
         "@mango/textdoc___comment",
         "@mango/textdoc___create",
+        "@mango/textdoc___read",
         "@mango/textdoc___update",
     ]
     assert not {"shell", "file_operations"} & set(allowed)

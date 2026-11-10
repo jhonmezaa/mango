@@ -75,7 +75,9 @@ TEXTDOC_TARGET = "textdoc"
 """Gateway target of the Canvas connector (D124 (2)): a Mango connector that writes only in
 Mango. A version with the ``code_interpreter`` capability has its tools, and only such a
 version (D124, notes of K1): the Canvas goes with «Ejecutar código»."""
-TEXTDOC_TOOLS = ("create", "update", "comment")
+TEXTDOC_TOOLS = ("create", "update", "comment", "read")
+"""``read`` gives the agent the text of a document it no longer has (a renewed session only
+lists the documents, D124 (10))."""
 
 
 def textdoc_gateway_tools() -> tuple[str, ...]:

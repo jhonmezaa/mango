@@ -131,11 +131,16 @@ describe("Canvas connector (D124)", () => {
     }
   });
 
-  it("is a target of the Gateway with the three tools of the connector", () => {
+  it("is a target of the Gateway with the four tools of the connector", () => {
     const tools = target.Properties.TargetConfiguration.Mcp.Lambda.ToolSchema
       .InlinePayload as { Name: string }[];
     expect(tools.map((t) => t.Name)).toEqual(textdocTools().map((t) => t.name));
-    expect(tools.map((t) => t.Name)).toEqual(["create", "update", "comment"]);
+    expect(tools.map((t) => t.Name)).toEqual([
+      "create",
+      "update",
+      "comment",
+      "read",
+    ]);
     const invoke = Object.values(resources).find(
       (r) =>
         r.Type === "AWS::IAM::Policy" &&
@@ -148,11 +153,11 @@ describe("Canvas connector (D124)", () => {
     expect(statement!.Resource).toEqual({ "Fn::GetAtt": [fnId, "Arn"] });
   });
 
-  it("has a Cedar policy (L2) for its three tools, on this Gateway only", () => {
+  it("has a Cedar policy (L2) for its four tools, on this Gateway only", () => {
     const statement = JSON.stringify(
       cedar.Properties.Definition.Cedar.Statement,
     );
-    for (const tool of ["create", "update", "comment"]) {
+    for (const tool of ["create", "update", "comment", "read"]) {
       expect(statement).toContain(`AgentCore::Action::\\"textdoc___${tool}\\"`);
     }
     expect(statement).toContain("principal is AgentCore::OAuthUser");
