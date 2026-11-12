@@ -14,14 +14,6 @@ import { normalizeChart } from './chartSpec';
 import { ChatFilesProvider } from './chatFiles';
 import { ChatTableFile, TableCard } from './DataTable';
 
-vi.mock('./ChartView', () => ({
-  // Recharts measures its container, which jsdom does not lay out: the drawing is checked in
-  // the browser (e2e/chatCode.spec.ts); here, that the card mounts it with the spec.
-  default: ({ spec }: { spec: { chartType: string } }) => (
-    <div data-testid="chart-view">{spec.chartType}</div>
-  ),
-}));
-
 const CONVERSATION = 'c'.repeat(32);
 const CHART_ID = '01' + 'C'.repeat(24);
 const TABLE_ID = '01' + 'D'.repeat(24);
@@ -69,7 +61,7 @@ function wrap(api: unknown, children: ReactNode, onCopied = vi.fn()) {
   );
 }
 
-describe('ChatChart (design round 40, D118)', () => {
+describe('ChatChart (design rounds 40 and 41, D118)', () => {
   it('shows its title, its subtitle and copies its data as TSV with formulas defused', async () => {
     const user = userEvent.setup();
     const onCopied = vi.fn();
@@ -77,7 +69,9 @@ describe('ChatChart (design round 40, D118)', () => {
     render(wrap(fakeApi(vi.fn()), <ChartCard spec={SPEC} />, onCopied));
     expect(screen.getByText('Costo mensual')).toBeInTheDocument();
     expect(screen.getByText('may – oct 2026 · USD')).toBeInTheDocument();
-    expect(await screen.findByTestId('chart-view')).toHaveTextContent('bar');
+    expect(
+      await screen.findByRole('application', { name: /^Costo mensual\./ }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Copiar datos' }));
     expect(writeText).toHaveBeenCalledWith("mes\tEC2\n'=may\t41200");
     await waitFor(() => {
@@ -91,7 +85,7 @@ describe('ChatChart (design round 40, D118)', () => {
     expect(screen.getByRole('status', { name: 'Cargando la gráfica' })).toHaveTextContent(
       'Cargando la gráfica…',
     );
-    expect(await screen.findByTestId('chart-view')).toBeInTheDocument();
+    expect(await screen.findByRole('application')).toBeInTheDocument();
     expect(call).toHaveBeenCalledWith(
       'chatFileOutput',
       { path: { conversation_id: CONVERSATION, file_id: CHART_ID } },
@@ -118,7 +112,10 @@ describe('ChatChart (design round 40, D118)', () => {
     expect(
       await screen.findByText('Mango no muestra esta gráfica: infringía una regla de seguridad.'),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId('chart-view')).not.toBeInTheDocument();
+    expect(screen.queryByRole('application')).not.toBeInTheDocument();
+    // Design round 41: amber, with a lock, and no «Reintentar».
+    expect(screen.getByRole('status')).toHaveClass('mc-alert', 'amber');
+    expect(screen.queryByRole('button', { name: /Reintentar/ })).not.toBeInTheDocument();
   });
 
   it('asks again after «Reintentar» when the read failed', async () => {
@@ -128,8 +125,9 @@ describe('ChatChart (design round 40, D118)', () => {
       .mockRejectedValueOnce(new ApiError(503, 'files_unavailable', 'please try again'))
       .mockResolvedValue({ kind: 'chart', chart: SPEC, table: null });
     render(wrap(fakeApi(call), <ChatChartFile file={file(CHART_ID, 'c.chart.json', 'chart')} />));
-    await user.click(await screen.findByRole('button', { name: /Reintentar/ }));
-    expect(await screen.findByTestId('chart-view')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar la gráfica.');
+    await user.click(screen.getByRole('button', { name: /Reintentar/ }));
+    expect(await screen.findByRole('application')).toBeInTheDocument();
     expect(call).toHaveBeenCalledTimes(2);
   });
 

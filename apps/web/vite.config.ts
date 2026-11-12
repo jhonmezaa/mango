@@ -22,10 +22,6 @@ const BUILD_CSP = [
   "trusted-types 'none'",
 ].join('; ');
 
-/** Recharts and the libraries only it uses (D118): kept out of the eager vendor chunk. */
-const CHART_LIBRARIES =
-  /node_modules[\\/](recharts|victory-vendor|d3-[a-z-]+|internmap|@reduxjs|react-redux|redux|immer|reselect|es-toolkit|eventemitter3|decimal\.js-light|tiny-invariant|react-is)[\\/]/;
-
 function buildCspMeta(): Plugin {
   return {
     name: 'mango-build-csp-meta',
@@ -99,12 +95,9 @@ export default defineConfig(({ mode }) => {
               // enrollment QR stay out of the eager vendor chunk.
               { name: 'oidc', test: /node_modules[\\/](oidc-client-ts|jwt-decode)[\\/]/ },
               { name: 'qrcode', test: /node_modules[\\/]qrcode-generator[\\/]/ },
-              // The charts of the chat (D118) stay out of the eager vendor chunk: Recharts and
-              // its own dependencies go with `ChartView`, loaded only for an answer with a chart.
-              {
-                name: 'vendor',
-                test: (id: string) => id.includes('node_modules') && !CHART_LIBRARIES.test(id),
-              },
+              // The chart of the chat (D118 (10)) has no library of its own: `ChartView` is our
+              // SVG, still loaded on demand.
+              { name: 'vendor', test: /node_modules/ },
             ],
           },
         },

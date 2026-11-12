@@ -76,7 +76,7 @@ def test_unknown_fields_are_ignored_and_invalid_ones_fall_back() -> None:
         {
             **BARS,
             "html": "<script>alert(1)</script>",
-            "valueFormat": "currency",
+            "valueFormat": "percent",
             "layout": "diagonal",
             "meta": {"title": "  ", "description": "del formato que copia"},
             "series": [{"dataKey": "EC2", "valueFormat": 7}, {"key": ""}, "S3", None],
@@ -88,6 +88,19 @@ def test_unknown_fields_are_ignored_and_invalid_ones_fall_back() -> None:
     assert chart.meta.subtitle == "del formato que copia"
     assert [s.key for s in chart.series] == ["EC2"]
     assert "html" not in chart.model_dump()
+
+
+def test_money_names_its_currency_and_falls_back_to_dollars() -> None:
+    chart = _chart({**BARS, "valueFormat": "currency", "currency": " eur "})
+    assert (chart.valueFormat, chart.currency) == ("currency", "EUR")
+    assert {s.valueFormat for s in chart.series} == {"currency"}
+    for code in (None, "EURO", "€", "U$D", 840):
+        assert _chart({**BARS, "valueFormat": "currency", "currency": code}).currency == "USD"
+    # A single series of money is enough to name the currency.
+    one = _chart({**BARS, "series": [{"key": "EC2", "valueFormat": "currency"}], "currency": "COP"})
+    assert (one.valueFormat, one.currency) == ("compact", "COP")
+    # Without money there is no currency, whatever the spec says.
+    assert _chart({**BARS, "currency": "EUR"}).currency is None
 
 
 def test_the_axes_of_the_format_it_copies_are_read_too() -> None:

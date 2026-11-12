@@ -542,7 +542,8 @@ export const zChartSeriesOutSchema = z.object({
     valueFormat: z.enum([
         'compact',
         'integer',
-        'raw'
+        'raw',
+        'currency'
     ]),
     valuePrefix: z.string(),
     valueSuffix: z.string()
@@ -561,6 +562,7 @@ export const zChartSpecOutSchema = z.object({
         'pie',
         'scatter'
     ]),
+    currency: z.string().nullish(),
     data: z.array(z.record(z.string(), z.union([
         z.string(),
         z.int(),
@@ -573,7 +575,8 @@ export const zChartSpecOutSchema = z.object({
     valueFormat: z.enum([
         'compact',
         'integer',
-        'raw'
+        'raw',
+        'currency'
     ]),
     xKey: z.string()
 });

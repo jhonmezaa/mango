@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   chartTsv,
+  cutLabel,
   formatCell,
+  formatTick,
   formatValue,
   MAX_ROWS,
   MAX_SERIES,
+  niceScale,
   normalizeChart,
   parseChartBlock,
+  scaleTicks,
   tsvCell,
 } from './chartSpec';
 
@@ -65,7 +69,7 @@ describe('the closed spec of a chart (D118 (1), the server`s parse_chart)', () =
     const spec = normalizeChart({
       ...BARS,
       html: '<script>alert(1)</script>',
-      valueFormat: 'currency',
+      valueFormat: 'percent',
       layout: 'diagonal',
       meta: { title: '  ', description: 'del formato que copia' },
       series: [{ dataKey: 'EC2', valueFormat: 7 }, { key: '' }, 'S3', null],
@@ -142,6 +146,23 @@ describe('«Copiar datos» (D118 (4))', () => {
     expect(chartTsv(must(spec))).toBe(`mes\tEC2\tS3\n'=may\t41200${decimal}5\t12800`);
   });
 
+  it('names money with an ISO code, dollars when it names none valid (design round 41)', () => {
+    const money = normalizeChart({ ...BARS, valueFormat: 'currency', currency: ' eur ' });
+    expect([money?.valueFormat, money?.currency]).toEqual(['currency', 'EUR']);
+    expect(money?.series.every((s) => s.valueFormat === 'currency')).toBe(true);
+    for (const code of [undefined, 'EURO', '€', 840]) {
+      expect(normalizeChart({ ...BARS, valueFormat: 'currency', currency: code })?.currency).toBe(
+        'USD',
+      );
+    }
+    expect(normalizeChart({ ...BARS, currency: 'EUR' })?.currency).toBeNull();
+  });
+
+  it('copies the axis label of x as its header when it has one', () => {
+    const spec = normalizeChart({ ...BARS, axes: { x: { label: 'Mes' } } });
+    expect(chartTsv(must(spec)).split('\n')[0]).toBe('Mes\tEC2\tS3');
+  });
+
   it('copies only the first series of a pie, the one it draws', () => {
     const spec = normalizeChart({ ...BARS, chartType: 'pie' });
     expect(chartTsv(must(spec)).split('\n')[0]).toBe('mes\tEC2');
@@ -161,6 +182,60 @@ describe('numbers with Intl and the browser`s locale (design round 40 `crFmt`)',
     );
     expect(formatValue('may', 'compact')).toBe('may');
     expect(formatValue(null, 'compact')).toBe('');
+  });
+
+  it('formats money with Intl: no decimals from 100, two below it (design round 41)', () => {
+    const usd = (digits: number) =>
+      new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      });
+    expect(formatValue(58300, 'currency', undefined, 'USD')).toBe(usd(0).format(58300));
+    expect(formatValue(99.5, 'currency', undefined, 'USD')).toBe(usd(2).format(99.5));
+    expect(formatValue(1234, 'currency')).toBe(usd(0).format(1234));
+    const eur = new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: 'EUR',
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0,
+    });
+    expect(formatValue(1500, 'currency', undefined, 'EUR')).toBe(eur.format(1500));
+  });
+
+  it('labels the money axis without decimals, compact from 100,000', () => {
+    expect(formatTick(6000, 'currency', 'USD')).toBe(
+      new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 0,
+      }).format(6000),
+    );
+    expect(formatTick(1_200_000, 'currency', 'USD')).toBe(
+      new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        notation: 'compact',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+      }).format(1_200_000),
+    );
+  });
+
+  it('builds a round scale in four or five steps (`crNice`)', () => {
+    expect(niceScale(58300)).toEqual({ top: 60000, step: 20000 });
+    expect(niceScale(900)).toEqual({ top: 1000, step: 250 });
+    expect(niceScale(0)).toEqual({ top: 1, step: 0.25 });
+    expect(scaleTicks(niceScale(5820))).toEqual([0, 2000, 4000, 6000]);
+  });
+
+  it('cuts a long label with «…» (`crCut`)', () => {
+    expect(cutLabel('Amazon Relational Database Service', 30)).toBe(
+      'Amazon Relational Database Se…',
+    );
+    expect(cutLabel('EC2', 30)).toBe('EC2');
+    expect(cutLabel(null, 30)).toBe('');
   });
 
   it('shows a table cell as an integer or with up to four decimals', () => {

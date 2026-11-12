@@ -453,3 +453,21 @@ export const PipIcon = createIcon(
     <rect x="12" y="11" width="7" height="6" rx="1" />
   </>,
 );
+
+// Design round 41 (`chat-run.jsx`): «Ver datos», «Ver gráfica» and a figure's reference.
+export const TableIcon = createIcon(
+  'Table',
+  <>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M3 10h18M3 15h18M9 10v10" />
+  </>,
+);
+export const BarChartIcon = createIcon('BarChart', <path d="M4 20h16M7 16v-5M12 16V6M17 16v-8" />);
+export const ImageIcon = createIcon(
+  'Image',
+  <>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <circle cx="9" cy="10" r="1.75" />
+    <path d="m21 16-5-5-9 9" />
+  </>,
+);

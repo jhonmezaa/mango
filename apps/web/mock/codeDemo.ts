@@ -18,7 +18,8 @@ const runId = (): string => randomBytes(16).toString('hex');
  * - chart and table (D118, G1 and T1): «línea», «tarta», «dispersión» (the chart's type; bars
  *   otherwise), «gráfica inválida» (cannot be drawn), «gráfica retenida» (the guardrail),
  *   «gráfica falla» (the first read fails, «Reintentar» works), «gráfica en el texto» (a
- *   ```` ```mango-chart ```` block in the answer instead of a chart file).
+ *   ```` ```mango-chart ```` block in the answer instead of a chart file); design round 41:
+ *   «barras horizontales» (long category names) and «muchas categorías» (120 days of lines).
  */
 
 export interface DemoCell {
@@ -99,7 +100,7 @@ const CELL_2 = [
   "cuentas.to_excel('/mnt/data/detalle_costos.xlsx')",
 ].join('\n');
 
-/** Design round 40 `CR_MONTHS` and `crDemoSpec`: the specs as the API returns them. */
+/** Design round 41 `CR_MONTHS` and `crDemoSpec`: the specs as the API returns them. */
 const MONTHS = (
   [
     ['may', 41200, 9800, 12800],
@@ -114,7 +115,7 @@ const MONTHS = (
 const series = (key: string, label: string) => ({
   key,
   label,
-  valueFormat: 'compact',
+  valueFormat: 'currency',
   valuePrefix: '',
   valueSuffix: '',
   stack: null,
@@ -122,7 +123,7 @@ const series = (key: string, label: string) => ({
 
 export function demoChart(message: string): Record<string, unknown> {
   const meta = (title: string, subtitle: string) => ({ title, subtitle, footer: null });
-  const base = { layout: 'horizontal', valueFormat: 'compact' };
+  const base = { layout: 'horizontal', valueFormat: 'currency', currency: 'USD' };
   if (/tarta/i.test(message)) {
     return {
       ...base,
@@ -130,7 +131,7 @@ export function demoChart(message: string): Record<string, unknown> {
       xKey: 'servicio',
       series: [series('costo', 'Costo')],
       axes: { x: { label: null }, y: { label: null } },
-      meta: meta('Reparto del costo de octubre', 'oct 2026 · USD'),
+      meta: meta('Reparto del costo de octubre', 'Octubre 2026 · Valores en USD'),
       data: [
         { servicio: 'EC2', costo: 58300 },
         { servicio: 'S3', costo: 13600 },
@@ -146,10 +147,49 @@ export function demoChart(message: string): Record<string, unknown> {
       xKey: 'cpu',
       series: [series('costo', 'Instancias EC2')],
       axes: { x: { label: 'CPU media (%)' }, y: { label: 'USD / mes' } },
-      meta: meta('Uso contra costo por instancia', '42 instancias · oct 2026'),
+      meta: meta('Uso contra costo por instancia', '42 instancias · Octubre 2026'),
       data: Array.from({ length: 42 }, (_, i) => ({
         cpu: Math.round(4 + ((i * 37) % 88)),
         costo: Math.round(120 + ((i * 53) % 17) * 95 + ((i * 7) % 5) * 40),
+      })),
+    };
+  }
+  if (/barras horizontales/i.test(message)) {
+    return {
+      ...base,
+      chartType: 'bar',
+      layout: 'vertical',
+      xKey: 'servicio',
+      series: [series('oct', 'Octubre'), series('nov', 'Noviembre')],
+      axes: { x: { label: null }, y: { label: null } },
+      meta: meta('Costo por servicio de AWS', 'Noviembre 2026 · Valores en USD'),
+      data: (
+        [
+          ['Amazon Elastic Compute Cloud', 5310, 5820],
+          ['Amazon Relational Database Service', 2050, 2140],
+          ['Amazon Simple Storage Service', 1290, 1360],
+          ['Amazon CloudFront', 640, 610],
+          ['AWS Lambda', 310, 380],
+          ['Amazon DynamoDB', 270, 290],
+          ['Elastic Load Balancing', 235, 240],
+          ['Amazon CloudWatch', 150, 170],
+        ] as const
+      ).map(([servicio, oct, nov]) => ({ servicio, oct, nov })),
+    };
+  }
+  if (/muchas categor[ií]as/i.test(message)) {
+    return {
+      ...base,
+      chartType: 'line',
+      xKey: 'dia',
+      series: [series('EC2', 'EC2'), series('RDS', 'RDS'), series('S3', 'S3')],
+      axes: { x: { label: null }, y: { label: 'USD' } },
+      meta: meta('Costo diario por servicio', '1 jul – 28 oct 2026 · 120 días · Valores en USD'),
+      data: Array.from({ length: 120 }, (_, i) => ({
+        dia: new Date(2026, 6, 1 + i).toLocaleDateString('es', { day: 'numeric', month: 'short' }),
+        EC2: Math.round(1300 + i * 6 + ((i * 37) % 11) * 25),
+        RDS: Math.round(330 + ((i * 13) % 7) * 8),
+        S3: Math.round(420 + i * 1.2 + ((i * 17) % 5) * 10),
       })),
     };
   }
@@ -159,7 +199,7 @@ export function demoChart(message: string): Record<string, unknown> {
     xKey: 'mes',
     series: [series('EC2', 'EC2'), series('RDS', 'RDS'), series('S3', 'S3')],
     axes: { x: { label: null }, y: { label: 'USD' } },
-    meta: meta('Costo mensual por servicio', 'may – oct 2026 · USD'),
+    meta: meta('Costo mensual por servicio', 'May – oct 2026 · Valores en USD'),
     data: MONTHS,
   };
 }

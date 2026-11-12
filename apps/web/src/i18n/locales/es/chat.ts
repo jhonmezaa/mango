@@ -155,9 +155,15 @@ export const chat = {
     expandShort: 'Ampliar',
     download: 'Descargar {{name}}',
     downloadShort: 'Descargar',
+    // Design round 41: the large card under the block and its reference inside it.
+    size: '{{name}} · {{width}} × {{height}} px',
+    below: '· figura, debajo del bloque',
+    goTo: 'Ir a la figura',
+    count_one: '{{count}} figura',
+    count_other: '{{count}} figuras',
   },
-  // Design round 40 `ChatChart` (D118, G1). `withheld` and `error` are not drawn by the design
-  // yet (reported for the next round of Claude Design).
+  // Design round 40 and 41 `ChatChart` (D118, G1). `withheld` and `error` keep the product's
+  // words, as the round 41 handoff allows («Si el producto ya tiene textos…»).
   chart: {
     loading: 'Cargando la gráfica…',
     loadingLabel: 'Cargando la gráfica',
@@ -168,8 +174,30 @@ export const chat = {
     error: 'No se pudo cargar la gráfica.',
     retry: 'Reintentar',
     copy: 'Copiar datos',
+    copyTitle: 'Copiar datos (se pegan en Excel)',
     copied: 'Datos copiados. Pégalos en Excel o en una hoja de cálculo.',
     chart: 'Gráfica',
+    // Design round 41: the interactive chart.
+    viewData: 'Ver datos',
+    viewChart: 'Ver gráfica',
+    roleDescription: 'gráfica',
+    hint: 'Usa las flechas para recorrer los puntos, Inicio y Fin para ir al primero y al último, y Escape para soltar el punto. «Ver datos» muestra la tabla.',
+    series: 'Series',
+    slices: 'Porciones',
+    show: 'Mostrar {{name}}',
+    hide: 'Ocultar {{name}}',
+    keepOne: 'Tiene que quedar al menos una serie a la vista',
+    keepOneSlice: 'Tiene que quedar al menos una porción a la vista',
+    showAll: 'Mostrar todas',
+    hidden_one: '{{count}} serie oculta',
+    hidden_other: '{{count}} series ocultas',
+    ofVisible: 'De lo visible',
+    ofTotal: 'Del total',
+    totalShare: '% del total',
+    position: '{{p}} de {{n}}',
+    dataOf: 'Datos de {{title}}',
+    dataUntitled: 'Datos de la gráfica',
+    capped: 'Se muestran {{shown}} de {{total}} filas. «Copiar datos» las copia todas.',
   },
   // Design round 40 `DataTable` (D118 (5), T1).
   table: {

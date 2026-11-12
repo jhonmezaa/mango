@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -211,6 +211,47 @@ describe('CodeBlock (design round 40)', () => {
     if (!expand) throw new Error('no «Ampliar»');
     await user.click(expand);
     expect(within(screen.getByRole('dialog')).getByRole('img')).toHaveAttribute('src', 'blob:fig');
+  });
+
+  it('puts each figure in a large card under the block, referenced from inside it (round 41)', async () => {
+    const user = userEvent.setup();
+    const figure = {
+      file_id: FIGURE_ID,
+      name: 'costo.png',
+      kind: 'png',
+      size_bytes: 10,
+      role: 'figure' as const,
+      image: true,
+    };
+    const { container } = render(
+      wrap(
+        fakeApi(),
+        <CodeBlock block={{ cells: [cell({ files: [figure] })], pending: 0 }} streaming={false} />,
+      ),
+    );
+    const image = await screen.findByRole('img', { name: 'costo.png' });
+    // Order: the block, then the card of its figure, outside it.
+    const card = container.querySelector('figure.cr-figcard');
+    expect(card?.previousElementSibling).toHaveClass('cr-code');
+    expect(container.querySelector('.cr-code figure')).toBeNull();
+    expect(card).toHaveAttribute('aria-label', 'costo.png');
+    expect(
+      within(card as HTMLElement).getByRole('button', { name: 'Descargar costo.png' }),
+    ).toBeInTheDocument();
+    // The header counts the figures; the size is the one the browser read.
+    expect(screen.getByRole('button', { name: /Analizado/ })).toHaveTextContent('· 1 figura');
+    Object.defineProperty(image, 'naturalWidth', { value: 1200 });
+    Object.defineProperty(image, 'naturalHeight', { value: 600 });
+    fireEvent.load(image);
+    expect(within(card as HTMLElement).getByText('costo.png · 1200 × 600 px')).toBeInTheDocument();
+    // Inside the folded block: a reference that takes the focus to the card.
+    await user.click(screen.getByRole('button', { name: /Analizado/ }));
+    expect(screen.getByText('· figura, debajo del bloque')).toBeInTheDocument();
+    const scroll = vi.fn();
+    (card as HTMLElement).scrollIntoView = scroll;
+    await user.click(screen.getByRole('button', { name: 'Ir a la figura' }));
+    expect(card).toHaveFocus();
+    expect(scroll).toHaveBeenCalled();
   });
 
   it('says a figure did not load and loads it again with «Reintentar»', async () => {

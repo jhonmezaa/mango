@@ -1493,7 +1493,7 @@ export type ChartSeriesOut = {
     /**
      * Valueformat
      */
-    valueFormat: 'compact' | 'integer' | 'raw';
+    valueFormat: 'compact' | 'integer' | 'raw' | 'currency';
     /**
      * Valueprefix
      */
@@ -1516,6 +1516,10 @@ export type ChartSpecOut = {
      */
     chartType: 'bar' | 'line' | 'pie' | 'scatter';
     /**
+     * Currency
+     */
+    currency?: string | null;
+    /**
      * Data
      */
     data: Array<{
@@ -1533,7 +1537,7 @@ export type ChartSpecOut = {
     /**
      * Valueformat
      */
-    valueFormat: 'compact' | 'integer' | 'raw';
+    valueFormat: 'compact' | 'integer' | 'raw' | 'currency';
     /**
      * Xkey
      */

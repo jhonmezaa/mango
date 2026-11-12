@@ -2684,7 +2684,8 @@
             "enum": [
               "compact",
               "integer",
-              "raw"
+              "raw",
+              "currency"
             ],
             "title": "Valueformat",
             "type": "string"
@@ -2724,6 +2725,17 @@
             ],
             "title": "Charttype",
             "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
           },
           "data": {
             "items": {
@@ -2773,7 +2785,8 @@
             "enum": [
               "compact",
               "integer",
-              "raw"
+              "raw",
+              "currency"
             ],
             "title": "Valueformat",
             "type": "string"

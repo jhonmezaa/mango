@@ -54,9 +54,13 @@ _RESERVED_KEYS = frozenset({"__proto__", "constructor", "prototype"})
 _CSV_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,96}\.csv$")
 
 ChartType = Literal["bar", "line", "pie", "scatter"]
-ValueFormat = Literal["compact", "integer", "raw"]
+ValueFormat = Literal["compact", "integer", "raw", "currency"]
 _CHART_TYPES: frozenset[str] = frozenset({"bar", "line", "pie", "scatter"})
-_FORMATS: frozenset[str] = frozenset({"compact", "integer", "raw"})
+_FORMATS: frozenset[str] = frozenset({"compact", "integer", "raw", "currency"})
+_CURRENCY = re.compile(r"^[A-Z]{3}$")
+"""An ISO 4217 code (design round 41): the browser's ``Intl`` formats the amounts with it."""
+DEFAULT_CURRENCY = "USD"
+"""The currency of a ``currency`` chart that does not name a valid one (design round 41)."""
 
 DataValue = str | int | float | bool | None
 """A value of a row: text, a finite number, a boolean or nothing."""
@@ -108,6 +112,9 @@ class ChartSpecOut(_Strict):
     layout: Literal["horizontal", "vertical"]
     """``vertical``: bars along the y axis (bar only)."""
     valueFormat: ValueFormat  # noqa: N815
+    currency: str | None = None
+    """The ISO 4217 code of the ``currency`` values (D118 (10)); ``None`` when no series is
+    money."""
     axes: ChartAxesOut
     meta: ChartMetaOut
 
@@ -211,6 +218,14 @@ def _format(value: object, default: ValueFormat) -> ValueFormat:
     return value if isinstance(value, str) and value in _FORMATS else default  # type: ignore[return-value]
 
 
+def _currency(value: object) -> str | None:
+    """An ISO 4217 code as three letters (``usd`` is ``USD``); ``None`` for anything else."""
+    if not isinstance(value, str):
+        return None
+    code = value.strip().upper()
+    return code if _CURRENCY.fullmatch(code) else None
+
+
 def _series(
     raw: object, value_key: str, value_format: ValueFormat, prefix: str, suffix: str
 ) -> list[ChartSeriesOut] | None:
@@ -284,6 +299,8 @@ def parse_chart(raw: object) -> ChartSpecOut | None:
     )
     if series is None:
         return None
+    money = value_format == "currency" or any(s.valueFormat == "currency" for s in series)
+    currency = (_currency(raw.get("currency")) or DEFAULT_CURRENCY) if money else None
     meta_raw = raw.get("meta")
     meta: Mapping[str, object] = meta_raw if isinstance(meta_raw, Mapping) else {}
     axes = raw.get("axes")
@@ -296,6 +313,7 @@ def parse_chart(raw: object) -> ChartSpecOut | None:
         if chart_type == "bar" and raw.get("layout") == "vertical"
         else "horizontal",
         valueFormat=value_format,
+        currency=currency,
         axes=ChartAxesOut(
             x=ChartAxisOut(label=_axis_label(axes, "x", raw.get("xAxisLabel"))),
             y=ChartAxisOut(label=_axis_label(axes, "y", raw.get("yAxisLabel"))),

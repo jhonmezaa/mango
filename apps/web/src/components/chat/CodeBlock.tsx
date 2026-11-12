@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { memo, useState } from 'react';
+import { memo, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { CodeCell, CodeFile } from '../../api/codeSchemas';
@@ -17,6 +17,7 @@ import {
   ChevronRightIcon,
   DownloadIcon,
   ExpandIcon,
+  ImageIcon,
   InfoIcon,
   LockIcon,
   PauseIcon,
@@ -67,8 +68,35 @@ function failureLine(cells: CodeCell[], cutoff: string): string | null {
   return null;
 }
 
-function Cell({ cell, index }: { cell: CodeCell; index: number }) {
+/** Where the card of a figure is (design round 41): the block's reference takes the focus there. */
+type FigureId = (file: CodeFile) => string;
+
+/** Design round 41: inside the folded block, a figure is a reference to its card below it. */
+function FigureRef({ file, id }: { file: CodeFile; id: string }) {
   const { t } = useTranslation();
+  return (
+    <div className="cr-cell-fig">
+      <ImageIcon size={12} />
+      <span className="mono">{file.name}</span>
+      <span>{t('chat.figure.below')}</span>
+      <button
+        type="button"
+        className="sr-link"
+        onClick={() => {
+          const card = document.getElementById(id);
+          card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          card?.focus({ preventScroll: true });
+        }}
+      >
+        {t('chat.figure.goTo')}
+      </button>
+    </div>
+  );
+}
+
+function Cell({ cell, index, figureId }: { cell: CodeCell; index: number; figureId: FigureId }) {
+  const { t } = useTranslation();
+  const figures = cell.files.filter((file) => file.image && !file.gone);
   const stderr = shownStderr(cell);
   const exception = exceptionText(cell);
   return (
@@ -112,6 +140,9 @@ function Cell({ cell, index }: { cell: CodeCell; index: number }) {
               <pre className="mono">{exception}</pre>
             </div>
           ) : null}
+          {figures.map((file) => (
+            <FigureRef key={file.file_id} file={file} id={figureId(file)} />
+          ))}
         </>
       )}
     </div>
@@ -140,87 +171,109 @@ function failureText(t: TFunction, f: DownloadFailure) {
   return f.kind === 'rate' ? t('chat.file.rate', { count: f.minutes }) : t('chat.file.dlError');
 }
 
-/** Design round 40 `CrFigure`: an image the cell wrote, read as a `blob:` from the API. */
-function Figure({ file }: { file: CodeFile }) {
+/**
+ * Design round 41 `CrFigure`: one large card per figure, under the block, the width of the
+ * message. The image is a `blob:` read from the API; its size is the one the browser read.
+ */
+function Figure({ file, id }: { file: CodeFile; id: string }) {
   const { t } = useTranslation();
   const view = useFileView(file.file_id, false);
   const [attempt, setAttempt] = useState(0);
   const [zoom, setZoom] = useState(false);
   const [failure, setFailure] = useState<DownloadFailure | null>(null);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const download = useDownload();
   const image = useImageUrl(file.file_id, view === 'ready', attempt);
   if (view === 'blocked' || view === 'gone') {
     // Not an image that can be shown any more: its card says why.
-    return <FileCard file={file} compact />;
+    return <FileCard file={file} compact={false} />;
   }
   const save = () => {
     void download(file).then(setFailure);
   };
   const loading = view === 'scan' || (!image.url && !image.failed);
+  const meta = size
+    ? t('chat.figure.size', { name: file.name, width: size.width, height: size.height })
+    : file.name;
+  const expand = () => {
+    setZoom(true);
+  };
   return (
-    <figure className="cr-fig">
-      {loading ? (
-        <div className="cr-fig-img is-load" role="status" aria-label={t('chat.figure.loading')}>
-          <span className="spinner" aria-hidden="true" />
+    <figure className="cr-figcard" id={id} tabIndex={-1} aria-label={file.name}>
+      <figcaption className="cr-figcard-h">
+        <div className="min-w-0">
+          <div className="cr-chart-t">{file.name}</div>
+          <div className="cr-chart-s mono">{meta}</div>
         </div>
-      ) : image.failed || !image.url ? (
-        <div className="cr-fig-img is-err" role="alert">
-          <WarnIcon size={15} />
-          <span>{t('chat.figure.error')}</span>
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => {
-              setAttempt((n) => n + 1);
-            }}
-          >
-            <RefreshIcon size={11} /> {t('chat.figure.retry')}
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          className="cr-fig-btn"
-          onClick={() => {
-            setZoom(true);
-          }}
-          aria-label={t('chat.figure.expand', { name: file.name })}
-        >
-          <img className="cr-fig-pic" src={image.url} alt={file.name} loading="lazy" />
-        </button>
-      )}
-      <figcaption className="flex items-center justify-between">
-        <span className="mono">{file.name}</span>
         {image.url ? (
-          <span className="flex items-center gap-1">
+          <div className="cr-chart-a">
             <button
               type="button"
-              className="btn btn-ghost btn-icon"
+              className="btn btn-sm btn-ghost"
               title={t('chat.figure.expandShort')}
               aria-label={t('chat.figure.expand', { name: file.name })}
-              onClick={() => {
-                setZoom(true);
-              }}
+              onClick={expand}
             >
-              <ExpandIcon size={11} />
+              <ExpandIcon size={12} />
+              <span className="cr-lbl">{t('chat.figure.expandShort')}</span>
             </button>
             <button
               type="button"
-              className="btn btn-ghost btn-icon"
+              className="btn btn-sm btn-ghost"
               title={t('chat.figure.downloadShort')}
               aria-label={t('chat.figure.download', { name: file.name })}
               onClick={save}
             >
-              <DownloadIcon size={11} />
+              <DownloadIcon size={12} />
+              <span className="cr-lbl">{t('chat.figure.downloadShort')}</span>
             </button>
-          </span>
+          </div>
         ) : null}
       </figcaption>
-      {failure ? (
-        <div className="cr-file-s is-red" role="alert">
-          {failureText(t, failure)}
-        </div>
-      ) : null}
+      <div className="cr-figcard-b">
+        {loading ? (
+          <div className="cr-fig-img is-load" role="status" aria-label={t('chat.figure.loading')}>
+            <span className="spinner" aria-hidden="true" />
+          </div>
+        ) : image.failed || !image.url ? (
+          <div className="cr-fig-img is-err" role="alert">
+            <WarnIcon size={15} />
+            <span>{t('chat.figure.error')}</span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                setAttempt((n) => n + 1);
+              }}
+            >
+              <RefreshIcon size={11} /> {t('chat.figure.retry')}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="cr-fig-btn"
+            onClick={expand}
+            aria-label={t('chat.figure.expand', { name: file.name })}
+          >
+            <img
+              className="cr-fig-pic is-card"
+              src={image.url}
+              alt={file.name}
+              loading="lazy"
+              onLoad={(event) => {
+                const { naturalWidth: width, naturalHeight: height } = event.currentTarget;
+                if (width && height) setSize({ width, height });
+              }}
+            />
+          </button>
+        )}
+        {failure ? (
+          <div className="cr-file-s is-red" role="alert">
+            {failureText(t, failure)}
+          </div>
+        ) : null}
+      </div>
       {zoom && image.url ? (
         <Modal
           title={file.name}
@@ -229,9 +282,12 @@ function Figure({ file }: { file: CodeFile }) {
             setZoom(false);
           }}
           footer={
-            <button type="button" className="btn btn-sm" onClick={save}>
-              <DownloadIcon size={11} /> {t('chat.figure.downloadShort')}
-            </button>
+            <div className="flex w-full items-center justify-between gap-2.5">
+              <span className="mk-meta mono">{meta}</span>
+              <button type="button" className="btn btn-sm" onClick={save}>
+                <DownloadIcon size={11} /> {t('chat.figure.downloadShort')}
+              </button>
+            </div>
           }
         >
           <img className="cr-fig-pic is-big" src={image.url} alt={file.name} />
@@ -254,55 +310,60 @@ export const CodeBlock = memo(function CodeBlock({ block, streaming }: Props) {
   const count = block.cells.length + block.pending;
   const total = codeBlockMs(block);
   const figures = codeFigures(block);
+  const uid = useId();
+  const figureId: FigureId = (file) => `crfig-${uid}-${file.file_id}`;
   const failure = state === 'error' ? failureLine(block.cells, t('chat.code.timeout')) : null;
+  // Design round 41 order: the block, then its figures, each in a large card under it.
   return (
-    <div className={`cr-code is-${state}`} aria-busy={state === 'running'}>
-      <button
-        type="button"
-        className="cr-code-h"
-        aria-expanded={open}
-        onClick={() => {
-          setOpen((o) => !o);
-        }}
-      >
-        <HeadIcon state={state} />
-        <span className="cr-code-t" role={state === 'running' ? 'status' : undefined}>
-          {t(HEAD[state])}
-        </span>
-        <span className="cr-code-m mono">
-          {t('chat.code.cells', { count })}
-          {total && state !== 'running' ? ` · ${formatDuration(total)}` : ''}
-        </span>
-        <span className="cr-code-o">
-          {open ? t('chat.code.hide') : t('chat.code.show')}{' '}
-          <ChevronRightIcon size={10} className={open ? 'tool-chevron is-open' : 'tool-chevron'} />
-        </span>
-      </button>
-      {!open && failure ? <div className="cr-code-sum mono">{failure}</div> : null}
-      {!open && state === 'paused' ? (
-        <div className="cr-code-sum">{t('chat.code.pausedNote')}</div>
-      ) : null}
-      {open ? (
-        <div className="cr-code-b">
-          {block.cells.map((cell, index) => (
-            <Cell key={cell.run_id} cell={cell} index={index} />
-          ))}
-          {Array.from({ length: block.pending }, (_, i) => (
-            <RunningCell
-              key={`pending-${String(i)}`}
-              index={block.cells.length + i}
-              paused={state !== 'running'}
+    <>
+      <div className={`cr-code is-${state}`} aria-busy={state === 'running'}>
+        <button
+          type="button"
+          className="cr-code-h"
+          aria-expanded={open}
+          onClick={() => {
+            setOpen((o) => !o);
+          }}
+        >
+          <HeadIcon state={state} />
+          <span className="cr-code-t" role={state === 'running' ? 'status' : undefined}>
+            {t(HEAD[state])}
+          </span>
+          <span className="cr-code-m mono">
+            {t('chat.code.cells', { count })}
+            {total && state !== 'running' ? ` · ${formatDuration(total)}` : ''}
+            {figures.length ? ` · ${t('chat.figure.count', { count: figures.length })}` : ''}
+          </span>
+          <span className="cr-code-o">
+            {open ? t('chat.code.hide') : t('chat.code.show')}{' '}
+            <ChevronRightIcon
+              size={10}
+              className={open ? 'tool-chevron is-open' : 'tool-chevron'}
             />
-          ))}
-        </div>
-      ) : null}
-      {figures.length > 0 ? (
-        <div className="cr-figs">
-          {figures.map((file) => (
-            <Figure key={file.file_id} file={file} />
-          ))}
-        </div>
-      ) : null}
-    </div>
+          </span>
+        </button>
+        {!open && failure ? <div className="cr-code-sum mono">{failure}</div> : null}
+        {!open && state === 'paused' ? (
+          <div className="cr-code-sum">{t('chat.code.pausedNote')}</div>
+        ) : null}
+        {open ? (
+          <div className="cr-code-b">
+            {block.cells.map((cell, index) => (
+              <Cell key={cell.run_id} cell={cell} index={index} figureId={figureId} />
+            ))}
+            {Array.from({ length: block.pending }, (_, i) => (
+              <RunningCell
+                key={`pending-${String(i)}`}
+                index={block.cells.length + i}
+                paused={state !== 'running'}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {figures.map((file) => (
+        <Figure key={file.file_id} file={file} id={figureId(file)} />
+      ))}
+    </>
   );
 });

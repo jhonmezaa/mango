@@ -2032,8 +2032,271 @@
   .cr-table > .mc-alert {
     margin: 10px 14px;
   }
-  /* Recharts' own wrapper: the drawing takes the width of the card. */
-  .cr-svg .recharts-wrapper {
+}
+
+/* Design round 41 (styles.css «Ronda 41 · gráfica interactiva del chat y figura grande»): the
+   interactive chart of an answer and the large card of a figure (D118 (10)). */
+@layer components {
+  .cr-chart {
+    container-type: inline-size;
+  }
+  .cr-chart-a {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    margin: -4px -6px 0 0;
+  }
+  .cr-chart-a .btn-icon {
+    width: 28px;
+    height: 28px;
+  }
+  .cr-plot {
+    position: relative;
+    border-radius: 6px;
+    touch-action: pan-y;
+  }
+  .cr-plot:focus {
     outline: none;
+  }
+  .cr-plot:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+  .cr-plot.is-pie {
+    width: 200px;
+    height: 200px;
+    flex-shrink: 0;
+  }
+  .cr-plot.is-pie svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .cr-ax.is-on {
+    fill: var(--text-strong);
+    font-weight: 600;
+  }
+  /* A highlighted line (design: `strokeWidth={hi === s.si ? 2.75 : 2}`). */
+  .cr-line-on polyline {
+    stroke-width: 2.75;
+  }
+  .cr-tip {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    min-width: 150px;
+    max-width: 260px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    font-size: 12px;
+    color: var(--text);
+    transform: translate(12px, -50%);
+  }
+  .cr-tip.is-l {
+    transform: translate(calc(-100% - 12px), -50%);
+  }
+  .cr-tip-h {
+    font-weight: 600;
+    color: var(--text-strong);
+    margin-bottom: 5px;
+    overflow-wrap: anywhere;
+  }
+  .cr-tip-r {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    line-height: 1.75;
+    color: var(--text-muted);
+  }
+  .cr-tip-r i {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .cr-tip-r b {
+    margin-left: auto;
+    padding-left: 14px;
+    color: var(--text-strong);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .cr-tip-r.is-on {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+  .cr-tip-r.is-on b {
+    font-weight: 600;
+  }
+  .cr-tip-f {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .cr-leg {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    margin: -3px -6px;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+  .cr-leg:hover {
+    background: var(--row-hover);
+    color: var(--text);
+  }
+  .cr-leg i {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    border: 1.5px solid;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+  .cr-leg.is-hi {
+    color: var(--text-strong);
+  }
+  .cr-leg.is-off {
+    color: var(--text-muted);
+    text-decoration: line-through;
+  }
+  .cr-leg[aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+  .cr-legend.is-col li {
+    display: block;
+  }
+  .cr-legend.is-col .cr-leg {
+    display: flex;
+    width: 100%;
+    margin: 0;
+    padding: 4px 6px;
+  }
+  .cr-leg-n {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .cr-dt {
+    max-height: 300px;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .cr-dt table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  .cr-dt th,
+  .cr-dt td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .cr-dt thead th {
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+    font-weight: 500;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+  .cr-dt tbody th {
+    font-weight: 500;
+    color: var(--text);
+  }
+  .cr-dt .num {
+    text-align: right;
+  }
+  .cr-dt tbody tr:last-child > * {
+    border-bottom: 0;
+  }
+  .cr-dt-f {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  /* In a narrow card (a phone) the tooltip sits over the drawing instead of next to the point. */
+  @container (max-width: 480px) {
+    .cr-tip,
+    .cr-tip.is-l {
+      left: 0 !important;
+      right: 0;
+      top: 0 !important;
+      transform: none;
+      max-width: none;
+      min-width: 0;
+    }
+    .cr-pie .cr-plot.is-pie {
+      margin: 0 auto;
+    }
+  }
+  .cr-cell-fig {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .cr-figcard {
+    margin: 0 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    overflow: hidden;
+    container-type: inline-size;
+  }
+  .cr-figcard:focus {
+    outline: none;
+  }
+  .cr-figcard:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .cr-figcard-h {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px 10px;
+  }
+  .cr-figcard-h .btn {
+    gap: 5px;
+  }
+  .cr-figcard-b {
+    padding: 0 14px 14px;
+  }
+  .cr-figcard .cr-fig-btn {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: zoom-in;
+    border-radius: 6px;
+  }
+  /* The figure at the width of the message, at its own proportions. */
+  .cr-fig-pic.is-card {
+    max-height: 70vh;
+  }
+  @container (max-width: 420px) {
+    .cr-figcard .cr-lbl {
+      display: none;
+    }
   }
 }

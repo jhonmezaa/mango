@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-// Design round 40 (D118, G1 and T1): the chart and the table of an answer that ran code,
+// Design rounds 40 and 41 (D118, G1 and T1): the chart and the table of an answer that ran code,
 // against the local mock. The words of the message pick the demo variant (`mock/codeDemo.ts`).
 
 async function signIn(page: Page): Promise<void> {
@@ -56,21 +56,52 @@ test.describe('Charts and tables of an answer that ran code', () => {
     return answer;
   }
 
-  test('a bar chart after the text, with its legend, the value under the pointer and «Copiar datos»', async () => {
+  test('a bar chart after the text, with its legend, the tooltip under the pointer and «Copiar datos»', async () => {
     const answer = await ask('analiza el CUR con código y una gráfica');
     const chart = answer.locator('.cr-chart', { hasText: 'Costo mensual por servicio' });
-    await expect(chart.getByText('may – oct 2026 · USD')).toBeVisible({ timeout: 10_000 });
-    // Six months of three series: 18 bars, drawn as SVG by Recharts.
-    await expect(chart.locator('.recharts-bar-rectangle')).toHaveCount(18);
+    await expect(chart.getByText('May – oct 2026 · Valores en USD')).toBeVisible({
+      timeout: 10_000,
+    });
+    // Money in the browser's locale (es-MX: «USD 60,000»), without decimals.
+    const usd = new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    });
+    // Six months of three series: 18 bars, drawn as SVG by React (design round 41).
+    const bars = chart.locator('svg.cr-svg rect[rx="2"]');
+    await expect(bars).toHaveCount(18);
     await expect(chart.locator('.cr-legend li')).toHaveText(['EC2', 'RDS', 'S3']);
-    await chart.locator('.recharts-bar-rectangle').first().hover();
-    await expect(chart.locator('.cr-hover')).toContainText('may · EC2');
-    // Design order: bloque → texto → gráfica → tabla → archivos.
+    await expect(chart.locator('svg.cr-svg text', { hasText: usd.format(60000) })).toHaveCount(1);
+    await bars.first().hover();
+    const tip = chart.locator('.cr-tip');
+    await expect(tip).toContainText('may');
+    await expect(tip).toContainText(usd.format(41200));
+    // The legend hides a series and the axis fits what is left.
+    await chart.getByRole('button', { name: 'EC2', exact: true }).click();
+    await expect(bars).toHaveCount(12);
+    await expect(chart.locator('svg.cr-svg text', { hasText: usd.format(15000) })).toHaveCount(1);
+    await chart.getByRole('button', { name: 'Mostrar todas' }).click();
+    await expect(bars).toHaveCount(18);
+    // The keyboard: Tab reaches the drawing, the arrows walk it, Escape lets go.
+    const drawing = chart.getByRole('application');
+    await drawing.focus();
+    await page.keyboard.press('Home');
+    await page.keyboard.press('ArrowRight');
+    await expect(chart.locator('.cr-hover')).toHaveText(`jun · EC2 ${usd.format(42900)} · 2 de 6`);
+    await page.keyboard.press('Escape');
+    await expect(tip).toHaveCount(0);
+    // «Ver datos» and back.
+    await chart.getByRole('button', { name: 'Ver datos' }).click();
+    await expect(chart.getByRole('region', { name: /^Datos de Costo mensual/ })).toBeVisible();
+    await chart.getByRole('button', { name: 'Ver gráfica' }).click();
+    await expect(bars).toHaveCount(18);
+    // Design order: bloque → figuras → texto → gráfica → tabla → archivos.
     // The e2e project has no DOM types: what is read of a node is typed here.
     const order = await answer
-      .locator('.cr-code, .md, .cr-chart, .cr-table, .cr-file:not(.is-compact)')
+      .locator('.cr-code, .cr-figcard, .md, .cr-chart, .cr-table, .cr-file:not(.is-compact)')
       .evaluateAll((nodes: { className: string }[]) => nodes.map((n) => n.className.split(' ')[0]));
-    expect(order).toEqual(['cr-code', 'md', 'cr-chart', 'cr-table', 'cr-file']);
+    expect(order).toEqual(['cr-code', 'cr-figcard', 'md', 'cr-chart', 'cr-table', 'cr-file']);
     await chart.getByRole('button', { name: 'Copiar datos' }).click();
     await expect(
       page.getByText('Datos copiados. Pégalos en Excel o en una hoja de cálculo.'),
@@ -98,7 +129,8 @@ test.describe('Charts and tables of an answer that ran code', () => {
     ).toBeVisible();
     const box = await region.boundingBox();
     expect(box?.height).toBeLessThanOrEqual(301);
-    // The header stays while the rows scroll.
+    // The header stays while the rows scroll (the large figure card is above: bring it in view).
+    await region.scrollIntoViewIfNeeded();
     await region.evaluate((node: { scrollTop: number }) => {
       node.scrollTop = 2000;
     });
@@ -111,19 +143,36 @@ test.describe('Charts and tables of an answer that ran code', () => {
 
   test('lines, a pie and points', async () => {
     let answer = await ask('analiza con código una gráfica de línea');
-    await expect(answer.locator('.cr-chart .recharts-line-curve')).toHaveCount(3, {
+    await expect(answer.locator('.cr-chart svg.cr-svg polyline')).toHaveCount(3, {
       timeout: 10_000,
     });
     answer = await ask('analiza con código una gráfica de tarta');
     const pie = answer.locator('.cr-chart', { hasText: 'Reparto del costo de octubre' });
-    await expect(pie.locator('.recharts-pie-sector')).toHaveCount(4, { timeout: 10_000 });
+    await expect(pie.locator('.cr-plot.is-pie svg path')).toHaveCount(4, { timeout: 10_000 });
     await expect(pie.locator('.cr-legend.is-col li').first()).toContainText('EC2');
     await expect(pie.locator('.cr-legend.is-col li').first()).toContainText('66 %');
     answer = await ask('analiza con código una gráfica de dispersión');
     const scatter = answer.locator('.cr-chart', { hasText: 'Uso contra costo por instancia' });
-    await expect(scatter.locator('.recharts-scatter-symbol')).toHaveCount(42, {
+    await expect(scatter.locator('svg.cr-svg circle')).toHaveCount(42, {
       timeout: 10_000,
     });
+  });
+
+  test('horizontal bars with long names, and a line of 120 days', async () => {
+    let answer = await ask('analiza con código unas barras horizontales');
+    const bars = answer.locator('.cr-chart', { hasText: 'Costo por servicio de AWS' });
+    await expect(bars.locator('svg.cr-svg rect[rx="2"]')).toHaveCount(16, { timeout: 10_000 });
+    await expect(bars.getByText('Amazon Relational Database Se…')).toBeVisible();
+    answer = await ask('analiza con código muchas categorías');
+    const days = answer.locator('.cr-chart', { hasText: 'Costo diario por servicio' });
+    await expect(days.locator('svg.cr-svg polyline')).toHaveCount(3, { timeout: 10_000 });
+    // Over 60 categories, no points but the active one.
+    await expect(days.locator('svg.cr-svg circle')).toHaveCount(0);
+    await days.getByRole('application').focus();
+    // Focus may already take the first point (design): Home makes it the first either way.
+    await page.keyboard.press('Home');
+    await page.keyboard.press('PageDown');
+    await expect(days.locator('.cr-hover')).toContainText('13 de 120');
   });
 
   test('a chart that cannot be drawn, one the guardrail withheld, and «Reintentar»', async () => {
@@ -140,7 +189,7 @@ test.describe('Charts and tables of an answer that ran code', () => {
       .locator('.cr-chart')
       .getByRole('button', { name: /Reintentar/ })
       .click({ timeout: 10_000 });
-    await expect(answer.locator('.cr-chart .recharts-bar-rectangle')).toHaveCount(18, {
+    await expect(answer.locator('.cr-chart svg.cr-svg rect[rx="2"]')).toHaveCount(18, {
       timeout: 10_000,
     });
   });
@@ -148,7 +197,7 @@ test.describe('Charts and tables of an answer that ran code', () => {
   test('a ```mango-chart``` block of the text is drawn where the agent wrote it', async () => {
     const answer = await ask('analiza con código, con la gráfica en el texto');
     const chart = answer.locator('.md .cr-chart', { hasText: 'Costo de EC2' });
-    await expect(chart.locator('.recharts-line-curve')).toHaveCount(1, { timeout: 10_000 });
+    await expect(chart.locator('svg.cr-svg polyline')).toHaveCount(1, { timeout: 10_000 });
     await expect(answer.locator('.md pre')).toHaveCount(0);
   });
 

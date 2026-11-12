@@ -1427,6 +1427,7 @@ def test_every_agent_is_told_to_draw_charts_in_the_answer() -> None:
     assert "without running code" in harness.CHARTS_LINE
     assert "run_python only when something has to be computed" in harness.CHARTS_LINE
     assert "layout vertical for horizontal bars" in harness.CHARTS_LINE
+    assert "currency (an ISO code such as USD" in harness.CHARTS_LINE
     # Without the Canvas tools, nothing about the Canvas.
     assert harness.CANVAS_CHARTS_LINE not in text
     assert text.startswith("Eres un analista.\n\n" + harness.CHARTS_LINE)

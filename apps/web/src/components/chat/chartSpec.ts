@@ -27,7 +27,11 @@ const MAX_BLOCK_CHARS = 2 * 1024 * 1024;
 
 type ValueFormat = ChartSpecOut['valueFormat'];
 const CHART_TYPES = new Set(['bar', 'line', 'pie', 'scatter']);
-const FORMATS = new Set(['compact', 'integer', 'raw']);
+const FORMATS = new Set(['compact', 'integer', 'raw', 'currency']);
+/** An ISO 4217 code (design round 41): `Intl` formats the amounts with it. */
+const CURRENCY = /^[A-Z]{3}$/;
+/** The currency of a `currency` chart that does not name a valid one (`DEFAULT_CURRENCY`). */
+export const DEFAULT_CURRENCY = 'USD';
 
 /** Keys a row or a series may not use: rows are plain JavaScript objects (prototype pollution). */
 const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -77,6 +81,12 @@ function rows(raw: unknown): ChartSpecOut['data'] | null {
 
 function format(value: unknown, fallback: ValueFormat): ValueFormat {
   return typeof value === 'string' && FORMATS.has(value) ? (value as ValueFormat) : fallback;
+}
+
+function currencyCode(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const code = value.trim().toUpperCase();
+  return CURRENCY.test(code) ? code : null;
 }
 
 function axisLabel(raw: unknown, dimension: 'x' | 'y', fallback: unknown): string | null {
@@ -145,6 +155,7 @@ export function normalizeChart(raw: unknown): ChartSpec | null {
       stack: null,
     });
   }
+  const money = valueFormat === 'currency' || series.some((s) => s.valueFormat === 'currency');
   const meta = isObject(raw.meta) ? raw.meta : {};
   const spec = {
     chartType,
@@ -153,6 +164,7 @@ export function normalizeChart(raw: unknown): ChartSpec | null {
     series,
     layout: chartType === 'bar' && raw.layout === 'vertical' ? 'vertical' : 'horizontal',
     valueFormat,
+    currency: money ? (currencyCode(raw.currency) ?? DEFAULT_CURRENCY) : null,
     axes: {
       x: { label: axisLabel(raw.axes, 'x', raw.xAxisLabel) },
       y: { label: axisLabel(raw.axes, 'y', raw.yAxisLabel) },
@@ -193,20 +205,81 @@ function formatter(key: string, options: Intl.NumberFormatOptions): Intl.NumberF
   return found;
 }
 
-/** A value as the chart shows it: compact («58 mil»), integer or raw, with its affixes. */
+/**
+ * Money in the browser's locale (design round 41 `crFmt`): no decimals from 100, two below it.
+ * A code `Intl` does not accept falls back to dollars.
+ */
+function money(value: number, currency: string, digits: number, compact = false): string {
+  const key = `currency-${currency}-${String(digits)}-${String(compact)}`;
+  const options: Intl.NumberFormatOptions = {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: compact ? 0 : digits,
+    maximumFractionDigits: digits,
+    ...(compact ? { notation: 'compact' } : {}),
+  };
+  try {
+    return formatter(key, options).format(value);
+  } catch {
+    return currency === DEFAULT_CURRENCY ? String(value) : money(value, DEFAULT_CURRENCY, digits);
+  }
+}
+
+/**
+ * A value as the chart shows it: compact («58 mil»), integer, raw or money («$58,300»), with
+ * its affixes.
+ */
 export function formatValue(
   value: ChartValue | undefined,
   valueFormat: ValueFormat,
   series?: Pick<ChartSeriesOut, 'valuePrefix' | 'valueSuffix'>,
+  currency?: string | null,
 ): string {
   if (typeof value !== 'number') return value === null || value === undefined ? '' : String(value);
   const number =
-    valueFormat === 'compact'
-      ? formatter('compact', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
-      : valueFormat === 'integer'
-        ? formatter('integer', { maximumFractionDigits: 0 }).format(value)
-        : formatter('raw', { maximumFractionDigits: 6 }).format(value);
+    valueFormat === 'currency'
+      ? money(value, currency ?? DEFAULT_CURRENCY, Math.abs(value) >= 100 ? 0 : 2)
+      : valueFormat === 'compact'
+        ? formatter('compact', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+        : valueFormat === 'integer'
+          ? formatter('integer', { maximumFractionDigits: 0 }).format(value)
+          : formatter('raw', { maximumFractionDigits: 6 }).format(value);
   return `${series?.valuePrefix ?? ''}${number}${series?.valueSuffix ?? ''}`;
+}
+
+/**
+ * A tick of the value axis (design round 41): money without decimals («$6,000»), compact from
+ * 100,000 («$1.2M»); any other format, compact.
+ */
+export function formatTick(value: number, valueFormat: ValueFormat, currency?: string | null) {
+  if (valueFormat === 'currency') {
+    const big = Math.abs(value) >= 100_000;
+    return money(value, currency ?? DEFAULT_CURRENCY, big ? 1 : 0, big);
+  }
+  return formatter('compact', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+}
+
+/** Design round 41 `crNice`: a «round» scale from 0 to a top in 4 or 5 steps (0, 1.500, 3.000…). */
+export function niceScale(max: number): { top: number; step: number } {
+  if (!(max > 0) || !Number.isFinite(max)) return { top: 1, step: 0.25 };
+  const raw = max / 4;
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const m = raw / power;
+  const step = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * power;
+  return { top: Math.ceil(max / step) * step, step };
+}
+
+/** The ticks of a scale, from 0 to its top. */
+export function scaleTicks({ top, step }: { top: number; step: number }): number[] {
+  const ticks: number[] = [];
+  for (let i = 0; i * step <= top + step / 2; i += 1) ticks.push(i * step);
+  return ticks;
+}
+
+/** Design round 41 `crCut`: a label cut to `max` characters with «…». */
+export function cutLabel(value: ChartValue | undefined, max: number): string {
+  const text = value === null || value === undefined ? '' : String(value);
+  return text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text;
 }
 
 /** A number of a table cell: whole numbers as integers, others with up to four decimals. */
@@ -239,10 +312,16 @@ export function tsvCell(value: ChartValue | undefined): string {
   return FORMULA.test(cell) ? `'${flat}` : flat;
 }
 
-/** The chart's data as a table separated by tabs: its x column, then a column per series. */
+/** The name of the chart's x column (design round 41 `xLabel`): its axis label, or its key. */
+export const xLabelOf = (spec: ChartSpec): string => spec.axes.x.label ?? spec.xKey;
+
+/**
+ * The chart's data as a table separated by tabs: its x column, then a column per series, every
+ * row and every series (the hidden ones too, design round 41).
+ */
 export function chartTsv(spec: ChartSpec): string {
   const shown = spec.chartType === 'pie' ? spec.series.slice(0, 1) : spec.series;
-  const head = [spec.xKey, ...shown.map((s) => s.label)].map(tsvCell).join('\t');
+  const head = [xLabelOf(spec), ...shown.map((s) => s.label)].map(tsvCell).join('\t');
   const body = spec.data.map((row) =>
     [row[spec.xKey], ...shown.map((s) => row[s.key])].map(tsvCell).join('\t'),
   );
