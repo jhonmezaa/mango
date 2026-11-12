@@ -277,7 +277,7 @@ function Figure({ file, id }: { file: CodeFile; id: string }) {
       {zoom && image.url ? (
         <Modal
           title={file.name}
-          wide
+          width={960}
           onClose={() => {
             setZoom(false);
           }}

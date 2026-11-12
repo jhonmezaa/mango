@@ -211,6 +211,8 @@ describe('CodeBlock (design round 40)', () => {
     if (!expand) throw new Error('no «Ampliar»');
     await user.click(expand);
     expect(within(screen.getByRole('dialog')).getByRole('img')).toHaveAttribute('src', 'blob:fig');
+    // Design (chat-run.jsx): the enlarged figure opens in a 960 px dialog, not the 480 px default.
+    expect(screen.getByRole('dialog')).toHaveStyle({ width: '960px' });
   });
 
   it('puts each figure in a large card under the block, referenced from inside it (round 41)', async () => {

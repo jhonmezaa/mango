@@ -14,6 +14,8 @@ interface Props {
   /** Blocks closing (Escape, backdrop, close button) while a request is in flight. */
   busy?: boolean;
   wide?: boolean;
+  /** Width in px (design: Modal `width`, 480 by default); never wider than 92vw. */
+  width?: number;
 }
 
 /**
@@ -28,6 +30,7 @@ export function Modal({
   footer,
   busy = false,
   wide = false,
+  width,
 }: Props) {
   const { t } = useTranslation();
   const titleId = useId();
@@ -52,6 +55,7 @@ export function Modal({
         aria-describedby={description ? descriptionId : undefined}
         aria-busy={busy}
         className={wide ? 'modal modal-form modal-wide' : 'modal modal-form'}
+        style={width ? { width } : undefined}
       >
         <div className="mb-1 flex items-start justify-between gap-3">
           <h2 id={titleId} className="modal-title">
