@@ -1500,3 +1500,35 @@ Archivos nuevos: `memory.jsx` (pantalla Memoria, indicador del turno, fila del p
 - Comentarios del Canvas solo del agente (arriba, §2).
 - Memoria como página propia desde el menú de la cuenta (arriba, §1).
 - La frase de las tareas en «Borrar todo» (arriba, §1).
+
+## Ronda 41 · gráficas del chat interactivas y figura grande (2026-11-10, D118)
+Archivos: `chat-run.jsx` (`ChatChart`, `CodeBlock`, `CrFigure`, `crDemoSpec`), `styles.css` (`.cr-chart-a`, `.cr-plot`, `.cr-tip`, `.cr-leg`, `.cr-dt`, `.cr-figcard`), `app.jsx` (demo), `Mango.html` (versiones).
+
+### 1. Gráfica en el mensaje
+- **Globo junto al punto (decisión):** al pasar el ratón sale un globo junto a la barra, el punto o la porción: categoría y, por serie, color, nombre y valor con formato. En barras se sombrea la franja de la categoría; en líneas, una guía punteada vertical y el punto de cada serie. El globo va a la derecha del punto y pasa a la izquierda en el último 40 % del ancho. Si hay series ocultas, el pie del globo dice «{n} series ocultas».
+- **La línea de abajo (`.cr-hover`) pasa a ser solo para lectores de pantalla** (`sr-only`, `aria-live`): lo visible es el globo. Con teclado anuncia «{categoría} · {serie} {valor} · {p} de {n}».
+- **Táctil:** tocar fija el globo en ese punto; tocar el mismo punto o fuera de la tarjeta lo cierra. En una tarjeta de menos de 480 px el globo se fija arriba del dibujo, a todo el ancho, en vez de ir junto al punto (no tapa el dedo ni se sale).
+- **Resaltado de serie:** al pasar por una entrada de la leyenda, por una línea (a menos de 14 px) o por una barra concreta, esa serie queda fuerte y las demás al 25–35 %. En el globo, la serie bajo el cursor va en negrita.
+- **Leyenda que muestra u oculta:** cada entrada es un `<button aria-pressed>` (pulsado = a la vista). Oculta: cuadro vacío con borde del color y nombre tachado. **No se puede ocultar la última** (`aria-disabled`, «Tiene que quedar al menos una serie a la vista»). Con alguna oculta aparece «Mostrar todas». **Los ejes se reajustan** a lo visible. Los colores no se mueven al ocultar (cada serie guarda el suyo).
+- **Tarta:** la leyenda en columna también oculta porciones; los porcentajes se recalculan sobre lo visible y el globo dice «De lo visible» en vez de «Del total».
+- **Teclado:** el dibujo es un `role="application"` con anillo de foco (`:focus-visible`). Al llegar con Tab se activa el primer punto. Flechas izquierda/derecha por categoría y arriba/abajo por serie; en barras horizontales, al revés (arriba/abajo por categoría). Dispersión: en orden de X. Inicio/Fin, primero/último; Re Pág/Av Pág, saltos de un 10 % (usable con miles de categorías). Escape suelta el punto y deja el foco en el dibujo; Tab sigue a la leyenda, cuyas entradas se pulsan con Enter o espacio. El punto activo lleva un anillo.
+- **Barras horizontales** (`layout: 'vertical'`, como `ChartView.tsx`): etiquetas a la izquierda, recortadas a 30 caracteres con «…» (el nombre completo va en el globo); el alto crece con las categorías.
+- **Moneda:** `valueFormat: 'currency'` + `currency` (ISO). Ejes «$0 … $6,000» sin decimales (compactos desde 100.000: «$1.2M»); valores del globo y la tabla sin decimales desde 100, con dos por debajo. Todo con `Intl` del navegador. Escala con pasos redondos (`crNice`).
+- **Muchas categorías:** las etiquetas del eje se espacian para no pisarse; en líneas los puntos dejan de dibujarse con más de 60 categorías (solo el activo).
+- **Cabecera de la tarjeta (decisión):** «Ver datos» / «Ver gráfica» (texto con icono, porque un icono solo no se entiende) y «Copiar datos» (icono, con etiqueta accesible y `title`). **Sin «Descargar PNG»** en esta ronda: la gráfica del mensaje es interactiva y sus datos se copian; si alguien quiere una imagen, el agente la genera con Python y sale como figura.
+- **«Ver datos»:** cambia el dibujo por una tabla con los mismos datos (categoría como cabecera de fila, una columna por serie, también las ocultas; en la tarta, valor y % del total). Cabecera fija, scroll a 300 px, tope visible de 200 filas: «Se muestran 200 de {n} filas. «Copiar datos» las copia todas.».
+- **«Copiar datos»:** TSV con todas las filas y todas las series (también las ocultas), cabeceras con los nombres de serie. Mismo aviso de antes.
+- **Estados:** cargando, «No se pudo dibujar esta gráfica…», y dos que no estaban en el archivo de diseño: **retenida por seguridad** (aviso ámbar con candado: «Gráfica retenida por seguridad. Sus datos infringían una regla de seguridad y Mango no la muestra. El resto de la respuesta sigue.», sin Reintentar) y **error** («No se pudo cargar la gráfica. Inténtalo de nuevo.» + Reintentar). *Si el producto ya tiene textos para esos dos, valen los suyos.*
+- **Límites:** más de 5.000 filas o 20 series, o datos vacíos → «No se pudo dibujar esta gráfica». Con más de 6 series los colores se repiten; ocultar series es la salida.
+- **Seguridad (sin cambios):** todo es texto de React (`{texto}`), ningún `innerHTML`; el globo no lleva enlaces ni formato; los `<title>` de SVG de la ronda 40 se quitaron (el globo los sustituye y el SVG va `aria-hidden`).
+- Demo: «Chat · gráfica» › Barras, Líneas, Tarta, Dispersión, **Barras horizontales**, **Muchas categorías (120 días)**, Cargando, **Error · Reintentar**, **Retenida por seguridad**, Spec inválido.
+
+### 2. Figura de un cálculo con Python
+- **Fuera del bloque:** debajo de «Analizado», una tarjeta grande por figura a todo el ancho del mensaje (`.cr-figcard`): título (`fig.title`, o el nombre del archivo), «{archivo} · {ancho} × {alto} px», y arriba a la derecha «Ampliar» y «Descargar» (en tarjetas de menos de 420 px quedan solo los iconos). Pulsar la imagen también amplía. Estados de siempre: cargando, «No se pudo cargar la figura.» + Reintentar.
+- **Dentro del bloque plegado:** el código, la salida y, por figura, una referencia «{archivo} · figura, debajo del bloque · Ir a la figura» (lleva el foco a la tarjeta). La cabecera suma «· {n} figura(s)».
+- Orden en la respuesta: bloque → figuras → texto → gráfica → tabla → archivos.
+- Demo: «Chat · progreso del turno» › «Ejecuta código»; «Chat · figuras» para los estados.
+
+### 3. Por confirmar
+- Sin «Descargar PNG» en la gráfica del mensaje (arriba, §1).
+- Textos de «retenida por seguridad» y del error con Reintentar, si el producto ya los tiene.
