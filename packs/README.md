@@ -249,6 +249,23 @@ mise run pack -- packs/<id> dist/packs
 
 La prueba del formato está en `deployment/pack-builder/tests/test_own_code.py` (un pack mínimo de ejemplo que lista sus tools por el SDK oficial y el código común).
 
+#### `aws-rds`
+
+Plano de control de RDS y Aurora de la cuenta miembro que nombra cada llamada, para el agente de bases de datos (revisión `0.1.0-1`, código en `packs/aws-rds/aws_rds/`). Doce tools, todas de lectura:
+
+| Tools | Servicio | Notas |
+|---|---|---|
+| `describe_db_instances`, `describe_db_clusters` | RDS | Estado, clase, motor y versión, Multi-AZ, almacenamiento, endpoints (solo host y puerto), miembros, ventanas, cambios pendientes. Sin `MasterUserSecret` ni usuario maestro |
+| `describe_db_events` | RDS (`DescribeEvents`) | Ventana de hasta 14 días |
+| `describe_modified_parameters` | RDS | Solo `Source=user`; el valor de un parámetro con nombre de credencial sale `<hidden>` |
+| `describe_pending_maintenance`, `describe_db_snapshots`, `describe_db_cluster_snapshots` | RDS | Metadatos; nunca snapshots compartidos ni públicos de otras cuentas |
+| `list_performance_metrics`, `get_performance_metrics`, `get_top_load_contributors` | Performance Insights | Hasta 7 días y 360 puntos por serie. Solo los grupos `db.wait_event`, `db.wait_event_type`, `db.sql_tokenized` y `db.user`: **nunca `db.sql`** (sentencias con literales) ni `GetDimensionKeyDetails` |
+| `list_db_log_files`, `tail_db_log_file` | RDS (`DescribeDBLogFiles`, `DownloadDBLogFilePortion`) | Solo la cola de un archivo que la instancia lista: ≤ 200 líneas, ≤ 2 KB por línea, ≤ 256 KB. Contenido de logs: precisión de D55 (3), `propuesta` |
+
+Cada tool devuelve una **vista curada** (lista permitida de campos, `aws_rds/curate.py`): ni la respuesta cruda ni un campo nuevo de AWS llegan al modelo. Las etiquetas con pinta de credencial se quitan. Sin SQL (Data API), sin secretos y sin escrituras. Las pruebas (`packs/aws-rds/tests/`, `botocore.stub`) fijan cada filtro y cada límite: al cambiar el código, se mantienen.
+
+Modelo de amenazas: `docs/security/threat-models/aws-rds-pack-threat-model.md`.
+
 ## Pipeline
 
 `deployment/build-pack.sh` ejecuta estos pasos, en este orden. Localmente: `mise run pack -- packs/aws-pricing dist/packs`.

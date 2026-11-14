@@ -1,0 +1,96 @@
+# AWS RDS MCP pack over the member accounts (D51): Mango's own code (aws_rds/, D126 proposed).
+# Schema: packages/py/mango-packs (PackManifest). Guide: packs/README.md («Packs de código
+# propio»). Threat model: docs/security/threat-models/aws-rds-pack-threat-model.md.
+schema_version: 1
+id: aws-rds
+version: "0.1.0-1" # <code version>-<Mango revision>
+name: AWS RDS
+description: RDS and Aurora of the organization's member accounts, read in the account each question names. Instances, clusters, events, modified parameters, pending maintenance, snapshots, Performance Insights (tokenized SQL only) and the tail of database log files. Central users only.
+
+source:
+  kind: mango
+  version: "0.1.0"
+  exclude_newer: "2026-11-05T00:00:00Z" # lock cutoff: at least 7 days of quarantine
+
+# The server does not filter by area: every call runs as the central user who asked.
+data_tier: account_data
+identity_mode: central_only
+# Each call reads one member account, the one its `account_id` argument names (an argument
+# of Mango's, added and removed by the common entry point): Read broker ->
+# Mango-<ns>-ReadOnly of that account, with SourceIdentity = user.
+identity:
+  chain: member
+
+# Ceiling of every call's session, not permissions of the pack role (it has none). All of
+# them go to the role of the member accounts (MEMBER_READ_ONLY_STATEMENTS), all read-only in
+# the IAM service reference (List, except DownloadDBLogFilePortion: Read).
+iam:
+  # describe_db_instances; the Performance Insights tools resolve the instance's resource id
+  # with it. list_db_log_files and tail_db_log_file: only files of the named instance.
+  - actions:
+      - rds:DescribeDBInstances
+      - rds:DescribeDBLogFiles
+      - rds:DownloadDBLogFilePortion
+    resources: ["arn:aws:rds:*:*:db:*"]
+  # describe_db_clusters.
+  - actions:
+      - rds:DescribeDBClusters
+    resources: ["arn:aws:rds:*:*:cluster:*"]
+  # describe_modified_parameters.
+  - actions:
+      - rds:DescribeDBParameters
+    resources: ["arn:aws:rds:*:*:pg:*"]
+  - actions:
+      - rds:DescribeDBClusterParameters
+    resources: ["arn:aws:rds:*:*:cluster-pg:*"]
+  # describe_pending_maintenance, describe_db_snapshots, describe_db_cluster_snapshots: the
+  # resource types IAM lists for each action.
+  - actions:
+      - rds:DescribePendingMaintenanceActions
+    resources: ["arn:aws:rds:*:*:db:*", "arn:aws:rds:*:*:cluster:*"]
+  - actions:
+      - rds:DescribeDBSnapshots
+    resources: ["arn:aws:rds:*:*:db:*", "arn:aws:rds:*:*:snapshot:*"]
+  - actions:
+      - rds:DescribeDBClusterSnapshots
+    resources: ["arn:aws:rds:*:*:cluster:*", "arn:aws:rds:*:*:cluster-snapshot:*"]
+  # describe_db_events.
+  - actions:
+      - rds:DescribeEvents
+    resources: ["*"]
+    reason: rds:DescribeEvents has no resource type in the IAM service reference.
+  # list_performance_metrics, get_performance_metrics, get_top_load_contributors. Never
+  # pi:GetDimensionKeyDetails: it only answers db.sql (statements with their literals),
+  # db.execution_plan and db.lock_snapshot, not tokenized SQL. The code asks for no group but
+  # db.wait_event, db.wait_event_type, db.sql_tokenized and db.user.
+  - actions:
+      - pi:ListAvailableResourceMetrics
+      - pi:GetResourceMetrics
+      - pi:DescribeDimensionKeys
+    resources: ["arn:aws:pi:*:*:metrics/rds/*"]
+
+# What the Runtime reaches (R6), each through its VPC endpoint: STS to assume the Read broker
+# and the role of the member account, RDS and Performance Insights. Only the installation's
+# Region: the common entry point refuses another one and fills it in when left out.
+egress:
+  aws: [sts, rds, pi]
+
+# No hidden arguments: no tool takes credentials, a profile, an account or an endpoint.
+# Left out on purpose: SQL of any kind (RDS Data API), secrets, the full text of a statement
+# (Performance Insights db.sql and GetDimensionKeyDetails), recommendations, and every write.
+tools:
+  - { name: describe_db_instances, access: read }
+  - { name: describe_db_clusters, access: read }
+  - { name: describe_db_events, access: read }
+  - { name: describe_modified_parameters, access: read }
+  - { name: describe_pending_maintenance, access: read }
+  - { name: describe_db_snapshots, access: read }
+  - { name: describe_db_cluster_snapshots, access: read }
+  - { name: list_performance_metrics, access: read }
+  - { name: get_performance_metrics, access: read }
+  - { name: get_top_load_contributors, access: read }
+  - { name: list_db_log_files, access: read }
+  - { name: tail_db_log_file, access: read }
+tools_hash: "sha256:1b372c6d69a2abf6e0b5e615a5110f8c4ab034d0f078796fb2793ef0af217cb8"
+
+config: []

@@ -53,10 +53,10 @@ known-first-party = ["mango_*", "finops_eval"]
 [tool.mypy]
 strict = true
 python_version = "3.13"
-files = ["packages/py", "connectors", "functions", "apps/api/src", "tests/eval", "deployment/pack-builder"]
+files = ["packages/py", "connectors", "functions", "apps/api/src", "tests/eval", "deployment/pack-builder", "packs/aws-rds/aws_rds"]
 exclude = ["/tests/"]
 explicit_package_bases = true
-mypy_path = ["packages/py/mango-aws/src", "packages/py/mango-core/src", "packages/py/mango-packs/src", "packages/py/mango-pack-runtime/src", "deployment/pack-builder/src", "connectors/cost-explorer/src", "connectors/knowledge-retrieve/src", "connectors/code-interpreter/src", "connectors/textdoc/src", "functions/gateway-interceptor/src", "functions/pre-token/src", "functions/pre-sign-up/src", "functions/admin-probe/src", "functions/approval-executor/src", "functions/provisioner/src", "functions/reconciler/src", "functions/budget-reconciler/src", "functions/cur-reconciler/src", "functions/eval-judge/src", "functions/trace-reader/src", "functions/ui-sandbox-origin/src", "functions/task-auth/src", "functions/cost-anomaly-consumer/src", "functions/chat-files-scan/src", "functions/task-report/src", "functions/render-document/src", "functions/knowledge-sync/src", "functions/knowledge-sources/src", "apps/api/src", "tests/eval"]
+mypy_path = ["packages/py/mango-aws/src", "packages/py/mango-core/src", "packages/py/mango-packs/src", "packages/py/mango-pack-runtime/src", "deployment/pack-builder/src", "connectors/cost-explorer/src", "connectors/knowledge-retrieve/src", "connectors/code-interpreter/src", "connectors/textdoc/src", "functions/gateway-interceptor/src", "functions/pre-token/src", "functions/pre-sign-up/src", "functions/admin-probe/src", "functions/approval-executor/src", "functions/provisioner/src", "functions/reconciler/src", "functions/budget-reconciler/src", "functions/cur-reconciler/src", "functions/eval-judge/src", "functions/trace-reader/src", "functions/ui-sandbox-origin/src", "functions/task-auth/src", "functions/cost-anomaly-consumer/src", "functions/chat-files-scan/src", "functions/task-report/src", "functions/render-document/src", "functions/knowledge-sync/src", "functions/knowledge-sources/src", "apps/api/src", "tests/eval", "packs/aws-rds"]
 
 [[tool.mypy.overrides]]
 # Only installed for live runs of tests/eval (uv run --with ...), not in the workspace.
@@ -64,6 +64,6 @@ module = ["pycognito.*", "pyotp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["packages/py", "connectors", "functions", "apps/api", "tests/eval", "deployment"]
-pythonpath = ["tests/eval"]
+testpaths = ["packages/py", "connectors", "functions", "apps/api", "tests/eval", "deployment", "packs/aws-rds"]
+pythonpath = ["tests/eval", "packs/aws-rds"]
 addopts = "-q --import-mode=importlib"
