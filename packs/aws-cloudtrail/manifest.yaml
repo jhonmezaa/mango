@@ -1,0 +1,60 @@
+# AWS CloudTrail MCP pack over the member accounts (D51). Schema: packages/py/mango-packs
+# (PackManifest). Guide: packs/README.md. Threat model: docs/security/threat-models/
+# aws-cloudtrail-pack-threat-model.md.
+schema_version: 1
+id: aws-cloudtrail
+version: "0.1.1-2" # <upstream version>-<Mango revision>
+name: AWS CloudTrail
+description: Management events of the last 90 days in the member account each question names (who called what, when and from where), in the Region of the installation. Events take minutes to show up, so no event is not proof that nothing happened. Central users only.
+
+source:
+  package: awslabs.cloudtrail-mcp-server
+  version: "0.1.1"
+  sha256: 0d250e5d20f4f24ff215abad1c1f2e76d8d31fdf27acd62b07298c906e4d94e7 # wheel
+  exclude_newer: "2026-11-06T00:00:00Z" # lock cutoff: 7 days of quarantine
+
+# The server does not filter by area: every call runs as the central user who asked.
+data_tier: account_data
+identity_mode: central_only
+# Each call reads one member account, the one its `account_id` argument names (an argument
+# of Mango's, added and removed by the common entry point): Read broker ->
+# Mango-<ns>-ReadOnly of that account, with SourceIdentity = user.
+identity:
+  chain: member
+
+# Ceiling of every call's session, not permissions of the pack role (it has none). It must be
+# granted to the role of the member accounts (MEMBER_READ_ONLY_STATEMENTS), read-only.
+iam:
+  # lookup_events: the only operation the served tool calls.
+  - actions:
+      - cloudtrail:LookupEvents
+    resources: ["*"]
+    reason: LookupEvents has no resource type in the IAM service reference; the action only works on "*".
+
+# What the Runtime reaches (R6), each through its VPC endpoint: STS to assume the Read broker
+# and the role of the member account, and CloudTrail. Endpoints only exist in the Region of
+# the installation, so that is the only Region the pack reads: the common entry point refuses
+# a call that names another one.
+egress:
+  aws: [sts, cloudtrail]
+
+# Hidden arguments: none. The served tool takes no profile, account or endpoint; upstream
+# reads AWS_PROFILE from the environment, which the entry point removes.
+# `region` stays, held to the shape of a Region name and to the installation's own Region by
+# the common entry point. Upstream defaults it to the literal 'us-east-1' (tools.py:122-125);
+# the guard fills a missing `region` with the installation's Region instead, and the listed
+# schema drops that literal default and the sentence that names it.
+#
+# The entry point also caps each event's raw `CloudTrailEvent` JSON (bulky request and
+# response fields first, then the whole record) so a page of events does not flood the model.
+#
+# Upstream tools left out on purpose (the entry point removes them):
+#   lake_query: cloudtrail:StartQuery is a Write action in the IAM service reference, runs
+#     arbitrary SQL billed per GB scanned, and blocks the server up to 300 s (time.sleep).
+#   get_query_status, get_query_results, list_event_data_stores: only useful with lake_query
+#     (CloudTrail Lake: not part of this pack).
+tools:
+  - { name: lookup_events, access: read }
+tools_hash: "sha256:25d21e6ed4cada5d64ca4d19818076f2f7458780583f797088ba199624ae2dda"
+
+config: []

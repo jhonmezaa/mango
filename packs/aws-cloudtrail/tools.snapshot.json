@@ -1,0 +1,128 @@
+[
+  {
+    "description": "Look up CloudTrail events based on various criteria.\n\nThis tool searches CloudTrail events using the LookupEvents API, which provides access to the\nlast 90 days of management events. You can filter by time range and search for specific\nattribute values.\n\nUsage: Use this tool to find CloudTrail events by various attributes like username, event name,\nresource name, etc. This is useful for security investigations, troubleshooting, and audit trails.\n\nIMPORTANT PAGINATION REQUIREMENTS:\n- AWS CloudTrail requires pagination tokens to be used with exactly the same parameters as the original request\n- When using next_token, you must provide the exact same start_time, end_time, attribute_key, and attribute_value\n- Use the 'query_params' returned in the response for subsequent paginated requests\n\nReturns:\n--------\nDictionary containing:\n    - events: List of CloudTrail events matching the criteria with exact CloudTrail schema\n    - next_token: Token for pagination if more results available\n    - query_params: Parameters used for the query (includes pagination parameters when next_token is present)\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "attribute_key": {
+          "anyOf": [
+            {
+              "enum": [
+                "EventId",
+                "EventName",
+                "ReadOnly",
+                "Username",
+                "ResourceType",
+                "ResourceName",
+                "EventSource",
+                "AccessKeyId"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Attribute to search by",
+          "title": "Attribute Key"
+        },
+        "attribute_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Value to search for in the specified attribute",
+          "title": "Attribute Value"
+        },
+        "end_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "End time for event lookup (ISO format or relative like \"1 hour ago\"). IMPORTANT: When using pagination (next_token), you must provide the exact same end_time as the original request.",
+          "title": "End Time"
+        },
+        "max_results": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Maximum number of events to return (1-50, default: 10)",
+          "title": "Max Results"
+        },
+        "next_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Token for pagination to fetch the next page of events. IMPORTANT: When using this token, all other parameters (start_time, end_time, attribute_key, attribute_value) must match exactly the original request that generated this token.",
+          "title": "Next Token"
+        },
+        "region": {
+          "description": "AWS region to query. Leave it out to read the installation's Region.",
+          "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+          "title": "Region",
+          "type": "string"
+        },
+        "start_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Start time for event lookup (ISO format or relative like \"1 day ago\"). IMPORTANT: When using pagination (next_token), you must provide the exact same start_time as the original request.",
+          "title": "Start Time"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "lookup_eventsArguments",
+      "type": "object"
+    },
+    "name": "lookup_events",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "lookup_eventsOutput",
+      "type": "object"
+    }
+  }
+]

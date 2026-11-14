@@ -128,6 +128,24 @@ Al revisar una versión nueva: cada tool marcada `@readonly_safe` contra la refe
 
 Modelo de amenazas: `docs/security/threat-models/aws-elasticache-pack-threat-model.md`.
 
+Tool que sirve `aws-cloudtrail` (revisión `0.1.1-2`), de lectura:
+
+| Tool | Servicio | Notas |
+|---|---|---|
+| `lookup_events` | CloudTrail (`LookupEvents`) | Eventos de gestión de los últimos 90 días de la cuenta miembro, filtrados por un atributo. Un evento tarda minutos en aparecer: «ninguno» no prueba que no pasó. Límite de la API: 2 llamadas por segundo por cuenta y región |
+
+Quedan fuera, a propósito: CloudTrail Lake (`lake_query`, `get_query_status`, `get_query_results`, `list_event_data_stores`): `cloudtrail:StartQuery` es *Write* en la referencia de IAM, ejecuta SQL cobrado por GB y bloquea el servidor hasta 300 s.
+
+Lo que el punto de entrada de `aws-cloudtrail` cambia del servidor:
+
+- **Sin logs de upstream** (registra los parámetros de búsqueda: nombres de usuario e ids de llaves de acceso).
+- **Cada `CloudTrailEvent` recortado** (R5): los campos voluminosos (`requestParameters`, `responseElements`, `additionalEventData`, `serviceEventDetails`) a 1 024 caracteres cada uno y el registro a 4 096, con una marca de lo quitado. Envuelve `CloudTrailTools.lookup_events` antes de importar el servidor, con la misma firma: el esquema listado no cambia.
+- **Región:** upstream usa el literal `us-east-1` si el modelo omite `region`; la guardia pone en su lugar la región de la instalación, y el esquema listado no lleva ese `default` ni la frase «Defaults to us-east-1.».
+
+Al revisar una versión nueva: los argumentos de `lookup_events` (uno que elija credenciales, cuenta o endpoint se oculta), que siga llamando a boto3 en la tarea de la petición y la forma del resultado (`events[].CloudTrailEvent`, que recorta el punto de entrada).
+
+Modelo de amenazas: `docs/security/threat-models/aws-cloudtrail-pack-threat-model.md`.
+
 #### Servidores hechos con `fastmcp` (Billing)
 
 El servidor de Billing no usa el SDK oficial de MCP sino la librería `fastmcp`, y monta un servidor por familia de tools con un paso `setup()`. Su punto de entrada usa `mango_pack_runtime.fastmcp_server`:

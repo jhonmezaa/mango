@@ -1,8 +1,10 @@
+import importlib.util
 import json
 import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -342,3 +344,91 @@ def test_elasticache_pack_reads_member_accounts_only_as_the_caller() -> None:
         # No tool takes credentials, a Region or an endpoint.
         assert not {"profile_name", "region", "endpoint_url"} & set(properties)
         assert schema.get("additionalProperties") is not False
+
+
+def _cloudtrail_entrypoint() -> object:
+    # The module only defines the cap at import time; `main()` loads the pack.
+    path = REPO / "packs" / "aws-cloudtrail" / "entrypoint.py"
+    spec = importlib.util.spec_from_file_location("aws_cloudtrail_entrypoint", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_cloudtrail_pack_reads_member_accounts_only_as_the_caller() -> None:
+    pack = load_pack(REPO / "packs" / "aws-cloudtrail")
+    manifest = pack.manifest
+    assert (manifest.data_tier, manifest.identity_mode) == ("account_data", "central_only")
+    assert manifest.member_chain and manifest.installable
+    # Only the 90 days of management events: CloudTrail Lake (StartQuery is Write) stays out.
+    assert manifest.tool_names == {"lookup_events"}
+    assert [(s.actions, s.resources) for s in manifest.iam] == [
+        (["cloudtrail:LookupEvents"], ["*"])
+    ]
+    assert [str(endpoint) for endpoint in manifest.egress.aws] == ["sts", "cloudtrail"]
+
+    source = pack.entrypoint.read_text()
+    main_body = source[source.index("def main()") :]
+    assert main_body.index("pack = load(") < main_body.index("from awslabs.")
+    assert main_body.index("upstream_logger.remove()") < main_body.index("from awslabs.")
+    # The cap is installed on the class before the server module registers the tool.
+    assert main_body.index("CloudTrailTools.lookup_events = ") < main_body.index(
+        "from awslabs.cloudtrail_mcp_server.server import"
+    )
+
+    tools = json.loads(pack.snapshot.read_text())
+    assert [tool["name"] for tool in tools] == ["lookup_events"]
+    schema = tools[0]["inputSchema"]
+    assert schema["properties"]["account_id"]["pattern"] == "^[0-9]{12}$"
+    assert schema["required"][0] == "account_id"
+    assert "ctx" not in schema["properties"]
+    assert schema.get("additionalProperties") is not False
+    assert "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$" in json.dumps(schema["properties"]["region"])
+    # The guard fills a missing region with the installation's: no literal default is listed.
+    assert "default" not in schema["properties"]["region"]
+    assert "us-east-1" not in json.dumps(schema["properties"]["region"])
+
+
+def test_cloudtrail_entrypoint_caps_each_event() -> None:
+    entry: Any = _cloudtrail_entrypoint()
+    limit = entry.MAX_EVENT_CHARS
+
+    small = json.dumps({"eventName": "PutRolePolicy", "errorCode": "AccessDenied"})
+    assert entry.shrink_event(small) == small
+    assert entry.shrink_event(None) is None
+
+    # Bulky fields are cut first: the small ones stay whole and the record stays JSON.
+    record = {
+        "eventName": "PutObject",
+        "sourceIPAddress": "203.0.113.10",
+        "errorCode": "AccessDenied",
+        "requestParameters": {"blob": "x" * 20_000},
+        "responseElements": {"blob": "y" * 20_000},
+    }
+    shrunk = entry.shrink_event(json.dumps(record))
+    assert len(shrunk) <= limit
+    parsed = json.loads(shrunk)
+    assert parsed["errorCode"] == "AccessDenied"
+    assert parsed["sourceIPAddress"] == "203.0.113.10"
+    assert "truncated by Mango" in parsed["requestParameters"]
+
+    # Too many small fields: the whole record is cut, with a marker.
+    wide = json.dumps({f"k{i}": "v" * 50 for i in range(500)})
+    cut = entry.shrink_event(wide)
+    assert cut.startswith(wide.replace(", ", ",").replace(": ", ":")[:100])
+    assert "truncated by Mango" in cut
+    assert len(cut) < limit + 80
+
+    # Not JSON: cut as text.
+    assert "truncated by Mango" in entry.shrink_event("z" * (limit + 1))
+
+    result = {
+        "events": [{"EventName": "PutObject", "CloudTrailEvent": json.dumps(record)}, "odd"],
+        "next_token": "t",
+    }
+    capped = entry.shrink_result(result)
+    assert capped["next_token"] == "t"
+    assert capped["events"][1] == "odd"
+    assert len(capped["events"][0]["CloudTrailEvent"]) <= limit
+    assert entry.shrink_result("not a dict") == "not a dict"
