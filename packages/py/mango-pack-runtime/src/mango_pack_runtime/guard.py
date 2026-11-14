@@ -44,7 +44,10 @@ CENTRAL_SCOPE = "central"
 ACCOUNT_ARG = "account_id"
 """Member chain: the member account a call reads. Added to every tool by the entry point."""
 REGION_ARG = "region"
-"""Member chain: the Region a call reads, passed on to the upstream tool once checked."""
+"""Member chain: the Region a call reads, passed on to the upstream tool once checked. When a
+tool takes it and the model leaves it out, the guard sets the installation's Region: an
+upstream default (CloudTrail's is the literal ``us-east-1``) would reach a Region the pack
+network has no route to (R6)."""
 ACCOUNT_PATTERN = r"^[0-9]{12}$"
 # Nothing that could turn into another host: lowercase segments and a trailing digit.
 REGION_PATTERN = r"^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$"
@@ -180,6 +183,15 @@ class CallGuard:
         self._hidden = frozenset(hidden_arguments)
         # The Mango account holds the broker, never a role to read (D51).
         self._own_account = _account_of(config.broker_role_arn)
+        # Member chain: tools that take `region`, which the guard fills when it is left out.
+        self._region_tools: frozenset[str] = frozenset()
+
+    def default_region_for(self, tools: Collection[str]) -> None:
+        """Name the tools whose ``region`` argument defaults to the installation's Region.
+
+        The entry point calls it once it knows the tools' schemas (``server.serve``).
+        """
+        self._region_tools = frozenset(tools)
 
     @contextmanager
     def call(self, tool: str, arguments: Mapping[str, Any] | None) -> Iterator[dict[str, Any]]:
@@ -226,6 +238,11 @@ class CallGuard:
 
             def assume(_caller: Caller) -> ReadOnlyCredentials:
                 return frozen  # the session of this call, already assumed
+
+            if tool in self._region_tools and supplied.get(REGION_ARG) is None:
+                # Left out (or null): the only Region the pack can reach, never the
+                # upstream default.
+                supplied[REGION_ARG] = config.region
 
         if assume is None:  # unreachable: checked above for the chain of this pack
             raise IdentityError

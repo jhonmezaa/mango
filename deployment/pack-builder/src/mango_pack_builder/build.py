@@ -96,11 +96,22 @@ def stage(pack: Pack, staging: Path) -> None:
     names = [pack.manifest.runtime.entrypoint, PACK_JSON]
     if needs_runtime(pack):
         names += RUNTIME_PACKAGES
+    code_files = pack.code_files()
+    if pack.code is not None:
+        names.append(pack.code_module)
+    if len(set(names)) != len(names):
+        raise PackError(f"the pack's own code cannot be named {pack.code_module}")
     for name in names:
         if (staging / name).exists():
             raise PackError(f"a dependency already ships a top-level {name}")
     shutil.copyfile(pack.entrypoint, staging / pack.manifest.runtime.entrypoint)
     (staging / PACK_JSON).write_bytes(pack_json(pack))
+    if pack.code is not None:
+        # The server's own code (`source.kind: mango`): only the files `code_files` allows.
+        for path in code_files:
+            destination = staging / pack.code_module / path.relative_to(pack.code)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, destination)
     if needs_runtime(pack):
         for name in RUNTIME_PACKAGES:
             shutil.copytree(

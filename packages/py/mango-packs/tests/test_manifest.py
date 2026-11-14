@@ -270,3 +270,84 @@ def test_classified_tools_keep_their_signed_bytes(manifest_data: dict[str, Any])
     )
     assert unclassified.model_dump(mode="json")["tools"] == [{"name": "put_thing"}]
     assert PackManifest.model_validate(unclassified.model_dump(mode="json")) == unclassified
+
+
+# --- Packs of Mango's own code (source.kind: mango) -------------------------------------------
+
+
+def _own_code(manifest_data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **manifest_data,
+        "id": "aws-things",
+        "version": "0.1.0-1",
+        "source": {"kind": "mango", "version": "0.1.0", "exclude_newer": "2026-09-24T00:00:00Z"},
+        "data_tier": "account_data",
+        "identity_mode": "central_only",
+        "identity": {"chain": "member"},
+        "egress": {"aws": ["sts", "cloudwatch"]},
+        "iam": [{"actions": ["cloudwatch:DescribeAlarms"], "resources": ["*"], "reason": "r"}],
+        "config": [],
+    }
+
+
+def test_a_pack_of_mangos_own_code(manifest_data: dict[str, Any]) -> None:
+    manifest = PackManifest.model_validate(_own_code(manifest_data))
+    assert manifest.source.own_code
+    assert manifest.provider == "Mango"
+    assert manifest.member_chain and manifest.installable
+    # Same cutoff and quarantine as an upstream pack: they apply to its dependencies.
+    assert manifest.quarantine_error(datetime(2026, 9, 30, tzinfo=UTC)) is not None
+    assert manifest.quarantine_error(datetime(2026, 10, 1, tzinfo=UTC)) is None
+    dumped = manifest.model_dump(mode="json")
+    assert dumped["source"] == {
+        "kind": "mango",
+        "version": "0.1.0",
+        "exclude_newer": "2026-09-24T00:00:00Z",
+        "quarantine_exception": None,
+    }
+    assert PackManifest.model_validate(dumped) == manifest
+
+
+def test_an_upstream_source_keeps_its_signed_shape(manifest_data: dict[str, Any]) -> None:
+    """No ``kind`` is written for an upstream package: signed statements keep their bytes."""
+    manifest = PackManifest.model_validate(manifest_data)
+    assert not manifest.source.own_code
+    assert manifest.provider == "awslabs.aws-pricing-mcp-server"
+    assert "kind" not in manifest.model_dump(mode="json")["source"]
+    _invalid({**manifest_data, "source": {**manifest_data["source"], "kind": "upstream"}}, "kind")
+
+
+@pytest.mark.parametrize(
+    ("change", "match"),
+    [
+        # Own code has no upstream wheel to pin.
+        ({"package": "aws-things", "sha256": "a" * 64}, "Extra inputs"),
+        ({"kind": "pypi"}, "kind"),
+        ({"version": "0.1"}, "version"),
+        ({"exclude_newer": "2026-09-24T00:00:00"}, "exclude_newer"),
+    ],
+)
+def test_own_code_source_is_strict(
+    manifest_data: dict[str, Any], change: dict[str, Any], match: str
+) -> None:
+    data = _own_code(manifest_data)
+    data["source"] = {**data["source"], **change}
+    _invalid(data, match)
+
+
+def test_own_code_version_is_its_own_semver_and_a_revision(manifest_data: dict[str, Any]) -> None:
+    _invalid({**_own_code(manifest_data), "version": "0.2.0-1"}, "source.version")
+    _invalid({**_own_code(manifest_data), "version": "0.1.0"}, "version")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"identity": {"chain": "payer"}},
+        {"data_tier": "public", "identity_mode": "service", "identity": {"chain": "payer"}},
+    ],
+)
+def test_own_code_reads_member_accounts_as_the_caller(
+    manifest_data: dict[str, Any], change: dict[str, Any]
+) -> None:
+    _invalid({**_own_code(manifest_data), **change}, "source.kind 'mango'")

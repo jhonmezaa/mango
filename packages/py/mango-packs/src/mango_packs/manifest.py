@@ -16,9 +16,11 @@ from pydantic import (
     AwareDatetime,
     BaseModel,
     ConfigDict,
+    Discriminator,
     Field,
     SerializerFunctionWrapHandler,
     StringConstraints,
+    Tag,
     model_serializer,
     model_validator,
 )
@@ -123,6 +125,8 @@ class StrictModel(BaseModel):
 
 
 class PackSource(StrictModel):
+    """An upstream package from PyPI (the awslabs servers) that the pack serves."""
+
     package: PackageName
     version: UpstreamVersion
     # sha256 of the upstream wheel that the lock pins.
@@ -131,6 +135,57 @@ class PackSource(StrictModel):
     exclude_newer: AwareDatetime
     # Security patches may skip the quarantine; the advisory is recorded and reviewed.
     quarantine_exception: CveId | None = None
+
+    @property
+    def own_code(self) -> bool:
+        return False
+
+    @property
+    def provider(self) -> str:
+        return self.package
+
+
+MANGO_PROVIDER = "Mango"
+
+
+class MangoSource(StrictModel):
+    """A server written in this repository (``packs/<id>/<module>/``), not a package of PyPI.
+
+    Its code travels in the zip, whose hash the statement signs; the lock pins only its
+    dependencies (the official MCP SDK, boto3, cryptography...), with the same cutoff and
+    quarantine as an upstream pack.
+    """
+
+    kind: Literal["mango"]
+    # Version of the pack's own code: the pack version is ``<version>-<revision>``.
+    version: UpstreamVersion
+    exclude_newer: AwareDatetime
+    quarantine_exception: CveId | None = None
+
+    @property
+    def own_code(self) -> bool:
+        return True
+
+    @property
+    def provider(self) -> str:
+        return MANGO_PROVIDER
+
+
+def _source_kind(value: Any) -> str:
+    if isinstance(value, MangoSource):
+        return "mango"
+    if isinstance(value, dict) and "kind" in value:
+        # Only one kind is written down; anything else fails as an unknown kind.
+        return "mango"
+    return "upstream"
+
+
+# An upstream source has no ``kind``, so the manifests signed before own code existed keep
+# their exact bytes.
+Source = Annotated[
+    Annotated[PackSource, Tag("upstream")] | Annotated[MangoSource, Tag("mango")],
+    Discriminator(_source_kind),
+]
 
 
 class PackRuntime(StrictModel):
@@ -228,7 +283,7 @@ class PackManifest(StrictModel):
     version: PackVersion
     name: ShortText
     description: LongText
-    source: PackSource
+    source: Source
     runtime: PackRuntime = PackRuntime()
     data_tier: DataTier
     identity_mode: IdentityMode
@@ -267,6 +322,13 @@ class PackManifest(StrictModel):
             raise ValueError(
                 "write tools (and destructive or unclassified ones) go with data_tier 'write', "
                 "and only with it"
+            )
+        if self.source.own_code and not self.member_chain:
+            # Mango's own servers read member accounts as the caller, through the common entry
+            # point (D37, D51); any other shape needs its own decision.
+            raise ValueError(
+                "a pack of Mango's own code (source.kind 'mango') goes with identity_mode "
+                "'central_only' and identity.chain 'member'"
             )
         if self.member_chain and self.identity_mode is not IdentityMode.CENTRAL_ONLY:
             # The member chain exists only for calls made as a verified central user.
@@ -320,6 +382,11 @@ class PackManifest(StrictModel):
             and not self.destructive_tools
             and not self.egress.hosts
         )
+
+    @property
+    def provider(self) -> str:
+        """Who wrote the server: the upstream package, or Mango for its own code."""
+        return self.source.provider
 
     @property
     def central_only(self) -> bool:
