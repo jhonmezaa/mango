@@ -321,9 +321,12 @@ def release_version_items(
     base_version: int | None,
     owner: str,
     now: datetime,
+    replaces: int | None = None,
 ) -> list[dict[str, Any]]:
     """``TransactWriteItems`` adding version ``number`` of a release agent, already approved by
-    the release (D34, D80), as the agent's open version.
+    the release (D34, D80), as the agent's open version. With ``replaces``, it takes the open
+    slot from that version (a failed one of the release, decided by the provisioner) instead of
+    requiring none to be open.
 
     Same item the stack seeds for the first version. Fails (condition) if the version exists
     (nothing is overwritten), if the agent was retired, got another open version or changed
@@ -368,8 +371,13 @@ def release_version_items(
                     "SET latest_version = :n, open_version = :n, updated_at = :at ADD version :one"
                 ),
                 "ConditionExpression": (
-                    "#s <> :retired AND attribute_not_exists(open_version) "
-                    "AND latest_version < :n AND version = :lock AND provision_lock = :owner"
+                    "#s <> :retired AND "
+                    + (
+                        "open_version = :old "
+                        if replaces is not None
+                        else "attribute_not_exists(open_version) "
+                    )
+                    + "AND latest_version < :n AND version = :lock AND provision_lock = :owner"
                 ),
                 "ExpressionAttributeNames": {"#s": "status"},
                 "ExpressionAttributeValues": {
@@ -379,6 +387,7 @@ def release_version_items(
                     ":retired": _s(AgentStatus.RETIRED),
                     ":lock": _n(meta_version),
                     ":owner": _s(owner),
+                    **({":old": _n(replaces)} if replaces is not None else {}),
                 },
             }
         },

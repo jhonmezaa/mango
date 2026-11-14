@@ -11,9 +11,15 @@ agent's lock, it decides:
   one, and it is published by its hash like any approved version.
 * **publish:** the open version is the release's, approved, with that content: the first
   version of a new installation, or a repeat of an execution that already added it.
+* **replace:** the open version is the release's and its publication failed, and the release
+  now ships other content. Nobody can discard a failed version and retrying it would publish
+  the old content again, so the release adds the next version in its place (an update that
+  takes the open slot from the failed one, which stays as history). Precision of D80 of
+  2026-11-14 (the SRE agent of D127).
 * **skip:** the installation changed the agent (a version, draft or edit by a person, D18),
-  retired it, or has a version of the release still open with other content. The release does
-  not touch it; the execution ends without failing and leaves an audit event saying why.
+  retired it, or has a version of the release still open and approved with other content
+  (its publication is under way). The release does not touch it; the execution ends without
+  failing and leaves an audit event saying why.
 """
 
 from __future__ import annotations
@@ -63,6 +69,8 @@ class Decision:
     """The version to publish (``publish``) or to add (``update``)."""
     reason: str | None = None
     """Why the release left the agent alone (``skip``)."""
+    replaces: int | None = None
+    """The failed open version of the release that an ``update`` takes the place of."""
 
 
 def is_release_input(raw: object) -> bool:
@@ -119,14 +127,30 @@ def decide(
     if not all(written_by_release(a) for a in authors):
         return Decision(Outcome.SKIP, reason=SKIP_CHANGED)
     if meta.open_version is not None:
-        if (
-            open_version is not None
-            and open_version.number == meta.open_version
-            and open_version.status is VersionStatus.APPROVED
-            and open_version.content_hash == content_hash
-        ):
-            return Decision(Outcome.PUBLISH, version=meta.open_version)
-        return Decision(Outcome.SKIP, reason=SKIP_OPEN)
+        return _with_open_version(meta, open_version, content_hash)
     if meta.latest_version is None or meta.record_version is None:
         raise StepError("agent_record_invalid")
     return Decision(Outcome.UPDATE, version=meta.latest_version + 1)
+
+
+def _with_open_version(meta: Meta, open_version: Version | None, content_hash: str) -> Decision:
+    """What the release does when one of its versions is open (module docstring)."""
+    if (
+        open_version is not None
+        and open_version.number == meta.open_version
+        and open_version.status is VersionStatus.APPROVED
+        and open_version.content_hash == content_hash
+    ):
+        return Decision(Outcome.PUBLISH, version=meta.open_version)
+    if (
+        open_version is not None
+        and open_version.number == meta.open_version
+        and open_version.status is VersionStatus.FAILED
+        and open_version.content_hash != content_hash
+        and meta.latest_version is not None
+        and meta.record_version is not None
+    ):
+        # Every version was written by the release (checked above): its failed version
+        # gives way to the content this release ships.
+        return Decision(Outcome.UPDATE, version=meta.latest_version + 1, replaces=meta.open_version)
+    return Decision(Outcome.SKIP, reason=SKIP_OPEN)

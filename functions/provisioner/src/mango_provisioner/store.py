@@ -359,9 +359,11 @@ class ProvisionerStore:
         base_version: int | None,
         owner: str,
         now: datetime,
+        replaces: int | None = None,
     ) -> bool:
-        """Add the version the release ships (D80). False if the agent changed meanwhile or
-        the version already exists: nothing was written."""
+        """Add the version the release ships (D80), in the place of the failed open version
+        ``replaces`` if given. False if the agent changed meanwhile or the version already
+        exists: nothing was written."""
         items: Any = release_version_items(
             self._agents,
             agent_id=agent_id,
@@ -373,6 +375,7 @@ class ProvisionerStore:
             base_version=base_version,
             owner=owner,
             now=now,
+            replaces=replaces,
         )
         try:
             self._db.transact_write_items(TransactItems=items)

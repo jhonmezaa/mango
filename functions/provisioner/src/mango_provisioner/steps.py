@@ -399,7 +399,9 @@ class Provisioner:
             if decision.outcome is Outcome.SKIP:
                 return self._release_skip(request, decision)
             number = int(decision.version or 0)
-            if decision.outcome is Outcome.PUBLISH or self._add_release_version(request, number):
+            if decision.outcome is Outcome.PUBLISH or self._add_release_version(
+                request, number, replaces=decision.replaces
+            ):
                 return self._start(
                     Request(agent_id, number, request.content_hash, request.execution)
                 )
@@ -425,7 +427,9 @@ class Provisioner:
             request.content_hash,
         )
 
-    def _add_release_version(self, request: ReleaseRequest, number: int) -> bool:
+    def _add_release_version(
+        self, request: ReleaseRequest, number: int, *, replaces: int | None = None
+    ) -> bool:
         """Version ``number`` from the definition the stack seeded, verified by its hash."""
         definition = self._store.release_definition(request.agent_id, request.content_hash)
         if definition is None:
@@ -449,6 +453,7 @@ class Provisioner:
             base_version=meta.published_version,
             owner=request.execution,
             now=self._now(),
+            replaces=replaces,
         )
         if added:
             self._audit.emit(

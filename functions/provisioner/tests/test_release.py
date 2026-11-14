@@ -296,14 +296,57 @@ def test_a_retired_release_agent_is_left_alone(lab: Lab) -> None:
     assert _events(lab, "agent.release.update")[0]["reason"] == "agent_retired"
 
 
-def test_an_open_version_of_the_release_with_other_content_is_left_alone(lab: Lab) -> None:
-    # A previous release update whose publication failed: an admin retries or discards it.
+def test_a_later_release_takes_the_place_of_its_own_failed_version(lab: Lab) -> None:
+    # A release update whose publication failed: nobody can discard a failed version, and a
+    # retry would publish its old content again. The next release adds its version instead.
     _installed(lab)
     failed = _new_release(lab, release_definition(model=DISABLED_MODEL, allowed_models=[]))
     assert lab.run(_release(failed), "update-1")["failure"] == "model_not_enabled"
     assert lab.version(2, AGENT)["status"]["S"] == "failed"
+    assert lab.meta(AGENT)["open_version"]["N"] == "2"
     lab.firehose.records.clear()
-    result = lab.run(_release(_new_release(lab)), "update-2")
+    digest = _new_release(lab)
+    result = lab.run(_release(digest), "update-2")
+    assert _succeeded(result)
+    assert result["version"] == 3
+    v3 = lab.version(3, AGENT)
+    assert (v3["status"]["S"], v3["content_hash"]["S"]) == ("published", digest)
+    assert v3["approved_by"]["S"] == APPROVER
+    # The failed version stays as history, failed.
+    assert lab.version(2, AGENT)["status"]["S"] == "failed"
+    meta = lab.meta(AGENT)
+    assert (meta["latest_version"]["N"], meta["published_version"]["N"]) == ("3", "3")
+    assert "open_version" not in meta and "provision_lock" not in meta
+
+
+def test_an_open_approved_version_of_the_release_with_other_content_is_left_alone(lab: Lab) -> None:
+    # A release update still being published: the next one does not take its place.
+    _installed(lab)
+    running = _new_release(lab)
+    lab.db.put_item(
+        TableName=AGENTS_TABLE,
+        Item={
+            **version_key(AGENT, 2),
+            "agent_id": {"S": AGENT},
+            "n": {"N": "2"},
+            "status": {"S": "approved"},
+            "status_index": {"S": "VERSION#approved"},
+            "revision": {"N": "1"},
+            "definition": {"S": dumps_definition(release_definition(system_prompt=NEW_PROMPT))},
+            "content_hash": {"S": running},
+            "created_by": {"S": APPROVER},
+            "editors": {"SS": [APPROVER]},
+            "approved_by": {"S": APPROVER},
+        },
+    )
+    lab.db.update_item(
+        TableName=AGENTS_TABLE,
+        Key=meta_key(AGENT),
+        UpdateExpression="SET open_version = :two, latest_version = :two",
+        ExpressionAttributeValues={":two": {"N": "2"}},
+    )
+    other = _new_release(lab, release_definition(system_prompt="Yet another prompt."))
+    result = lab.run(_release(other), "update-2")
     assert _succeeded(result)
     assert result["reason"] == "version_open"
     assert len(_version_items(lab)) == 2
