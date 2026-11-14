@@ -257,8 +257,28 @@ def table(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
         yield db
 
 
+class _AtomicItemWrites:
+    """DynamoDB applies a conditional write to an item atomically; moto does not under threads.
+
+    The proxy serialises ``update_item`` the way the service does, so the test checks the
+    condition expression rather than moto's lack of locking.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+        self._lock = threading.Lock()
+
+    def update_item(self, **kwargs: Any) -> Any:
+        with self._lock:
+            return self._client.update_item(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._client, name)
+
+
 def test_only_one_of_many_workers_claims_a_turn(table: Any) -> None:
-    log = DynamoTurnLog(lambda _u: table, "conv")
+    atomic = _AtomicItemWrites(table)
+    log = DynamoTurnLog(lambda _u: atomic, "conv")
     log.create("user-1", CONVERSATION, "c" * 32, deadline=int(time.time()) + 30)
     start = threading.Barrier(8)
     won: list[bool] = []
