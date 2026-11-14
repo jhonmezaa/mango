@@ -1,0 +1,91 @@
+# AWS ElastiCache MCP pack over the member accounts (D51). Schema: packages/py/mango-packs
+# (PackManifest). Guide: packs/README.md. Threat model: docs/security/threat-models/
+# aws-elasticache-pack-threat-model.md.
+schema_version: 1
+id: aws-elasticache
+version: "0.2.2-1" # <upstream version>-<Mango revision>
+name: AWS ElastiCache
+description: Clusters, replication groups, serverless caches, events, engine versions, default parameters and service updates of ElastiCache, read in the member account each question names. No cache data, no logs. Central users only.
+
+source:
+  package: awslabs.elasticache-mcp-server
+  # 0.2.3 (2026-11-09) is still in quarantine; its code is the same as 0.2.2's but for the
+  # version string.
+  version: "0.2.2"
+  sha256: e855af0fe2bb84a3da9ec78127e6d60e83707662b22eda176800004e89f1606e # wheel
+  exclude_newer: "2026-11-06T00:00:00Z" # lock cutoff: 7 days of quarantine
+
+# The server does not filter by area: every call runs as the central user who asked.
+data_tier: account_data
+identity_mode: central_only
+# Each call reads one member account, the one its `account_id` argument names (an argument
+# of Mango's, added and removed by the common entry point): Read broker ->
+# Mango-<ns>-ReadOnly of that account, with SourceIdentity = user.
+identity:
+  chain: member
+
+# Ceiling of every call's session, not permissions of the pack role (it has none). All of
+# them must be granted to the role of the member accounts (MEMBER_READ_ONLY_STATEMENTS), all
+# of them List level in the IAM service reference: every operation of the tools below maps
+# to one of these actions.
+iam:
+  # describe-cache-clusters, describe-replication-groups, describe-serverless-caches.
+  - actions:
+      - elasticache:DescribeCacheClusters
+      - elasticache:DescribeReplicationGroups
+      - elasticache:DescribeServerlessCaches
+    resources:
+      - "arn:aws:elasticache:*:*:cluster:*"
+      - "arn:aws:elasticache:*:*:replicationgroup:*"
+      - "arn:aws:elasticache:*:*:serverlesscache:*"
+  # describe-events, describe-cache-engine-versions, describe-engine-default-parameters,
+  # describe-service-updates.
+  - actions:
+      - elasticache:DescribeEvents
+      - elasticache:DescribeCacheEngineVersions
+      - elasticache:DescribeEngineDefaultParameters
+      - elasticache:DescribeServiceUpdates
+    resources: ["*"]
+    reason: None of these actions has a resource type in the IAM service reference.
+
+# What the Runtime reaches (R6), each through its VPC endpoint: STS to assume the Read broker
+# and the role of the member account, and ElastiCache. No tool takes a Region: the entry
+# point builds the ElastiCache client in the installation's Region, the only one the pack
+# network reaches.
+egress:
+  aws: [sts, elasticache]
+
+# Hidden arguments: none. No tool served takes credentials, an account, a Region or an
+# endpoint; the server reads them from the environment, which the entry point cleans.
+#
+# Upstream tools left out on purpose (the entry point removes them):
+#   create-*, modify-*, delete-*, batch-apply-update-action, batch-stop-update-action,
+#     start-migration, complete-migration, create-log-group: write.
+#   test-migration: calls elasticache:TestMigration (Write in IAM), although upstream marks it
+#     readonly_safe.
+#   create-jump-host-*, connect-jump-host-*: launch EC2 instances and open security groups.
+#   get-ssh-tunnel-command-*: return an SSH command nobody can run from Mango; need ec2.
+#   get-metric-statistics: ElastiCache metrics are read by the aws-cloudwatch pack
+#     (GetMetricData); this would add cloudwatch:GetMetricStatistics to every member account.
+#   describe-log-groups, describe-log-streams: list any log group of the account (aws-cloudwatch
+#     covers the listing).
+#   filter-log-events, get-log-events: read the content of any log group (D55 (3)); logs are
+#     read through the aws-cloudwatch pack, with its limits.
+#   get-cost-and-usage: cost is the aws-billing pack's (payer chain).
+#   list-delivery-streams: Firehose, unrelated to caches.
+#
+# Upstream arguments that always fail botocore's validation, before any request: max_items,
+# starting_token and page_size of describe-serverless-caches, max_items of
+# describe-service-updates and max_records of describe-engine-default-parameters (sent as a
+# string). The model gets the validation error and can call again without them.
+tools:
+  - { name: describe-cache-clusters, access: read }
+  - { name: describe-replication-groups, access: read }
+  - { name: describe-serverless-caches, access: read }
+  - { name: describe-events, access: read }
+  - { name: describe-cache-engine-versions, access: read }
+  - { name: describe-engine-default-parameters, access: read }
+  - { name: describe-service-updates, access: read }
+tools_hash: "sha256:ae8a3e60890148b15d7caeb0702c21513d2e0d3311c41652c4ddf712314d8835"
+
+config: []

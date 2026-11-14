@@ -114,6 +114,20 @@ Una cuenta objetivo que sea **cuenta de monitoreo** (observabilidad entre cuenta
 
 Modelo de amenazas: `docs/security/threat-models/aws-cloudwatch-pack-threat-model.md`.
 
+Tools que sirve `aws-elasticache` (revisión `0.2.2-1`; `propuesta`, para el agente `dba`), todas de lectura y todas de ElastiCache (`Describe*`, nivel *List* en IAM): `describe-cache-clusters`, `describe-replication-groups`, `describe-serverless-caches`, `describe-events`, `describe-cache-engine-versions`, `describe-engine-default-parameters` y `describe-service-updates`. Ninguna recibe región: el cliente va siempre a la de la instalación.
+
+Quedan fuera las escrituras, `test-migration` (upstream la marca de solo lectura, pero `elasticache:TestMigration` es *Write* en IAM), los *jump hosts* de EC2, las métricas (las lee `aws-cloudwatch`), toda tool de logs (las de upstream leen cualquier log group), el costo y Firehose. El motivo de cada una está en el manifiesto.
+
+Lo que el punto de entrada de `aws-elasticache` cambia del servidor, además:
+
+- **Su fábrica de clientes.** Upstream crea cada cliente con `boto3.Session(profile_name=os.environ.get('AWS_PROFILE', 'default'))`: nombrar un perfil, aunque sea `default`, falla con `ProfileNotFound` donde no hay archivo de configuración, como en el Runtime (borrar `AWS_PROFILE` no basta). El punto de entrada sustituye `BaseConnectionManager.get_connection` por una que crea el cliente sin perfil, en la región de la instalación, ignorando endpoints del entorno, y solo de ElastiCache.
+- **Su modo de solo lectura activo**, como segunda barrera detrás de la lista del manifiesto.
+- **Sin logs de upstream.**
+
+Al revisar una versión nueva: cada tool marcada `@readonly_safe` contra la referencia de servicios de IAM, y `common/connection.py` (la fábrica que se sustituye); repetir la prueba del punto de entrada sin archivo de configuración de AWS.
+
+Modelo de amenazas: `docs/security/threat-models/aws-elasticache-pack-threat-model.md`.
+
 #### Servidores hechos con `fastmcp` (Billing)
 
 El servidor de Billing no usa el SDK oficial de MCP sino la librería `fastmcp`, y monta un servidor por familia de tools con un paso `setup()`. Su punto de entrada usa `mango_pack_runtime.fastmcp_server`:

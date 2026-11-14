@@ -282,3 +282,63 @@ def test_cloudwatch_pack_reads_member_accounts_only_as_the_caller() -> None:
         if "region" in properties:
             assert "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$" in json.dumps(properties["region"])
     assert pack.build_options.compression == "deflate"
+
+
+def test_elasticache_pack_reads_member_accounts_only_as_the_caller() -> None:
+    pack = load_pack(REPO / "packs" / "aws-elasticache")
+    manifest = pack.manifest
+    assert (manifest.data_tier, manifest.identity_mode) == ("account_data", "central_only")
+    assert manifest.member_chain and manifest.installable
+    assert manifest.tool_names == {
+        "describe-cache-clusters",
+        "describe-replication-groups",
+        "describe-serverless-caches",
+        "describe-events",
+        "describe-cache-engine-versions",
+        "describe-engine-default-parameters",
+        "describe-service-updates",
+    }
+    # test-migration is Write in IAM although upstream marks it read-only-safe; no logs.
+    assert "test-migration" not in manifest.tool_names
+    actions = [action for statement in manifest.iam for action in statement.actions]
+    assert sorted(actions) == [
+        "elasticache:DescribeCacheClusters",
+        "elasticache:DescribeCacheEngineVersions",
+        "elasticache:DescribeEngineDefaultParameters",
+        "elasticache:DescribeEvents",
+        "elasticache:DescribeReplicationGroups",
+        "elasticache:DescribeServerlessCaches",
+        "elasticache:DescribeServiceUpdates",
+    ]
+    assert len(session_policy(tuple(manifest.iam))) < 2048
+    # Clusters, replication groups and serverless caches have ARNs: no "*" there.
+    scoped = [statement for statement in manifest.iam if "*" not in statement.resources]
+    assert [s.resources for s in scoped] == [
+        [
+            "arn:aws:elasticache:*:*:cluster:*",
+            "arn:aws:elasticache:*:*:replicationgroup:*",
+            "arn:aws:elasticache:*:*:serverlesscache:*",
+        ]
+    ]
+    assert sorted(manifest.egress.aws) == ["elasticache", "sts"]
+
+    source = pack.entrypoint.read_text()
+    assert source.index("pack = load(") < source.index("from awslabs.")
+    assert source.index("upstream_logger.remove()") < source.index("from awslabs.")
+    # Upstream's client factory names the profile `default` (ProfileNotFound in the Runtime)
+    # and reads the Region from the environment: the entry point replaces it.
+    assert "BaseConnectionManager.get_connection = classmethod(get_connection)" in source
+    assert "pack.config.region" in source
+    assert "ignore_configured_endpoint_urls=True" in source
+    assert "Context.initialize(readonly=True)" in source
+
+    tools = json.loads(pack.snapshot.read_text())
+    assert {tool["name"] for tool in tools} == manifest.tool_names
+    for tool in tools:
+        schema = tool["inputSchema"]
+        properties = schema["properties"]
+        assert properties["account_id"]["pattern"] == "^[0-9]{12}$"
+        assert schema["required"][0] == "account_id"
+        # No tool takes credentials, a Region or an endpoint.
+        assert not {"profile_name", "region", "endpoint_url"} & set(properties)
+        assert schema.get("additionalProperties") is not False

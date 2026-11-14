@@ -1,0 +1,620 @@
+[
+  {
+    "description": "Describe one or more ElastiCache cache clusters.\n\nThis tool returns information about provisioned cache clusters. If a cache cluster ID\nis specified, information about only that cache cluster is returned. Otherwise, information\nabout up to MaxRecords cache clusters is returned.\n\nParameters:\n    cache_cluster_id (Optional[str]): The identifier for the cache cluster to describe.\n        If not provided, information about all cache clusters is returned.\n    max_records (Optional[int]): The maximum number of records to include in the response.\n        If more records exist than the specified MaxRecords value, a marker is included\n        in the response so that the remaining results can be retrieved.\n    marker (Optional[str]): An optional marker returned from a previous request. Use this marker\n        for pagination of results from this operation. If this parameter is specified,\n        the response includes only records beyond the marker, up to the value specified\n        by MaxRecords.\n    show_cache_node_info (Optional[bool]): Whether to include detailed information about\n        cache nodes in the response.\n    show_cache_clusters_not_in_replication_groups (Optional[bool]): Whether to show only\n        cache clusters that are not members of a replication group.\n\nReturns:\n    Dict containing information about the cache cluster(s), including:\n    - CacheClusters: List of cache clusters\n    - Marker: Pagination marker for next set of results\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "cache_cluster_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Cluster Id"
+        },
+        "marker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Marker"
+        },
+        "max_records": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Records"
+        },
+        "show_cache_clusters_not_in_replication_groups": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Show Cache Clusters Not In Replication Groups"
+        },
+        "show_cache_node_info": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Show Cache Node Info"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "describe_cache_clustersArguments",
+      "type": "object"
+    },
+    "name": "describe-cache-clusters",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "describe_cache_clustersOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Returns a list of the available cache engines and their versions.\n\nParameters:\n    engine (Optional[str]): The cache engine to return. Valid values: memcached | redis | valkey\n    engine_version (Optional[str]): The cache engine version to return.\n        Example: memcached 1.4.14, redis 6.x, valkey 8.0\n    cache_parameter_group_family (Optional[str]): The name of a specific cache parameter group family.\n        Valid values are: memcached1.4 | memcached1.5 | memcached1.6 | redis2.6 | redis2.8 |\n        redis3.2 | redis4.0 | redis5.0 | redis6.x | redis7.x | valkey7.x | valkey8.x\n    max_records (Optional[int]): The maximum number of records to include in the response.\n        If more records exist than the specified MaxRecords value, a marker is included\n        in the response so that the remaining results can be retrieved.\n    marker (Optional[str]): An optional marker returned from a previous request. Use this marker\n        for pagination of results from this operation. If this parameter is specified,\n        the response includes only records beyond the marker, up to the value specified\n        by MaxRecords.\n    default_only (Optional[bool]): If true, specifies that only the default version of the specified engine\n        or engine and major version combination is to be returned.\n\nReturns:\n    Dict containing information about the cache engine versions, including:\n    - CacheEngineVersions: List of cache engine versions\n    - Marker: Pagination marker for next set of results\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "cache_parameter_group_family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Parameter Group Family"
+        },
+        "default_only": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Only"
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Engine"
+        },
+        "engine_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Engine Version"
+        },
+        "marker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Marker"
+        },
+        "max_records": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Records"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "describe_cache_engine_versionsArguments",
+      "type": "object"
+    },
+    "name": "describe-cache-engine-versions",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "describe_cache_engine_versionsOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Returns the default engine and system parameter information for the specified cache engine family.\n\nParameters:\n    cache_parameter_group_family (str): The name of the cache parameter group family.\n        Valid values are: memcached1.4 | memcached1.5 | memcached1.6 | redis2.6 | redis2.8 |\n        redis3.2 | redis4.0 | redis5.0 | redis6.x | redis7.x | valkey7.x | valkey8.x\n    max_records (Optional[int]): The maximum number of records to include in the response.\n        If more records exist than the specified MaxRecords value, a marker is included\n        in the response so that the remaining results can be retrieved.\n    marker (Optional[str]): An optional marker returned from a previous request. Use this marker\n        for pagination of results from this operation. If this parameter is specified,\n        the response includes only records beyond the marker, up to the value specified\n        by MaxRecords.\n\nReturns:\n    Dict containing information about the engine default parameters, including:\n    - Parameters: List of parameters with their details\n    - CacheParameterGroupFamily: The name of the cache parameter group family\n    - Marker: Pagination marker for next set of results\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "cache_parameter_group_family": {
+          "title": "Cache Parameter Group Family",
+          "type": "string"
+        },
+        "marker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Marker"
+        },
+        "max_records": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Records"
+        }
+      },
+      "required": [
+        "account_id",
+        "cache_parameter_group_family"
+      ],
+      "title": "describe_engine_default_parametersArguments",
+      "type": "object"
+    },
+    "name": "describe-engine-default-parameters",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "describe_engine_default_parametersOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Returns events related to clusters, cache security groups, and parameter groups.\n\nParameters:\n    source_type (Optional[str]): The event source to retrieve events for. If not specified, all\n        events are returned. Valid values: cache-cluster | cache-parameter-group |\n        cache-security-group | cache-subnet-group | replication-group | user | user-group\n    source_identifier (Optional[str]): The identifier of the event source for which events are\n        returned. For example, if source_type is cache-cluster, you can specify a cluster\n        identifier to see all events for only that cluster.\n    start_time (Optional[datetime]): The beginning of the time interval to retrieve events for,\n        specified in ISO 8601 format.\n    end_time (Optional[datetime]): The end of the time interval to retrieve events for,\n        specified in ISO 8601 format.\n    duration (Optional[int]): The number of minutes worth of events to retrieve.\n    max_records (Optional[int]): The maximum number of records to include in the response.\n        If more records exist than the specified MaxRecords value, a marker is included\n        in the response so that the remaining results can be retrieved.\n    marker (Optional[str]): An optional marker returned from a previous request. Use this marker\n        for pagination of results from this operation. If this parameter is specified,\n        the response includes only records beyond the marker, up to the value specified\n        by MaxRecords.\n\nReturns:\n    Dict containing information about the events, including:\n    - Events: List of events\n    - Marker: Pagination marker for next set of results\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration"
+        },
+        "end_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Time"
+        },
+        "marker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Marker"
+        },
+        "max_records": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Records"
+        },
+        "source_identifier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Identifier"
+        },
+        "source_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Type"
+        },
+        "start_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Time"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "describe_eventsArguments",
+      "type": "object"
+    },
+    "name": "describe-events",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "describe_eventsOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Describe one or more ElastiCache replication groups.\n\nThis tool returns information about provisioned replication groups. If a replication group ID\nis specified, information about only that replication group is returned. Otherwise, information\nabout up to MaxRecords replication groups is returned.\n\nParameters:\n    replication_group_id (Optional[str]): The identifier for the replication group to describe.\n        If not provided, information about all replication groups is returned.\n    max_records (Optional[int]): The maximum number of records to include in the response.\n        If more records exist than the specified MaxRecords value, a marker is included\n        in the response so that the remaining results can be retrieved.\n    marker (Optional[str]): An optional marker returned from a previous request. Use this marker\n        for pagination of results from this operation. If this parameter is specified,\n        the response includes only records beyond the marker, up to the value specified\n        by MaxRecords.\n\nReturns:\n    Dict containing information about the replication group(s), including:\n    - ReplicationGroups: List of replication groups\n    - Marker: Pagination marker for next set of results\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "marker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Marker"
+        },
+        "max_records": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Records"
+        },
+        "replication_group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replication Group Id"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "describe_replication_groupsArguments",
+      "type": "object"
+    },
+    "name": "describe-replication-groups",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "describe_replication_groupsOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Describe Amazon ElastiCache serverless caches in your AWS account.\n\nThis tool retrieves detailed information about serverless caches including:\n- Cache configuration\n- Cache endpoints\n- Cache status\n- Cache size\n- Cache connections\n\nParameters:\n    serverless_cache_name (Optional[str]): Name of the serverless cache to describe. If not provided, describes all caches.\n    max_items (Optional[int]): Maximum number of results to return.\n    starting_token (Optional[str]): Token to start the list from a specific page.\n    page_size (Optional[int]): Number of records to include in each page.\n\nReturns:\n    Dict containing information about the serverless cache(s).\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "max_items": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Items"
+        },
+        "page_size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page Size"
+        },
+        "serverless_cache_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Serverless Cache Name"
+        },
+        "starting_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starting Token"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "describe_serverless_cachesArguments",
+      "type": "object"
+    },
+    "name": "describe-serverless-caches",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "describe_serverless_cachesOutput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Returns details of the service updates.\n\nParameters:\n    service_update_name (Optional[str]): The unique ID of the service update to describe.\n    service_update_status (Optional[List[str]]): List of status values to filter by.\n        Valid values: available | cancelled | expired | complete\n    starting_token (Optional[str]): An optional token returned from a previous request.\n        Use this token for pagination of results from this operation.\n    page_size (Optional[int]): The maximum number of records to include in each page\n        of results.\n    max_items (Optional[int]): The maximum number of records to include in the response.\n        If more records exist than the specified MaxItems value, a marker is included\n        in the response so that the remaining results can be retrieved.\n\nReturns:\n    Dict containing information about the service updates, including:\n    - ServiceUpdates: List of service updates\n    - NextToken: Token for next set of results\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "max_items": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Items"
+        },
+        "page_size": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page Size"
+        },
+        "service_update_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Update Name"
+        },
+        "service_update_status": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Update Status"
+        },
+        "starting_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starting Token"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "describe_service_updatesArguments",
+      "type": "object"
+    },
+    "name": "describe-service-updates",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "describe_service_updatesOutput",
+      "type": "object"
+    }
+  }
+]
