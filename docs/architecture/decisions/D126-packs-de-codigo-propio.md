@@ -53,7 +53,7 @@
 
 **(6) Falta ver en una instalación.** Nada de esto se instaló. Falta ver que un pack propio:
 
-- se construye y se firma en el workflow `packs` desde `main` (hoy solo se construyó en local: la matriz de `packs.yml` aún no tiene los packs nuevos);
+- se habilita en una instalación con su artefacto firmado (el workflow `packs` ya lo construye y lo firma desde `main`);
 - se habilita con el provisioner, que crea el rol, el Runtime en la red de packs y el target;
 - responde `tools/list` igual que su snapshot;
 - y lee una cuenta miembro con la cadena `member`, con `SourceIdentity` de la persona en el CloudTrail de esa cuenta.
