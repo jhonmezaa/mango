@@ -1,0 +1,133 @@
+# AWS Application Signals MCP pack over the member accounts (D51). Schema: packages/py/
+# mango-packs (PackManifest). Guide: packs/README.md. Threat model: docs/security/
+# threat-models/aws-application-signals-pack-threat-model.md.
+schema_version: 1
+id: aws-application-signals
+version: "0.2.1-1" # <upstream version>-<Mango revision>
+name: AWS Application Signals
+description: Services, operations, dependencies, SLOs, change events and audits of CloudWatch Application Signals, X-Ray traces by id and Synthetics canaries, read in the member account each question names. No log events. Central users only.
+
+source:
+  package: awslabs.cloudwatch-applicationsignals-mcp-server
+  version: "0.2.1"
+  sha256: 7d6cbe75f64a5aebad0612fd5c3405321a2f012b493e6017deb8450466d3d35c # wheel
+  exclude_newer: "2026-11-06T00:00:00Z" # lock cutoff: 7 days of quarantine
+
+# The server does not filter by area: every call runs as the central user who asked.
+data_tier: account_data
+identity_mode: central_only
+# Each call reads one member account, the one its `account_id` argument names (an argument
+# of Mango's, added and removed by the common entry point): Read broker ->
+# Mango-<ns>-ReadOnly of that account, with SourceIdentity = user.
+identity:
+  chain: member
+
+# Ceiling of every call's session, not permissions of the pack role (it has none). All of
+# them must be granted to the role of the member accounts (MEMBER_READ_ONLY_STATEMENTS), all
+# of them read-only in the IAM service reference: every operation the tools below call maps
+# to one of these actions.
+iam:
+  # list_monitored_services, query_service_metrics, list_slis, list_slos, list_change_events,
+  # the group tools and the three audits (ListServiceDependents: the canaries linked to an
+  # audited service).
+  - actions:
+      - application-signals:ListServices
+      - application-signals:GetService
+      - application-signals:ListServiceOperations
+      - application-signals:ListServiceDependencies
+      - application-signals:ListServiceDependents
+      - application-signals:ListServiceLevelObjectives
+      - application-signals:ListAuditFindings
+      - application-signals:ListEntityEvents
+      - application-signals:ListServiceStates
+      - application-signals:ListGroupingAttributeDefinitions
+    resources: ["*"]
+    reason: None of these Application Signals actions has a resource type in the IAM service reference.
+  # get_slo.
+  - actions:
+      - application-signals:GetServiceLevelObjective
+    resources: ["arn:aws:application-signals:*:*:slo/*"]
+  # query_service_metrics (GetMetricStatistics); list_slis, audit_group_health (GetMetricData).
+  - actions:
+      - cloudwatch:GetMetricStatistics
+      - cloudwatch:GetMetricData
+    resources: ["*"]
+    reason: A metric query names metrics, not a resource with an ARN; GetMetricStatistics has no resource type and GetMetricData only an optional dataset.
+  # get_xray_trace (BatchGetTraces); list_slis (GetTraceSegmentDestination: whether
+  # Transaction Search is on). No span or segment search.
+  - actions:
+      - xray:BatchGetTraces
+      - xray:GetTraceSegmentDestination
+    resources: ["*"]
+    reason: Neither X-Ray action has a resource type in the IAM service reference.
+  # list_canaries.
+  - actions:
+      - synthetics:DescribeCanaries
+    resources: ["*"]
+    reason: DescribeCanaries has no resource type in the IAM service reference.
+  # audit_services, audit_group_health: the last five runs of each canary linked to a service.
+  - actions:
+      - synthetics:GetCanaryRuns
+    resources: ["arn:aws:synthetics:*:*:canary:*"]
+
+# What the Runtime reaches (R6), each through its VPC endpoint: STS to assume the Read broker
+# and the role of the member account, Application Signals, CloudWatch, X-Ray and Synthetics.
+# Endpoints only exist in the Region of the installation, so that is the only Region the pack
+# reads: the common entry point refuses a call that names another one, and the entry point
+# builds every client of the server for that Region.
+egress:
+  aws: [sts, application-signals, cloudwatch, xray, synthetics]
+
+# What the entry point changes of the server (entrypoint.py):
+#   include_linked_accounts (list_slos) is hidden, and every ListServiceLevelObjectives the
+#     server sends goes with IncludeLinkedAccounts=false: upstream defaults it to true in that
+#     tool and hard-codes true in the audits and the SLI report. Through a monitoring account
+#     it would read SLOs of linked accounts, which may not be accounts Mango reads.
+#   A request that names another account (an `AwsAccountId` key anywhere in its parameters,
+#     as the audits and list_change_events accept inside their JSON arguments) is refused
+#     before it is signed: only the account of the call is read.
+#   No audit reads logs: ListAuditFindings always names its auditors, never `log` (D55 (3)).
+#   No log file and no upstream log records: the server opens a loguru file sink at import
+#     and appends the parameters and the full response of every audit to a second file
+#     (AUDITOR_LOG_PATH, set to /dev/null before importing; every loguru sink removed after).
+#   MCP_* variables (endpoint overrides) and AWS_PROFILE are removed before importing.
+#   `region` (list_canaries, list_change_events) stays, held to the installation's Region by
+#     the common entry point; its listed default (the Region of the build) is not listed.
+#
+# Upstream tools left out on purpose (the entry point removes them):
+#   search_transaction_spans, query_rum_events: Logs Insights and FilterLogEvents on span and
+#     RUM logs: content of logs (user, 2026-10-02: no log content).
+#   analyze_canary_failures: downloads canary code with `requests` from presigned S3 URLs,
+#     writes temporary files, reads Lambda configuration (environment variables), S3
+#     artifacts and IAM policies.
+#   get_enablement_guide: reads paths of the server's filesystem named by the model.
+#   list_monitored_functions, get_function_metrics, search_functions_by_name,
+#   get_endpoint_performance, get_recent_incidents, get_incident_root_cause,
+#   get_service_health_overview, find_deployment: PromQL requests signed by hand outside
+#     botocore, and Logs Insights.
+#   create_instrumentation (write), delete_instrumentation,
+#   batch_delete_instrumentations_by_scope, batch_delete_instrumentations_by_arns
+#     (destructive), list_instrumentations, get_instrumentation,
+#   get_instrumentation_configuration_status, check_instrumentation_status,
+#   search_snapshots_for_status_event, get_sample_snapshot_for_breakpoint: dynamic
+#     instrumentation; its reads query captured variable values from logs.
+tools:
+  - { name: list_monitored_services, access: read }
+  - { name: query_service_metrics, access: read }
+  - { name: get_slo, access: read }
+  - { name: list_slos, access: read }
+  - { name: list_slis, access: read }
+  - { name: get_xray_trace, access: read }
+  - { name: list_change_events, access: read }
+  - { name: list_group_services, access: read }
+  - { name: audit_group_health, access: read }
+  - { name: get_group_dependencies, access: read }
+  - { name: get_group_changes, access: read }
+  - { name: list_grouping_attribute_definitions, access: read }
+  - { name: audit_services, access: read }
+  - { name: audit_slos, access: read }
+  - { name: audit_service_operations, access: read }
+  - { name: list_canaries, access: read }
+tools_hash: "sha256:b96f2fe191623b614e0839caf4d0e606d16b8203643c872298c2faff8ba04359"
+
+config: []
