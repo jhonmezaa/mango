@@ -33,7 +33,7 @@ dev = [
   # The other library awslabs servers are built on (Billing): its adapter in the common pack
   # entry point is tested against it, like the SDK above; never shipped by Mango. The same
   # version as packs/aws-billing/requirements.lock, so the test runs what the pack ships.
-  "fastmcp==4.1.2",
+  "fastmcp==4.1.6",
 ]
 
 [tool.ruff]

@@ -95,7 +95,7 @@ Un pack de esta cadena lee **una cuenta miembro por llamada**. Todo lo anterior 
 - Solo lo sirve `mango_pack_runtime.server` (SDK oficial de MCP). El adaptador de `fastmcp` no arranca un pack de esta cadena.
 - La prueba está en `packages/py/mango-pack-runtime/tests/test_member.py`.
 
-Tools que sirve `aws-cloudwatch` (revisión `0.3.1-5`: las mismas tools que la `-1`; la `-2` declara su `egress` y solo lee la región de la instalación, la `-3` resuelve el lock con el corte del 2026-10-15 por CVE-2026-114603, la `-4` toma `certifi` 2026.10.19 con excepción de cuarentena y la `-5` quita las cotas de esa cuarentena), todas de lectura:
+Tools que sirve `aws-cloudwatch` (revisión `0.3.1-6`: las mismas tools que la `-1`; la `-2` declara su `egress` y solo lee la región de la instalación, la `-3` resuelve el lock con el corte del 2026-10-15 por CVE-2026-114603, la `-4` toma `certifi` 2026.10.19 con excepción de cuarentena, la `-5` quita las cotas de esa cuarentena y la `-6` resuelve el lock con el corte del 2026-10-29 por CVE-2026-126360 en `opentelemetry-api`), todas de lectura:
 
 | Tools | Servicio | Notas |
 |---|---|---|
@@ -137,7 +137,7 @@ serve(pack, mcp)
 - **Logs.** `fastmcp` copia al log del servidor todo mensaje que una tool envía al cliente (`ctx.info`, `ctx.error`), sea cual sea el nivel; ese logger se descarta. Solo queda el registro `pack.call` (quién llamó a qué, D16).
 - La prueba de aislamiento está en `packages/py/mango-pack-runtime/tests/test_fastmcp_server.py`, con la misma versión de `fastmcp` que fija el lock del pack (`fastmcp==` en el `pyproject.toml` de la raíz). **Al actualizar el pack, se actualiza esa versión y se repite la prueba.**
 
-Tools que sirve `aws-billing` (revisión `0.0.38-8`: las mismas tools que la `-3`; la `-4` cambió el código común que viaja en su zip, la `-5` declara su `egress`, la `-6` resuelve el lock con el corte del 2026-10-15 por CVE-2026-114603, con `fastmcp` 4.1.0, la `-7` toma `fastmcp` 4.1.2 con excepción de cuarentena y la `-8` quita las cotas de esa cuarentena), todas de lectura:
+Tools que sirve `aws-billing` (revisión `0.0.38-9`: las mismas tools que la `-3`; la `-4` cambió el código común que viaja en su zip, la `-5` declara su `egress`, la `-6` resuelve el lock con el corte del 2026-10-15 por CVE-2026-114603, con `fastmcp` 4.1.0, la `-7` toma `fastmcp` 4.1.2 con excepción de cuarentena, la `-8` quita las cotas de esa cuarentena y la `-9` resuelve el lock con el corte del 2026-11-04 por CVE-2026-126360 en `opentelemetry-api` y CVE-2026-128089 en `dnspython`, con `fastmcp` 4.1.6), todas de lectura:
 
 | Tools | Servicio | Notas |
 |---|---|---|
