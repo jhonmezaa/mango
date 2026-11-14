@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { App } from "aws-cdk-lib";
 import { describe, expect, it } from "vitest";
@@ -70,6 +70,26 @@ describe("release agent definition (D34)", () => {
     for (const id of RELEASE_AGENT_IDS) expect(id).toMatch(/^[a-z][a-z0-9]{1,15}$/);
     // Routes of the API that an agent id must not shadow.
     for (const reserved of ["mine", "reviews", "org", "platform"]) expect(RELEASE_AGENT_IDS).not.toContain(reserved);
+  });
+
+  it("knows every definition in agents/: SRE and DBA ship as files, not seeded yet (D127)", () => {
+    // Their packs are not in the release yet, and the provisioner fails a publication whose
+    // pack is not installed (unknown_tool). Seeding them is its own change.
+    const notSeeded = ["dba", "sre"];
+    const dirs = readdirSync(resolve(repo, "agents"), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    expect(dirs).toEqual([...RELEASE_AGENT_IDS, ...notSeeded].sort());
+    for (const id of notSeeded) {
+      expect(RELEASE_AGENT_IDS).not.toContain(id);
+      expect(id).toMatch(/^[a-z][a-z0-9]{1,15}$/);
+      const definition = JSON.parse(releaseAgentDefinition(id, "us.anthropic.claude-sonnet-4-6").canonical);
+      expect(definition.approval_tools).toEqual([]);
+      expect(definition.users).toEqual([]);
+      expect(definition.groups).toEqual(["finops-central"]);
+      for (const tool of definition.tools as string[]) expect(tool).toMatch(/^aws-[a-z-]+\.[A-Za-z0-9_-]+$/);
+    }
   });
 
   it("is the file of the release plus the model of the installation, with every field written out", () => {
