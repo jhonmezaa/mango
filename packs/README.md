@@ -266,6 +266,25 @@ Cada tool devuelve una **vista curada** (lista permitida de campos, `aws_rds/cur
 
 Modelo de amenazas: `docs/security/threat-models/aws-rds-pack-threat-model.md`.
 
+#### `aws-ops`: cómputo y despliegues
+
+Primer pack de código propio (`packs/aws-ops/aws_ops/`, revisión `0.1.0-1`), para el agente SRE. Quince tools, todas de lectura:
+
+| Tools | Servicio (acciones) |
+|---|---|
+| `list_ec2_instances`, `get_ec2_instance_status` | EC2 (`DescribeInstances`, `DescribeInstanceStatus`) |
+| `list_auto_scaling_groups`, `get_scaling_activities` | Auto Scaling (`DescribeAutoScalingGroups`, `DescribeScalingActivities`) |
+| `list_load_balancers`, `list_target_groups`, `get_target_health` | ELB v2 (`DescribeLoadBalancers`, `DescribeTargetGroups`, `DescribeTargetHealth`) |
+| `list_ecs_clusters`, `list_ecs_services`, `get_ecs_service_events`, `list_ecs_service_deployments`, `list_stopped_ecs_tasks` | ECS (`ListClusters`, `DescribeClusters`, `ListServices`, `DescribeServices`, `ListServiceDeployments`, `DescribeServiceDeployments`, `ListTasks`, `DescribeTasks`) |
+| `list_cloudformation_stacks`, `get_cloudformation_stack_events` | CloudFormation (`ListStacks`, `DescribeStackEvents`) |
+| `get_resource_config_history` | AWS Config (`GetResourceConfigHistory`) |
+
+**Cada tool devuelve una vista curada, nunca la respuesta de la API:** una lista permitida de campos, `max_items` con tope, como mucho 1000 elementos leídos por llamada, ventanas en horas con tope y textos libres cortados a 500 caracteres. Nunca: `ecs:DescribeTaskDefinition` (variables de entorno), *overrides*, adjuntos y tags de las tareas, parámetros, salidas y plantillas de stacks (`ListStacks` en vez de `DescribeStacks`), `ResourceProperties` de los eventos, ni los valores de la configuración de AWS Config: solo los **nombres** de los campos de primer nivel que cambiaron. De los tags solo salen `Name`, `Environment` y los de propiedad de AWS, y un valor con forma de secreto se devuelve como `[redacted]`. Los errores de AWS llegan como su código y un mensaje cortado.
+
+Fuera, a propósito: Classic Load Balancers (ELB v1) y la configuración completa de Config. Al cambiar el código: revisar cada campo nuevo que entre en una vista (las pruebas buscan secretos plantados en la salida) y subir `source.version`.
+
+Modelo de amenazas: `docs/security/threat-models/aws-ops-pack-threat-model.md`.
+
 ## Pipeline
 
 `deployment/build-pack.sh` ejecuta estos pasos, en este orden. Localmente: `mise run pack -- packs/aws-pricing dist/packs`.

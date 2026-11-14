@@ -1,0 +1,1048 @@
+[
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Recent events of a CloudFormation stack, newest first: which resource changed, its\nstatus and the reason. Use it to find why a deployment failed or rolled back.\n\nNever the resource properties of an event.\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "hours": {
+          "default": 24,
+          "description": "How many hours back to look (1-168).",
+          "maximum": 168,
+          "minimum": 1,
+          "title": "Hours",
+          "type": "integer"
+        },
+        "max_items": {
+          "default": 50,
+          "description": "Most items to return (1-100).",
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "only_failures": {
+          "default": false,
+          "description": "Only events whose status is a failure (*_FAILED).",
+          "title": "Only Failures",
+          "type": "boolean"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        },
+        "stack": {
+          "description": "Stack name, or stack ARN for a deleted stack.",
+          "pattern": "^([A-Za-z][A-Za-z0-9-]{0,127}|arn:aws[a-z-]*:cloudformation:[a-z0-9-]+:\\d{12}:stack/[A-Za-z][A-Za-z0-9-]{0,127}/[0-9a-f-]{36})$",
+          "title": "Stack",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "stack"
+      ],
+      "title": "get_cloudformation_stack_eventsArguments",
+      "type": "object"
+    },
+    "name": "get_cloudformation_stack_events",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "get_cloudformation_stack_eventsDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "EC2 status checks (system, instance, attached EBS) and scheduled events per instance.\n\nUse it to answer \"is this instance healthy?\" or \"which instances fail their checks?\".\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "include_stopped": {
+          "default": false,
+          "description": "Also instances that are not running (no checks for those).",
+          "title": "Include Stopped",
+          "type": "boolean"
+        },
+        "instance_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^i-[0-9a-f]{8,17}$",
+                "type": "string"
+              },
+              "maxItems": 50,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only these instance ids (at most 50). Leave it out for all.",
+          "title": "Instance Ids"
+        },
+        "max_items": {
+          "default": 25,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "only_unhealthy": {
+          "default": false,
+          "description": "Only instances with a failing or pending check or a scheduled event.",
+          "title": "Only Unhealthy",
+          "type": "boolean"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "get_ec2_instance_statusArguments",
+      "type": "object"
+    },
+    "name": "get_ec2_instance_status",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "get_ec2_instance_statusDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Recent events of an ECS service (newest first): failed placements, unhealthy tasks,\nsteady state, deployment progress. Also its current counts and deployments.",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "cluster": {
+          "description": "ECS cluster name or ARN.",
+          "pattern": "^(arn:aws[a-z-]*:ecs:[a-z0-9-]+:\\d{12}:cluster/)?[A-Za-z0-9_-]{1,255}$",
+          "title": "Cluster",
+          "type": "string"
+        },
+        "hours": {
+          "default": 24,
+          "description": "How many hours back to look (1-168).",
+          "maximum": 168,
+          "minimum": 1,
+          "title": "Hours",
+          "type": "integer"
+        },
+        "max_items": {
+          "default": 20,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        },
+        "service": {
+          "description": "ECS service name or ARN.",
+          "pattern": "^(arn:aws[a-z-]*:ecs:[a-z0-9-]+:\\d{12}:service/[A-Za-z0-9_-]{1,255}/)?[A-Za-z0-9_-]{1,255}$",
+          "title": "Service",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "cluster",
+        "service"
+      ],
+      "title": "get_ecs_service_eventsArguments",
+      "type": "object"
+    },
+    "name": "get_ecs_service_events",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "get_ecs_service_eventsDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "When a resource's configuration changed, as recorded by AWS Config (newest first).\n\nFor each recorded item: capture time, status, related resources and the **names** of the\ntop-level configuration fields that changed since the previous item. Never the values of\nthe configuration, supplementary configuration or tags. Needs AWS Config recording in the\naccount; answers \"what changed on this security group, and when?\".\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "hours": {
+          "default": 168,
+          "description": "How many hours back to look (1-720).",
+          "maximum": 720,
+          "minimum": 1,
+          "title": "Hours",
+          "type": "integer"
+        },
+        "max_items": {
+          "default": 10,
+          "description": "Most items to return (1-20).",
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        },
+        "resource_id": {
+          "description": "Resource id as AWS Config records it, e.g. sg-0123456789abcdef0.",
+          "pattern": "^[A-Za-z0-9._:/@+=,-]{1,768}$",
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "resource_type": {
+          "description": "AWS Config resource type, e.g. AWS::EC2::SecurityGroup.",
+          "pattern": "^AWS::[A-Za-z0-9]{1,64}::[A-Za-z0-9]{1,64}$",
+          "title": "Resource Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "resource_type",
+        "resource_id"
+      ],
+      "title": "get_resource_config_historyArguments",
+      "type": "object"
+    },
+    "name": "get_resource_config_history",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "get_resource_config_historyDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Recent scaling activities of an Auto Scaling group, newest first, with cause and status.\n\nAnswers \"did it scale?\", \"why did an instance launch or terminate?\" and failed launches.\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "group_name": {
+          "description": "Auto Scaling group name.",
+          "pattern": "^[A-Za-z0-9 ._:/@+=()-]{1,255}$",
+          "title": "Group Name",
+          "type": "string"
+        },
+        "hours": {
+          "default": 24,
+          "description": "How many hours back to look (1-168).",
+          "maximum": 168,
+          "minimum": 1,
+          "title": "Hours",
+          "type": "integer"
+        },
+        "max_items": {
+          "default": 20,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        }
+      },
+      "required": [
+        "account_id",
+        "group_name"
+      ],
+      "title": "get_scaling_activitiesArguments",
+      "type": "object"
+    },
+    "name": "get_scaling_activities",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "get_scaling_activitiesDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Health of each target of a target group: state, reason and description.",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "max_items": {
+          "default": 50,
+          "description": "Most items to return (1-100).",
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        },
+        "target_group_arn": {
+          "description": "Target group ARN.",
+          "pattern": "^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:\\d{12}:targetgroup/[A-Za-z0-9-]{1,32}/[0-9a-f]{16}$",
+          "title": "Target Group Arn",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "target_group_arn"
+      ],
+      "title": "get_target_healthArguments",
+      "type": "object"
+    },
+    "name": "get_target_health",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "get_target_healthDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "List Auto Scaling groups: sizes, health check, launch template and their instances.\n\nEach group lists at most 50 of its instances with lifecycle state and health.\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "max_items": {
+          "default": 20,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "names": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^[A-Za-z0-9 ._:/@+=()-]{1,255}$",
+                "type": "string"
+              },
+              "maxItems": 20,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only these group names (at most 20). Leave it out for all.",
+          "title": "Names"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "list_auto_scaling_groupsArguments",
+      "type": "object"
+    },
+    "name": "list_auto_scaling_groups",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_auto_scaling_groupsDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "List CloudFormation stacks with status, status reason, times and drift status.\n\nNever parameters, outputs or templates.\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "max_items": {
+          "default": 25,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "name_contains": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only stacks whose name contains this text.",
+          "title": "Name Contains"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        },
+        "status": {
+          "default": "active",
+          "description": "Which stacks: active (not deleted), in_progress, failed (failed or rolled back), deleted (last 90 days).",
+          "enum": [
+            "active",
+            "in_progress",
+            "failed",
+            "deleted"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "list_cloudformation_stacksArguments",
+      "type": "object"
+    },
+    "name": "list_cloudformation_stacks",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_cloudformation_stacksDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "List EC2 instances with their state, type, placement and addresses.\n\nReturns a curated view: no user data, no network interface or block device details, and\nonly a few well-known tags (Name, Environment, aws:* ownership tags).\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "instance_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^i-[0-9a-f]{8,17}$",
+                "type": "string"
+              },
+              "maxItems": 50,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only these instance ids (at most 50). Leave it out for all.",
+          "title": "Instance Ids"
+        },
+        "max_items": {
+          "default": 25,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "name_contains": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9 ._:/@+=-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only instances whose Name tag contains this text.",
+          "title": "Name Contains"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "enum": [
+                "pending",
+                "running",
+                "stopping",
+                "stopped",
+                "shutting-down",
+                "terminated"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only instances in this state.",
+          "title": "State"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "list_ec2_instancesArguments",
+      "type": "object"
+    },
+    "name": "list_ec2_instances",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_ec2_instancesDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "List ECS clusters with status and counts of services, running and pending tasks.",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "max_items": {
+          "default": 20,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "list_ecs_clustersArguments",
+      "type": "object"
+    },
+    "name": "list_ecs_clusters",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_ecs_clustersDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Deployments of an ECS service (newest first): status and reason, source and target\nrevisions, rollback, circuit breaker and alarms. Answers \"what was deployed and did it\nroll back?\".",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "cluster": {
+          "description": "ECS cluster name or ARN.",
+          "pattern": "^(arn:aws[a-z-]*:ecs:[a-z0-9-]+:\\d{12}:cluster/)?[A-Za-z0-9_-]{1,255}$",
+          "title": "Cluster",
+          "type": "string"
+        },
+        "hours": {
+          "default": 168,
+          "description": "How many hours back to look (1-720).",
+          "maximum": 720,
+          "minimum": 1,
+          "title": "Hours",
+          "type": "integer"
+        },
+        "max_items": {
+          "default": 10,
+          "description": "Most items to return (1-20).",
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        },
+        "service": {
+          "description": "ECS service name or ARN.",
+          "pattern": "^(arn:aws[a-z-]*:ecs:[a-z0-9-]+:\\d{12}:service/[A-Za-z0-9_-]{1,255}/)?[A-Za-z0-9_-]{1,255}$",
+          "title": "Service",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "cluster",
+        "service"
+      ],
+      "title": "list_ecs_service_deploymentsArguments",
+      "type": "object"
+    },
+    "name": "list_ecs_service_deployments",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_ecs_service_deploymentsDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "List the services of an ECS cluster: desired/running/pending tasks and current deployments.\n\nTask definitions are named (family:revision), never described.\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "cluster": {
+          "description": "ECS cluster name or ARN.",
+          "pattern": "^(arn:aws[a-z-]*:ecs:[a-z0-9-]+:\\d{12}:cluster/)?[A-Za-z0-9_-]{1,255}$",
+          "title": "Cluster",
+          "type": "string"
+        },
+        "max_items": {
+          "default": 20,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        }
+      },
+      "required": [
+        "account_id",
+        "cluster"
+      ],
+      "title": "list_ecs_servicesArguments",
+      "type": "object"
+    },
+    "name": "list_ecs_services",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_ecs_servicesDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "List Application, Network and Gateway Load Balancers with type, scheme and state.",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "max_items": {
+          "default": 20,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "names": {
+          "anyOf": [
+            {
+              "items": {
+                "pattern": "^[A-Za-z0-9-]{1,32}$",
+                "type": "string"
+              },
+              "maxItems": 20,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only these load balancer names (at most 20). Leave it out for all.",
+          "title": "Names"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "list_load_balancersArguments",
+      "type": "object"
+    },
+    "name": "list_load_balancers",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_load_balancersDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "Recently stopped ECS tasks with their stop code and reason and each container's exit\ncode and reason. ECS keeps stopped tasks for about an hour.\n\nNever the task's overrides, environment or attachments, and never its task definition.\n",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "cluster": {
+          "description": "ECS cluster name or ARN.",
+          "pattern": "^(arn:aws[a-z-]*:ecs:[a-z0-9-]+:\\d{12}:cluster/)?[A-Za-z0-9_-]{1,255}$",
+          "title": "Cluster",
+          "type": "string"
+        },
+        "max_items": {
+          "default": 20,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        },
+        "service": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_-]{1,255}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only tasks of this service (name).",
+          "title": "Service"
+        }
+      },
+      "required": [
+        "account_id",
+        "cluster"
+      ],
+      "title": "list_stopped_ecs_tasksArguments",
+      "type": "object"
+    },
+    "name": "list_stopped_ecs_tasks",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_stopped_ecs_tasksDictOutput",
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "readOnlyHint": true
+    },
+    "description": "List target groups with protocol, port, target type and health check settings.",
+    "inputSchema": {
+      "properties": {
+        "account_id": {
+          "description": "12-digit id of the AWS member account to read. Required: every call reads exactly one account.",
+          "pattern": "^[0-9]{12}$",
+          "type": "string"
+        },
+        "load_balancer_arn": {
+          "anyOf": [
+            {
+              "pattern": "^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:\\d{12}:loadbalancer/(app|net|gwy)/[A-Za-z0-9-]{1,32}/[0-9a-f]{16}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only the target groups of this load balancer.",
+          "title": "Load Balancer Arn"
+        },
+        "max_items": {
+          "default": 20,
+          "description": "Most items to return (1-50).",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}(-[a-z]{1,16}){1,3}-[0-9]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "AWS Region to read. Leave it out to read the installation's Region.",
+          "title": "Region"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "list_target_groupsArguments",
+      "type": "object"
+    },
+    "name": "list_target_groups",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "list_target_groupsDictOutput",
+      "type": "object"
+    }
+  }
+]

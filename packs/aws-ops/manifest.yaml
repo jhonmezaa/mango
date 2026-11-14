@@ -1,0 +1,120 @@
+# AWS Operations pack: Mango's own code (aws_ops/) over the member accounts (D51). Schema:
+# packages/py/mango-packs (PackManifest). Guide: packs/README.md («Packs de código propio»).
+# Threat model: docs/security/threat-models/aws-ops-pack-threat-model.md.
+schema_version: 1
+id: aws-ops
+version: "0.1.0-1" # <code version>-<Mango revision>
+name: AWS Operations
+description: State of compute and deployments of the organization's member accounts (EC2, Auto Scaling, load balancers, ECS, CloudFormation, AWS Config history), read in the account each question names. Curated, read-only. Central users only.
+
+source:
+  kind: mango
+  version: "0.1.0"
+  exclude_newer: "2026-11-05T00:00:00Z" # lock cutoff: 7 days of quarantine
+
+data_tier: account_data
+identity_mode: central_only
+# Each call reads one member account, the one Mango's `account_id` argument names: Read broker
+# -> Mango-<ns>-ReadOnly of that account, with SourceIdentity = user.
+identity:
+  chain: member
+
+# Ceiling of every call's session (session policy), not permissions of the pack role. All of
+# them must be in the role of the member accounts (MEMBER_READ_ONLY_STATEMENTS). Access levels
+# and resource types checked against the IAM service reference (2026-11-13): all List or Read;
+# an ARN wherever the action has a resource type.
+iam:
+  # list_ec2_instances, get_ec2_instance_status.
+  - actions:
+      - ec2:DescribeInstances
+      - ec2:DescribeInstanceStatus
+    resources: ["*"]
+    reason: EC2 Describe actions have no resource type in the IAM service reference; they only work on "*".
+  # list_auto_scaling_groups, get_scaling_activities.
+  - actions:
+      - autoscaling:DescribeAutoScalingGroups
+      - autoscaling:DescribeScalingActivities
+    resources: ["*"]
+    reason: Neither action has a resource type in the IAM service reference.
+  # list_load_balancers, list_target_groups, get_target_health.
+  - actions:
+      - elasticloadbalancing:DescribeLoadBalancers
+      - elasticloadbalancing:DescribeTargetGroups
+      - elasticloadbalancing:DescribeTargetHealth
+    resources: ["*"]
+    reason: Elastic Load Balancing Describe actions have no resource type in the IAM service reference.
+  # list_ecs_clusters, list_ecs_services, list_stopped_ecs_tasks (the List* half).
+  - actions:
+      - ecs:ListClusters
+      - ecs:ListServices
+      - ecs:ListTasks
+    resources: ["*"]
+    reason: ListClusters and ListServices have no resource type; ListTasks names only container-instance, which tasks on Fargate do not run on, so it is granted on "*".
+  # list_ecs_clusters.
+  - actions:
+      - ecs:DescribeClusters
+    resources: ["arn:aws:ecs:*:*:cluster/*"]
+  # list_ecs_services, get_ecs_service_events, list_ecs_service_deployments.
+  - actions:
+      - ecs:DescribeServices
+      - ecs:ListServiceDeployments
+    resources: ["arn:aws:ecs:*:*:service/*/*"]
+  # list_ecs_service_deployments.
+  - actions:
+      - ecs:DescribeServiceDeployments
+    resources:
+      - "arn:aws:ecs:*:*:service/*/*"
+      - "arn:aws:ecs:*:*:service-deployment/*/*/*"
+  # list_stopped_ecs_tasks. Never ecs:DescribeTaskDefinition (environment variables).
+  - actions:
+      - ecs:DescribeTasks
+    resources: ["arn:aws:ecs:*:*:task/*/*"]
+  # list_cloudformation_stacks. ListStacks returns no parameters or outputs, unlike
+  # DescribeStacks, which the pack does not use.
+  - actions:
+      - cloudformation:ListStacks
+    resources: ["*"]
+    reason: ListStacks has no resource type in the IAM service reference.
+  # get_cloudformation_stack_events.
+  - actions:
+      - cloudformation:DescribeStackEvents
+    resources: ["arn:aws:cloudformation:*:*:stack/*/*"]
+  # get_resource_config_history (the tool returns the names of the changed fields only).
+  - actions:
+      - config:GetResourceConfigHistory
+    resources: ["*"]
+    reason: GetResourceConfigHistory has no resource type in the IAM service reference.
+
+# What the Runtime reaches (R6), each through its VPC endpoint of the installation's Region:
+# STS to assume the Read broker and the role of the member account, and the six services.
+egress:
+  aws: [sts, ec2, autoscaling, elasticloadbalancing, ecs, cloudformation, config]
+
+# Hidden arguments: none. No tool takes a profile, credentials, an account or an endpoint;
+# `region` is held to the installation's Region by the common entry point.
+#
+# Left out on purpose:
+#   ecs:DescribeTaskDefinition: container definitions carry environment variables.
+#   ecs:DescribeTasks with overrides, attachments or tags: the tool drops them.
+#   cloudformation:DescribeStacks, GetTemplate: parameters, outputs and templates.
+#   Classic Load Balancers (elb v1): legacy; same endpoint, other actions; later if needed.
+#   config:SelectResourceConfig, GetResourceConfigHistory values: configuration content.
+tools:
+  - { name: list_ec2_instances, access: read }
+  - { name: get_ec2_instance_status, access: read }
+  - { name: list_auto_scaling_groups, access: read }
+  - { name: get_scaling_activities, access: read }
+  - { name: list_load_balancers, access: read }
+  - { name: list_target_groups, access: read }
+  - { name: get_target_health, access: read }
+  - { name: list_ecs_clusters, access: read }
+  - { name: list_ecs_services, access: read }
+  - { name: get_ecs_service_events, access: read }
+  - { name: list_ecs_service_deployments, access: read }
+  - { name: list_stopped_ecs_tasks, access: read }
+  - { name: list_cloudformation_stacks, access: read }
+  - { name: get_cloudformation_stack_events, access: read }
+  - { name: get_resource_config_history, access: read }
+tools_hash: "sha256:7eb19893663a0c1e8d4d507b3f656de88d058efa6e2aaad301848aa4f59f4e54"
+
+config: []
