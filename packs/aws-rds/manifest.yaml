@@ -3,7 +3,7 @@
 # propio»). Threat model: docs/security/threat-models/aws-rds-pack-threat-model.md.
 schema_version: 1
 id: aws-rds
-version: "0.1.0-1" # <code version>-<Mango revision>
+version: "0.1.0-2" # <code version>-<Mango revision>
 name: AWS RDS
 description: RDS and Aurora of the organization's member accounts, read in the account each question names. Instances, clusters, events, modified parameters, pending maintenance, snapshots, Performance Insights (tokenized SQL only) and the tail of database log files. Central users only.
 
@@ -91,6 +91,6 @@ tools:
   - { name: get_top_load_contributors, access: read }
   - { name: list_db_log_files, access: read }
   - { name: tail_db_log_file, access: read }
-tools_hash: "sha256:1b372c6d69a2abf6e0b5e615a5110f8c4ab034d0f078796fb2793ef0af217cb8"
+tools_hash: "sha256:8e49e98c6609b2e0a01201b92f2812fcaba92bda0f102777f39e8a5a1a0758d8"
 
 config: []

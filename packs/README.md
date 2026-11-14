@@ -275,7 +275,7 @@ La prueba del formato está en `deployment/pack-builder/tests/test_own_code.py` 
 
 #### `aws-rds`
 
-Plano de control de RDS y Aurora de la cuenta miembro que nombra cada llamada, para el agente de bases de datos (revisión `0.1.0-1`, código en `packs/aws-rds/aws_rds/`). Doce tools, todas de lectura:
+Plano de control de RDS y Aurora de la cuenta miembro que nombra cada llamada, para el agente de bases de datos (revisión `0.1.0-2`: la `-2` deja plano el patrón de `log_file_name`, porque el Gateway descarta una tool con repeticiones anidadas en su esquema y su política Cedar falla con «unrecognized action» (visto en una instalación el 2026-11-14); código en `packs/aws-rds/aws_rds/`). Doce tools, todas de lectura:
 
 | Tools | Servicio | Notas |
 |---|---|---|

@@ -900,7 +900,7 @@
         "log_file_name": {
           "description": "Name of one log file of the instance, exactly as list_db_log_files returns it, e.g. 'error/postgresql.log.2026-11-13-10'.",
           "maxLength": 255,
-          "pattern": "^[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*$",
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}$",
           "title": "Log File Name",
           "type": "string"
         },

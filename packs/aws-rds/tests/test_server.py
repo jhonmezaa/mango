@@ -568,7 +568,7 @@ def test_log_file_names_cannot_climb() -> None:
             "tail_db_log_file", {"db_instance_identifier": "orders-db-1", "log_file_name": name}
         )
 
-    for name in ("../etc/passwd", "/abs", "a/../b", "a b"):
+    for name in ("../etc/passwd", "/abs", "a/../b", "a b", "a..b", "a//b", "dir/", ".hidden"):
         with pytest.raises(ToolError):
             asyncio.run(call(name))
 
@@ -590,3 +590,13 @@ def test_truncate_bytes_never_splits_a_character() -> None:
 def test_client_errors_are_typed() -> None:
     error = ClientError({"Error": {"Code": "Throttling", "Message": "m" * 1000}}, "DescribeEvents")
     assert len(str(server._aws_error(error))) < 400
+
+
+def test_log_file_name_schema_has_no_nested_repetition() -> None:
+    # The Gateway leaves out a tool whose schema has a nested repetition such as `(a(b)*)*`,
+    # and its Cedar policy then fails (seen on 2026-11-14).
+    tools = asyncio.run(server.mcp.list_tools())
+    schema = next(tool for tool in tools if tool.name == "tail_db_log_file").input_schema
+    assert schema is not None
+    pattern = schema["properties"]["log_file_name"]["pattern"]
+    assert "(" not in pattern

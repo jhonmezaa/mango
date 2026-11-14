@@ -27,7 +27,7 @@
 | `aws-application-signals` | `0.2.1-1`, `awslabs.cloudwatch-applicationsignals-mcp-server` 0.2.1 | 16 tools de lectura: servicios, SLOs y SLIs, dependencias, cambios, grupos, auditorías, canarios y trazas de X-Ray | `application-signals`, `xray`, `synthetics` |
 | `aws-elasticache` | `0.2.2-1`, `awslabs.elasticache-mcp-server` 0.2.2 (0.2.3 no cumplía la cuarentena; el código es el mismo) | 7 tools de lectura de clústeres, grupos de replicación, cachés serverless, eventos, versiones del motor, parámetros por defecto y actualizaciones de servicio | `elasticache` |
 | `aws-ops` | `0.1.0-1`, código propio ([D126](D126-packs-de-codigo-propio.md)) | 15 tools: EC2 (instancias y su estado), Auto Scaling (grupos y actividades), ELB (load balancers, target groups y salud de los targets), ECS (clústeres, servicios y sus eventos, despliegues y tareas paradas), CloudFormation (stacks y sus eventos) y Config (historial de un recurso) | `ec2`, `autoscaling`, `elasticloadbalancing`, `ecs`, `cloudformation`, `config` |
-| `aws-rds` | `0.1.0-1`, código propio ([D126](D126-packs-de-codigo-propio.md)) | 12 tools: instancias y clústeres, eventos, parámetros cambiados, mantenimiento pendiente, snapshots, Performance Insights (métricas y mayores contribuyentes a la carga, con SQL **tokenizado**) y logs de la base (punto 5) | `rds`, `pi` |
+| `aws-rds` | `0.1.0-2` (la `-1` no se pudo habilitar: ver punto 10), código propio ([D126](D126-packs-de-codigo-propio.md)) | 12 tools: instancias y clústeres, eventos, parámetros cambiados, mantenimiento pendiente, snapshots, Performance Insights (métricas y mayores contribuyentes a la carga, con SQL **tokenizado**) y logs de la base (punto 5) | `rds`, `pi` |
 
 Lo que cada pack deja fuera, y por qué, lo dice su manifiesto:
 
@@ -165,6 +165,7 @@ Cambiar el rol es cambiar IAM en **todas** las cuentas miembro (StackSet de `Org
 **(10) Falta ver en una instalación.** Nada se instaló. Falta ver:
 
 - que los 13 endpoints existen en la región de la instalación, y que `application-signals` y `config` admiten política de endpoint (la documentación no lo dice; si no la admiten, el `UpdateStack` que enciende el pack falla y se revierte, y quitar la política sería una excepción de seguridad);
+- **Visto el 2026-11-14 al habilitar `aws-rds` `0.1.0-1`:** el Gateway descartó `tail_db_log_file`, cuyo esquema tenía un `pattern` con repeticiones anidadas, y la política Cedar del pack falló con «unrecognized action». La `0.1.0-2` usa un patrón plano y el resto lo comprueba la tool;
 - que cada acción acotada por ARN autoriza la llamada real, sobre todo `logs:GetQueryResults` sobre `log-group` y las de Performance Insights sobre `metrics/rds/*`;
 - que cada pack lee una cuenta miembro por la cadena `member`, con la persona en el CloudTrail de esa cuenta;
 - que la guardia rellena la región;
