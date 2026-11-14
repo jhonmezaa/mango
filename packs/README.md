@@ -95,20 +95,26 @@ Un pack de esta cadena lee **una cuenta miembro por llamada**. Todo lo anterior 
 - Solo lo sirve `mango_pack_runtime.server` (SDK oficial de MCP). El adaptador de `fastmcp` no arranca un pack de esta cadena.
 - La prueba está en `packages/py/mango-pack-runtime/tests/test_member.py`.
 
-Tools que sirve `aws-cloudwatch` (revisión `0.3.1-6`: las mismas tools que la `-1`; la `-2` declara su `egress` y solo lee la región de la instalación, la `-3` resuelve el lock con el corte del 2026-10-15 por CVE-2026-114603, la `-4` toma `certifi` 2026.10.19 con excepción de cuarentena, la `-5` quita las cotas de esa cuarentena y la `-6` resuelve el lock con el corte del 2026-10-29 por CVE-2026-126360 en `opentelemetry-api`), todas de lectura:
+Tools que sirve `aws-cloudwatch` (revisión `0.3.1-7`: la `-2` declara su `egress` y solo lee la región de la instalación, la `-3` resuelve el lock con el corte del 2026-10-15 por CVE-2026-114603, la `-4` toma `certifi` 2026.10.19 con excepción de cuarentena, la `-5` quita las cotas de esa cuarentena, la `-6` resuelve el lock con el corte del 2026-10-29 por CVE-2026-126360 en `opentelemetry-api` y la `-7` añade la lectura de logs con límites, precisión `propuesta` de D55 (3)), todas de lectura:
 
 | Tools | Servicio | Notas |
 |---|---|---|
 | `get_metric_data`, `analyze_metric`, `get_recommended_metric_alarms` | CloudWatch (`GetMetricData`) | `GetMetricData` se cobra por métrica pedida, en la cuenta miembro |
 | `get_metric_metadata` | — | Lee un archivo del propio paquete; aun así exige `account_id` y asume la sesión, como toda llamada |
 | `get_active_alarms`, `get_alarm_history` | CloudWatch (`DescribeAlarms`, `DescribeAlarmHistory`) | — |
-| `describe_log_groups` | CloudWatch Logs (`DescribeLogGroups`, `DescribeQueryDefinitions`) | Nombres, retención y tamaño de log groups y las consultas guardadas. **Ningún evento de log** |
+| `describe_log_groups` | CloudWatch Logs (`DescribeLogGroups`, `DescribeQueryDefinitions`) | Nombres, retención y tamaño de log groups y las consultas guardadas. Ningún evento de log |
+| `execute_log_insights_query` | CloudWatch Logs (`StartQuery`, `GetQueryResults`) | **Contenido de logs**, con los límites de abajo. Se cobra por GB escaneado, en la cuenta miembro |
+| `analyze_log_group` | CloudWatch Logs (`ListLogAnomalyDetectors`, `ListAnomalies`, `StartQuery`, `GetQueryResults`) | Anomalías del grupo y dos consultas fijas de patrones, con los mismos límites |
 
-Quedan fuera, a propósito: Logs Insights y todo lo que lee contenido de logs (usuario, 2026-10-02), las recomendaciones de índices (ejecutan consultas) y PromQL (firma peticiones HTTP propias con `requests`, fuera de botocore). El motivo de cada una está en el manifiesto.
+Quedan fuera, a propósito: leer o parar una consulta por su id (`get_logs_insight_query_results`, `cancel_logs_insight_query`: aceptan el id de la consulta de otra persona), el lote de consultas (`execute_cwl_insights_batch`: firma desde `run_in_executor`, fuera del contexto de la llamada), las recomendaciones de índices (ejecutan consultas sin valor para un incidente) y PromQL (firma peticiones HTTP propias con `requests`, fuera de botocore). El motivo de cada una está en el manifiesto.
 
-Lo que el punto de entrada de `aws-cloudwatch` cambia del servidor, además: **sin logs de upstream** (registra argumentos, nombres de alarmas y la lista completa de log groups y consultas guardadas).
+Lo que el punto de entrada de `aws-cloudwatch` cambia del servidor, además:
 
-Al revisar una versión nueva: los argumentos de cada tool servida (uno nuevo que elija credenciales, cuenta o endpoint se añade a `HIDDEN_ARGUMENTS`), qué operaciones de AWS llama y `aws_common.py`.
+- **Sin logs de upstream** (registra argumentos, nombres de alarmas y la lista completa de log groups y consultas guardadas).
+- **Límites duros en las dos tools de logs.** Sustituye `execute_log_insights_query` y `analyze_log_group` por envoltorios propios, que comprueban antes de cualquier petición a AWS: ventana `end_time - start_time` de 24 h como mucho (la descripción pide empezar por 1 h) que empiece como mucho 30 días atrás; 5 log groups como mucho; `limit` obligatorio de 200 filas como mucho; `max_timeout` de 60 s como mucho; ARN de log groups solo de la cuenta de `account_id`, y sin comando `SOURCE` en la consulta (elegiría otros grupos u otras cuentas). Lo que vuelve se acota: cada texto a 2 KB, sin el id de la consulta. Los topes van también en el esquema listado. La cuenta llega a los envoltorios por `AccountScope`, alrededor de la guardia común. Tests: `tests/packs/test_aws_cloudwatch_entrypoint.py`.
+- Todo lo que toca el entorno, el código común o el servidor corre en `main()`: los tests importan los límites sin arrancar nada.
+
+Al revisar una versión nueva: los argumentos de cada tool servida (uno nuevo que elija credenciales, cuenta o endpoint se añade a `HIDDEN_ARGUMENTS`), qué operaciones de AWS llama y `aws_common.py`. En las dos tools de logs, además: que los métodos de `CloudWatchLogsTools` que llaman los envoltorios conserven sus argumentos, las dos consultas fijas de `analyze_log_group` y la sintaxis de Logs Insights (otra forma de elegir grupos, como `SOURCE`, se rechaza en `check_query`).
 
 Una cuenta objetivo que sea **cuenta de monitoreo** (observabilidad entre cuentas de CloudWatch) deja ver, con Metrics Insights, métricas de sus cuentas origen aunque no sean objetivo (TM-CW5).
 

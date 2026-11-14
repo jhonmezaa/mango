@@ -248,26 +248,40 @@ def test_cloudwatch_pack_reads_member_accounts_only_as_the_caller() -> None:
         "get_active_alarms",
         "get_alarm_history",
         "describe_log_groups",
+        # Log content, through the bounded wrappers of the entry point (D55 (3), proposed).
+        "execute_log_insights_query",
+        "analyze_log_group",
     }
     actions = [action for statement in manifest.iam for action in statement.actions]
-    # Metrics, alarms and the metadata of log groups: no log content (user, 2026-10-02).
+    # Metrics, alarms, the metadata of log groups and bounded Logs Insights queries. Nothing
+    # that stops a query or lists the queries of other people.
     assert sorted(actions) == [
         "cloudwatch:DescribeAlarmHistory",
         "cloudwatch:DescribeAlarms",
         "cloudwatch:GetMetricData",
         "logs:DescribeLogGroups",
         "logs:DescribeQueryDefinitions",
+        "logs:GetQueryResults",
+        "logs:ListAnomalies",
+        "logs:ListLogAnomalyDetectors",
+        "logs:StartQuery",
     ]
     assert len(session_policy(tuple(manifest.iam))) < 2048
-    # Alarms have ARNs: no "*" there.
+    # Alarms, log groups and anomaly detectors have ARNs: no "*" there.
     scoped = [statement for statement in manifest.iam if "*" not in statement.resources]
-    assert [s.resources for s in scoped] == [["arn:aws:cloudwatch:*:*:alarm:*"]]
+    assert [s.resources for s in scoped] == [
+        ["arn:aws:cloudwatch:*:*:alarm:*"],
+        ["arn:aws:logs:*:*:log-group:*"],
+        ["arn:aws:logs:*:*:anomaly-detector:*"],
+    ]
 
     source = pack.entrypoint.read_text()
     assert source.index("pack = load(") < source.index("from awslabs.")
     assert source.index("upstream_logger.remove()") < source.index("from awslabs.")
     for hidden in ("profile_name", "account_identifiers", "include_linked_accounts"):
         assert f'"{hidden}"' in source
+    # The log tools are replaced by the bounded wrappers before the pack is served.
+    assert source.index("bound_log_tools(mcp,") < source.index(".serve(mcp)")
 
     # What the Gateway and the model see (tools.snapshot.json, pinned by tools_hash).
     tools = json.loads(pack.snapshot.read_text())

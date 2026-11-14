@@ -64,6 +64,6 @@ module = ["pycognito.*", "pyotp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["packages/py", "connectors", "functions", "apps/api", "tests/eval", "deployment", "packs/aws-rds", "packs/aws-ops"]
+testpaths = ["packages/py", "connectors", "functions", "apps/api", "tests/eval", "deployment", "packs/aws-rds", "packs/aws-ops", "tests/packs"]
 pythonpath = ["tests/eval", "packs/aws-rds", "packs/aws-ops"]
 addopts = "-q --import-mode=importlib"

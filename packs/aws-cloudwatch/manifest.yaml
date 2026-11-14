@@ -3,9 +3,9 @@
 # aws-cloudwatch-pack-threat-model.md.
 schema_version: 1
 id: aws-cloudwatch
-version: "0.3.1-6" # <upstream version>-<Mango revision>
+version: "0.3.1-7" # <upstream version>-<Mango revision>
 name: AWS CloudWatch
-description: Metrics, alarms and log group metadata of the organization's member accounts, read in the account each question names. No log events. Central users only.
+description: Metrics, alarms, log group metadata and bounded Logs Insights queries of the organization's member accounts, read in the account each question names. Central users only.
 
 source:
   package: awslabs.cloudwatch-mcp-server
@@ -42,6 +42,18 @@ iam:
       - logs:DescribeQueryDefinitions
     resources: ["*"]
     reason: Neither action has a resource type in the IAM service reference.
+  # execute_log_insights_query, analyze_log_group: Logs Insights queries over log content
+  # (D55 (3), precision proposed on 2026-11-13). Bounded by the entry point before any request:
+  # window, age, log groups, rows, poll time, log groups only of the account of the call.
+  - actions:
+      - logs:StartQuery
+      - logs:GetQueryResults
+    resources: ["arn:aws:logs:*:*:log-group:*"]
+  # analyze_log_group: anomaly detectors of the log group and the anomalies they found.
+  - actions:
+      - logs:ListLogAnomalyDetectors
+      - logs:ListAnomalies
+    resources: ["arn:aws:logs:*:*:anomaly-detector:*"]
 
 # What the Runtime reaches (R6), each through its VPC endpoint: STS to assume the Read broker
 # and the role of the member account, CloudWatch and CloudWatch Logs. Endpoints only exist in
@@ -57,11 +69,19 @@ egress:
 # `region` stays, held to the shape of a Region name and to the installation's own Region by
 # the common entry point.
 #
+# Served through wrappers of the entry point, with hard limits checked before any request
+# (D55 (3), proposed): execute_log_insights_query and analyze_log_group. Window end - start of
+# at most 24 h, starting at most 30 days ago; at most 5 log groups; `limit` required, at most
+# 200 rows; `max_timeout` at most 60 s; log group ARNs only of the account named by
+# `account_id`; every string of a result cut to 2 KB; no query id returned.
+#
 # Upstream tools left out on purpose (the entry point removes them):
-#   execute_log_insights_query, get_logs_insight_query_results, cancel_logs_insight_query,
-#   execute_cwl_insights_batch, analyze_log_group: read the content of logs, start and stop
-#     queries billed by the data they scan (user, 2026-10-02: no log content).
-#   recommend_indexes_loggroup, recommend_indexes_account: run Logs Insights queries too.
+#   get_logs_insight_query_results, cancel_logs_insight_query: take any query id of the
+#     account, so they would read or stop the query of another person.
+#   execute_cwl_insights_batch: signs from `run_in_executor`, outside the caller's context
+#     (it would fail closed), and runs up to hundreds of log groups at once.
+#   recommend_indexes_loggroup, recommend_indexes_account: run Logs Insights queries with no
+#     value for an incident.
 #   execute_promql_query, execute_promql_range_query, get_promql_label_values,
 #   get_promql_series, get_promql_labels: sign HTTP requests of their own with `requests`,
 #     outside botocore, and need actions the role of the member accounts does not have.
@@ -73,6 +93,8 @@ tools:
   - { name: get_active_alarms, access: read }
   - { name: get_alarm_history, access: read }
   - { name: describe_log_groups, access: read }
-tools_hash: "sha256:b8c6066a1e77886339a3d5da64986d6b640bd2f9696f35d6e37e98defd357219"
+  - { name: execute_log_insights_query, access: read }
+  - { name: analyze_log_group, access: read }
+tools_hash: "sha256:55083f02e8a26bd6fcbfdb5dc0f2676bdd9cbc750a517334b48225c20fa9f38a"
 
 config: []
