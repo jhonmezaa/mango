@@ -31,7 +31,7 @@ in `main()`, so the tests import the limits of this file without starting anythi
 
 import os
 import re
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -102,6 +102,14 @@ class AccountScope:
 
     def __init__(self, guard: Any) -> None:
         self._guard = guard
+
+    def default_region_for(self, tools: Collection[str]) -> None:
+        # The tools whose left-out `region` the guard fills with the installation's Region.
+        self._guard.default_region_for(tools)
+
+    def __getattr__(self, name: str) -> Any:
+        # Anything else the runtime asks of its guard is the common guard's own.
+        return getattr(self._guard, name)
 
     @contextmanager
     def call(self, tool: str, arguments: Mapping[str, Any] | None) -> Iterator[dict[str, Any]]:

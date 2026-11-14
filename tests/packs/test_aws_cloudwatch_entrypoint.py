@@ -22,6 +22,7 @@ import pytest
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from mango_pack_runtime.guard import CallGuard
 from mango_pack_runtime.server import bind
 
 ENTRYPOINT = Path(__file__).resolve().parents[2] / "packs" / "aws-cloudwatch" / "entrypoint.py"
@@ -270,6 +271,23 @@ def test_the_account_is_visible_only_while_the_call_runs() -> None:
         assert ep.current_account() == ACCOUNT
     with pytest.raises(ep.LimitError):
         ep.current_account()
+
+
+def test_the_scope_offers_what_the_runtime_asks_of_its_guard() -> None:
+    # `Pack.serve` calls the guard's own methods (default_region_for since the member chain
+    # fills a left-out Region): the scope must answer each of them as the common guard does.
+    public = {name for name in vars(CallGuard) if not name.startswith("_")}
+    named: list[frozenset[str]] = []
+
+    class RecordingGuard(FakeGuard):
+        def default_region_for(self, tools: frozenset[str]) -> None:
+            named.append(tools)
+
+    scope = ep.AccountScope(RecordingGuard())
+    for name in public:
+        assert callable(getattr(scope, name)), name
+    scope.default_region_for(frozenset({"execute_log_insights_query"}))
+    assert named == [frozenset({"execute_log_insights_query"})]
 
 
 def test_a_refused_call_leaves_no_account_behind() -> None:
