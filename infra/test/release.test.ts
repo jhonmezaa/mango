@@ -332,6 +332,8 @@ describe("pack network of a release, in its own stack", () => {
     expect(imported).toEqual({
       subnetIds: names.slice(1).map((name) => ({ "Fn::ImportValue": name })),
       securityGroupIds: { "aws-pricing": { "Fn::ImportValue": "Mango-acme-PackNetwork-SecurityGroup-aws-pricing" } },
+      // Always on (D54): no switch to read for it (pack-network-switch.test.ts).
+      switchedPacks: [],
     });
     expect(packNetworkExports.securityGroup("acme", "aws-pricing")).toBe("Mango-acme-PackNetwork-SecurityGroup-aws-pricing");
   });

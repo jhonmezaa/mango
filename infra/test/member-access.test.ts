@@ -126,47 +126,178 @@ describe("Member (spoke template of every member account)", () => {
     const statements = policy();
     expect(statements.every((s) => s.Effect === "Allow" && s.Condition === undefined)).toBe(true);
     expect(statements.flatMap((s) => listed(s.Action)).sort()).toEqual([...MEMBER_READ_ONLY_DATA_ACTIONS].sort());
-    // CloudWatch metrics and alarms, and the metadata of log groups (user, 2026-10-02).
+    // CloudWatch metrics and alarms, and the metadata of log groups (user, 2026-10-02); the
+    // actions of the SRE and database packs and bounded Logs Insights (proposed, 2026-11-13).
     expect([...MEMBER_READ_ONLY_DATA_ACTIONS].sort()).toEqual([
+      "application-signals:GetService",
+      "application-signals:GetServiceLevelObjective",
+      "application-signals:ListAuditFindings",
+      "application-signals:ListEntityEvents",
+      "application-signals:ListGroupingAttributeDefinitions",
+      "application-signals:ListServiceDependencies",
+      "application-signals:ListServiceDependents",
+      "application-signals:ListServiceLevelObjectives",
+      "application-signals:ListServiceOperations",
+      "application-signals:ListServiceStates",
+      "application-signals:ListServices",
+      "autoscaling:DescribeAutoScalingGroups",
+      "autoscaling:DescribeScalingActivities",
+      "cloudformation:DescribeStackEvents",
+      "cloudformation:ListStacks",
+      "cloudtrail:LookupEvents",
       "cloudwatch:DescribeAlarmHistory",
       "cloudwatch:DescribeAlarms",
       "cloudwatch:GetMetricData",
+      "cloudwatch:GetMetricStatistics",
+      "config:GetResourceConfigHistory",
+      "ec2:DescribeInstanceStatus",
+      "ec2:DescribeInstances",
+      "ecs:DescribeClusters",
+      "ecs:DescribeServiceDeployments",
+      "ecs:DescribeServices",
+      "ecs:DescribeTasks",
+      "ecs:ListClusters",
+      "ecs:ListServiceDeployments",
+      "ecs:ListServices",
+      "ecs:ListTasks",
+      "elasticache:DescribeCacheClusters",
+      "elasticache:DescribeCacheEngineVersions",
+      "elasticache:DescribeEngineDefaultParameters",
+      "elasticache:DescribeEvents",
+      "elasticache:DescribeReplicationGroups",
+      "elasticache:DescribeServerlessCaches",
+      "elasticache:DescribeServiceUpdates",
+      "elasticloadbalancing:DescribeLoadBalancers",
+      "elasticloadbalancing:DescribeTargetGroups",
+      "elasticloadbalancing:DescribeTargetHealth",
       "logs:DescribeLogGroups",
       "logs:DescribeQueryDefinitions",
+      "logs:GetQueryResults",
+      "logs:ListAnomalies",
+      "logs:ListLogAnomalyDetectors",
+      "logs:StartQuery",
+      "pi:DescribeDimensionKeys",
+      "pi:GetResourceMetrics",
+      "pi:ListAvailableResourceMetrics",
+      "rds:DescribeDBClusterParameters",
+      "rds:DescribeDBClusterSnapshots",
+      "rds:DescribeDBClusters",
+      "rds:DescribeDBInstances",
+      "rds:DescribeDBLogFiles",
+      "rds:DescribeDBParameters",
+      "rds:DescribeDBSnapshots",
+      "rds:DescribeEvents",
+      "rds:DescribePendingMaintenanceActions",
+      "rds:DownloadDBLogFilePortion",
+      "synthetics:DescribeCanaries",
+      "synthetics:GetCanaryRuns",
+      "xray:BatchGetTraces",
+      "xray:GetTraceSegmentDestination",
     ]);
     expect(new Set(MEMBER_READ_ONLY_DATA_ACTIONS).size).toBe(MEMBER_READ_ONLY_DATA_ACTIONS.length);
   });
 
-  it("lists exact read-only actions: no wildcard, nothing that writes or starts a query", () => {
+  /**
+   * Read actions whose name does not start with Get, List or Describe, each one allowed by a
+   * decision. All of them are read actions in the IAM service reference (checked 2026-11-13).
+   */
+  const READS_BY_DECISION: Record<string, string> = {
+    // D55 (3) precision (proposed 2026-11-13): bounded Logs Insights queries of aws-cloudwatch.
+    "logs:StartQuery": "D55 (3) precision",
+    // aws-cloudtrail (proposed 2026-11-13): management events of the last 90 days.
+    "cloudtrail:LookupEvents": "aws-cloudtrail",
+    // aws-application-signals (proposed 2026-11-13): traces by id.
+    "xray:BatchGetTraces": "aws-application-signals",
+    // aws-rds and D55 precision (proposed 2026-11-13): a bounded portion of a database log file.
+    "rds:DownloadDBLogFilePortion": "D55 precision, aws-rds",
+  };
+
+  it("lists exact read-only actions: no wildcard, nothing that writes, starts a job or manages", () => {
+    const services = [
+      "application-signals",
+      "autoscaling",
+      "cloudformation",
+      "cloudtrail",
+      "cloudwatch",
+      "config",
+      "ec2",
+      "ecs",
+      "elasticache",
+      "elasticloadbalancing",
+      "logs",
+      "pi",
+      "rds",
+      "synthetics",
+      "xray",
+    ];
+    const read = new RegExp(`^(${services.join("|")}):(Get|List|Describe)[A-Za-z0-9]+$`);
     for (const action of MEMBER_READ_ONLY_DATA_ACTIONS) {
-      expect(action).toMatch(/^(cloudwatch|logs):(Get|List|Describe)[A-Za-z0-9]+$/);
+      if (action in READS_BY_DECISION) continue;
+      expect(action).toMatch(read);
     }
+    // Every exception is still in the list: a stale one would hide a new action.
+    for (const action of Object.keys(READS_BY_DECISION)) expect(MEMBER_READ_ONLY_DATA_ACTIONS).toContain(action);
   });
 
-  it("reads no log content: no Logs Insights and no log events", () => {
+  it("reads no log events and cannot reach the queries of other people", () => {
     for (const action of [
-      "logs:StartQuery",
-      "logs:GetQueryResults",
-      "logs:StopQuery",
+      // Content of log groups, outside a bounded Logs Insights query (D55 (3)).
       "logs:FilterLogEvents",
       "logs:GetLogEvents",
       "logs:GetLogRecord",
       "logs:StartLiveTail",
       "logs:Unmask",
+      // A query is named by an id: listing or stopping one reaches somebody else's.
+      "logs:StopQuery",
+      "logs:DescribeQueries",
+      // The full text of a SQL statement (only tokenized SQL, 2026-11-13).
+      "pi:GetDimensionKeyDetails",
+      // Environment variables of every task (aws-ops, 2026-11-13).
+      "ecs:DescribeTaskDefinition",
+      // CloudTrail Lake: a Write action in IAM, billed per GB scanned.
+      "cloudtrail:StartQuery",
     ]) {
       expect(MEMBER_READ_ONLY_DATA_ACTIONS).not.toContain(action);
     }
+    expect(MEMBER_READ_ONLY_DATA_ACTIONS.filter((a) => /^(rds-data|secretsmanager|redshift|lambda|s3|kms):/.test(a))).toEqual([]);
   });
 
-  it("scopes alarms to the account the role lives in, and uses '*' only where the API has no resource", () => {
-    const bySid = Object.fromEntries(policy().map((s) => [s.Sid, s]));
+  it("names the resource of the account the role lives in, and uses '*' only where the API has no resource", () => {
+    const bySid: Record<string, Statement> = Object.fromEntries(policy().map((s) => [s.Sid, s]));
     expect(Object.keys(bySid).sort()).toEqual(MEMBER_READ_ONLY_STATEMENTS.map((s) => s.sid).sort());
     expect(bySid.ReadAlarms!.Resource).toEqual({
       "Fn::Join": ["", ["arn:aws:cloudwatch:*:", { Ref: "AWS::AccountId" }, ":alarm:*"]],
     });
     expect(listed(bySid.ReadMetrics!.Action)).toEqual(["cloudwatch:GetMetricData"]);
-    expect(bySid.ReadMetrics!.Resource).toBe("*");
-    expect(bySid.ListLogGroups!.Resource).toBe("*");
+    // The statements on "*": their actions have no resource type in the IAM service reference.
+    const anywhere = Object.values(bySid)
+      .filter((s) => listed(s.Resource).includes("*"))
+      .map((s) => s.Sid!)
+      .sort();
+    expect(anywhere).toEqual([
+      "ApplicationSignalsRead",
+      "CloudTrailLookupEvents",
+      "ElastiCacheCatalog",
+      "ListLogGroups",
+      "OpsInventory",
+      "RdsEvents",
+      "ReadMetrics",
+    ]);
+    for (const sid of anywhere) expect(bySid[sid]!.Resource).toBe("*");
+    // Every other one: resources of this account only, in any Region.
+    for (const statement of Object.values(bySid).filter((s) => !anywhere.includes(s.Sid!))) {
+      for (const resource of listed(statement.Resource)) {
+        const [, [prefix, account]] = (resource as { "Fn::Join": [string, [string, unknown, string]] })["Fn::Join"];
+        expect(prefix, statement.Sid).toMatch(/^arn:aws:[a-z0-9-]+:\*:$/);
+        expect(account, statement.Sid).toEqual({ Ref: "AWS::AccountId" });
+      }
+    }
+    expect(listed(bySid.QueryLogGroups!.Action).sort()).toEqual(["logs:GetQueryResults", "logs:StartQuery"]);
+    expect(JSON.stringify(bySid.QueryLogGroups!.Resource)).toContain(":log-group:*");
+    expect(JSON.stringify(bySid.ListLogAnomalies!.Resource)).toContain(":anomaly-detector:*");
+    expect(JSON.stringify(bySid.OpsEcsTasks!.Resource)).toContain(":task/*/*");
+    expect(JSON.stringify(bySid.RdsInstances!.Resource)).toContain(":db:*");
+    expect(listed(bySid.RdsInstances!.Action)).toContain("rds:DownloadDBLogFilePortion");
   });
 
   it("is the same template for every customer: the installation's values are its only parameters (D58)", () => {
@@ -184,8 +315,8 @@ describe("Member (spoke template of every member account)", () => {
     expect(text).not.toContain("BootstrapVersion");
   });
 
-  it("fits the provisioner's environment and the StackSet's inline template", () => {
-    expect(JSON.stringify(MEMBER_READ_ONLY_DATA_ACTIONS).length).toBeLessThan(1800);
+  it("fits the StackSet's inline template", () => {
+    // The list is no longer in the provisioner's environment (ceilings.py, packs.test.ts).
     expect(JSON.stringify(synthMemberTemplate()).length).toBeLessThan(51_200);
   });
 

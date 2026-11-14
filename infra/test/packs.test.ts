@@ -37,6 +37,20 @@ interface Statement {
   Condition?: Record<string, Record<string, unknown>>;
 }
 
+/** One of the action ceilings of `mango_provisioner/packs/ceilings.py`, as written there. */
+function provisionerCeiling(name: "BROKERED_ACTIONS" | "MEMBER_ACTIONS"): string[] {
+  const source = readFileSync(
+    resolve(REPO_ROOT, "functions/provisioner/src/mango_provisioner/packs/ceilings.py"),
+    "utf8",
+  );
+  const block = new RegExp(`^${name}: frozenset\\[str\\] = frozenset\\(\\n {4}\\(\\n([\\s\\S]*?)\\n {4}\\)\\n\\)`, "m").exec(source);
+  expect(block, name).not.toBeNull();
+  const actions = [...block![1]!.matchAll(/^ {8}"([a-z0-9-]+:[A-Za-z0-9]+)",$/gm)].map((match) => match[1]!);
+  // Every line of the block is one action: nothing the pattern above would skip.
+  expect(actions.length, name).toBe(block![1]!.split("\n").length);
+  return actions;
+}
+
 function synth(installation = cfg, context: Record<string, unknown> = {}) {
   const template = fromCore(
     new CoreStack(new App({ context: { skipSpa: true, ...context } }), "Core", {
@@ -306,8 +320,9 @@ describe("pack permissions boundary", () => {
       `Mango-${ns}-BillingBroker`,
       `Mango-${ns}-ReadBroker`,
     ]);
+    // Allowed: the content Deny statements name some of them (logs:StartQuery) to refuse them.
     for (const action of [...BILLING_READER_DATA_ACTIONS, ...MEMBER_READ_ONLY_DATA_ACTIONS]) {
-      expect(statements.flatMap(actions)).not.toContain(action);
+      expect(allowed.flatMap(actions)).not.toContain(action);
     }
     expect(bySid(statements, "RuntimeLogs").Resource).toBe(
       `arn:aws:logs:${region}:${account}:log-group:/aws/bedrock-agentcore/runtimes/Mango_${ns}_mcp_*`,
@@ -416,9 +431,9 @@ describe("role behind the Billing broker, in the payer account (D10, D37, TM-BL1
     expect(actions(data.find((s) => s.Sid === "OptimizationRead")!).map((a) => a.split(":")[0])).not.toContain("ce");
   });
 
-  it("fits the provisioner's environment, where the list is the ceiling of a manifest", () => {
-    // Lambda limits the whole environment to 4 KB.
-    expect(JSON.stringify(BILLING_READER_DATA_ACTIONS).length).toBeLessThan(1800);
+  it("is the ceiling the pack provisioner knows, action by action", () => {
+    // Code of the provisioner, not its environment (Lambda limits that to 4 KB).
+    expect([...provisionerCeiling("BROKERED_ACTIONS")].sort()).toEqual([...BILLING_READER_DATA_ACTIONS].sort());
   });
 });
 
@@ -936,8 +951,9 @@ describe("packs over account data act as the calling user (D37)", () => {
     expect(environment.PACK_TARGET_ROLE_ARN).toBe(
       `arn:aws:iam::${cfg.managementAccountId}:role/Mango-${ns}-BillingReader`,
     );
-    // The ceiling of a manifest is what the payer role allows: the same list, one source.
-    expect(JSON.parse(environment.PACK_BROKERED_ACTIONS)).toEqual(BILLING_READER_DATA_ACTIONS);
+    // The ceiling of a manifest is what the payer role allows: code of the provisioner, kept
+    // equal to that list (above), never a setting.
+    expect(environment.PACK_BROKERED_ACTIONS).toBeUndefined();
     // The provisioner itself can never assume the broker or the payer role.
     expect(provisioner.flatMap(actions).filter((a) => a.startsWith("sts:"))).toEqual([]);
   });
@@ -1073,11 +1089,19 @@ describe("packs over member accounts use the Read broker (D51, identity.chain: m
     expect(environment.PACK_MEMBER_BROKER_ROLE_ARN).toBe(`arn:aws:iam::${account}:role/Mango-${ns}-ReadBroker`);
     // A name, never an ARN: the account is the one each call asks for.
     expect(environment.PACK_MEMBER_ROLE_NAME).toBe(`Mango-${ns}-ReadOnly`);
-    expect(JSON.parse(environment.PACK_MEMBER_ACTIONS)).toEqual(MEMBER_READ_ONLY_DATA_ACTIONS);
+    // What that role allows is code of the provisioner, equal to the role's list.
+    expect(environment.PACK_MEMBER_ACTIONS).toBeUndefined();
+    expect([...provisionerCeiling("MEMBER_ACTIONS")].sort()).toEqual([...MEMBER_READ_ONLY_DATA_ACTIONS].sort());
     // The provisioner itself can never assume a broker or a member role.
     expect(provisioner.flatMap(actions).filter((a) => a.startsWith("sts:"))).toEqual([]);
   });
 });
+
+/** The pack provisioner's role in a synthesized Core. */
+const roleIdOf = (all: Record<string, Resource>): string =>
+  Object.keys(all).find(
+    (id) => all[id]!.Type === "AWS::IAM::Role" && all[id]!.Properties.RoleName === `Mango-${ns}-PackProvisioner`,
+  )!;
 
 // --- Restricted egress of pack runtimes (R6, TM-E1 to TM-E9) ----------------------------------
 
@@ -1424,6 +1448,10 @@ describe("pack runtimes only reach the VPC endpoints their signed manifest decla
     for (const pack of ["aws-pricing", "aws-billing", "aws-cloudwatch"]) expect(text).toContain(pack);
     // Only pack groups: an endpoint's group would let a runtime reach every pack's endpoint.
     expect(text).not.toContain("EndpointSg");
+    // Packs whose network is always on: the same setting as before switches existed.
+    expect(text).not.toContain("switched");
+    expect(bySid(statementsOf(roleIdOf(shipped), shipped), "CreatePackRuntime")).toBeDefined();
+    expect(statementsOf(roleIdOf(shipped), shipped).map((s) => s.Sid)).not.toContain("ReadPackNetworkSwitches");
     expect(outputs.PackNetwork!.Value).toEqual(setting);
     // The lab-only switch of D49 (7) is gone: no installation runs a pack on the PUBLIC network.
     expect(provisionerEnvironment(shipped).PACK_ACCOUNT_DATA_PUBLIC_NETWORK).toBeUndefined();
@@ -1590,7 +1618,7 @@ describe("pack runtimes only reach the VPC endpoints their signed manifest decla
   it("knows the same AWS endpoints as the manifest schema", () => {
     const source = readFileSync(resolve(REPO_ROOT, "packages/py/mango-packs/src/mango_packs/manifest.py"), "utf8");
     const body = /class AwsEndpoint\(StrEnum\):([\s\S]*?)\n\n\n/.exec(source)![1]!;
-    const declared = [...body.matchAll(/^ {4}[A-Z_]+ = "([a-z0-9-]+)"$/gm)].map((match) => match[1]!);
+    const declared = [...body.matchAll(/^ {4}[A-Z0-9_]+ = "([a-z0-9-]+)"$/gm)].map((match) => match[1]!);
     expect(declared.length).toBeGreaterThan(0);
     expect(declared.sort()).toEqual(Object.keys(PACK_EGRESS_SERVICES).sort());
   });
@@ -1624,5 +1652,48 @@ describe("pack runtimes only reach the VPC endpoints their signed manifest decla
       expect(network({ cidr }).success, cidr).toBe(false);
     }
     expect(network({ mode: "PUBLIC" }).success).toBe(false);
+  });
+});
+
+describe("a Core that keeps the pack network itself (no release) switches no pack", () => {
+  // CloudWatch is always on; RDS would be switched in the network stack of a release.
+  const raw = JSON.parse(readFileSync(examplePath, "utf8")) as Record<string, unknown>;
+  let shipped: Record<string, Resource>;
+  beforeAll(() => {
+    const release = signedRelease({
+      id: "aws-cloudwatch",
+      identityMode: "central_only",
+      identity: { chain: "member" },
+      egress: { aws: ["sts", "cloudwatch", "logs"] },
+      also: [{ id: "aws-rds", identityMode: "central_only", identity: { chain: "member" }, egress: { aws: ["sts", "rds", "pi"] } }],
+    });
+    shipped = synth(
+      installationSchema.parse({ ...raw, installationType: "lab", packs: { signingPublicKey: release.pem } }),
+      { packsDir: release.dir },
+    ).resources;
+  }, 180_000);
+
+  const provisionerFunction = () =>
+    Object.values(shipped).find(
+      (r) => r.Type === "AWS::Lambda::Function" && r.Properties.FunctionName === `Mango-${ns}-PackProvisioner`,
+    )!;
+
+  it("creates every endpoint, with no condition, and gives the provisioner no switch to read (D77)", () => {
+    const endpoints = Object.values(shipped).filter((r) => r.Type === "AWS::EC2::VPCEndpoint");
+    expect(endpoints.map((r) => r.Properties.ServiceName).filter((n) => typeof n === "string").sort()).toEqual(
+      ["logs", "monitoring", "pi", "rds", "sts"].map((service) => `com.amazonaws.${region}.${service}`),
+    );
+    expect(Object.values(shipped).filter((r) => r.Condition !== undefined && JSON.stringify(r).includes("Pack"))).toEqual([]);
+    expect(JSON.stringify(provisionerFunction().Properties.Environment.Variables.PACK_NETWORK)).not.toContain("switched");
+    expect(statementsOf(roleIdOf(shipped), shipped).flatMap(actions).filter((a) => a.startsWith("ssm:"))).toEqual([]);
+  });
+
+  it("keeps the provisioner's environment well within Lambda's 4 KB", () => {
+    // A value CloudFormation resolves counts as its JSON here, and at least as a long ARN.
+    const size = Object.entries(provisionerFunction().Properties.Environment.Variables as Record<string, unknown>)
+      .map(([name, value]) => name.length + (typeof value === "string" ? value.length : Math.max(128, JSON.stringify(value).length)))
+      .reduce((a, b) => a + b, 0);
+    // Room for the catalog entry and the security group of eight more packs (~150 bytes each).
+    expect(size + 8 * 150).toBeLessThan(4096);
   });
 });

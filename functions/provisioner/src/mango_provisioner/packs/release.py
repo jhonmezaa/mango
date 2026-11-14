@@ -15,7 +15,8 @@ On top of the signature, the installation applies its own limits to the signed m
 write), over public data with the pack's own role or over account data as the calling
 user (``central_only``, D37), only IAM actions from the closed list of that mode, and only on
 the pack network of the stack, which reaches nothing but the AWS endpoints the manifest
-declares (R6).
+declares (R6). A pack whose network a stack parameter switches is only installed while that
+network is on (D54, 2026-11-13).
 """
 
 from __future__ import annotations
@@ -40,9 +41,11 @@ from mango_provisioner.packs.config import CatalogEntry, PackSettings
 
 if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
+    from mypy_boto3_ssm import SSMClient
 
 _CHUNK = 1024 * 1024
 _NOT_FOUND = frozenset({"NoSuchKey", "NoSuchVersion", "404", "NotFound"})
+NETWORK_ON = "Enabled"
 
 
 @dataclass(frozen=True)
@@ -108,9 +111,10 @@ def resolve_config(manifest: PackManifest, requested: Mapping[str, str]) -> dict
 
 
 class PackRelease:
-    def __init__(self, s3: S3Client, settings: PackSettings) -> None:
+    def __init__(self, s3: S3Client, settings: PackSettings, ssm: SSMClient) -> None:
         self._s3 = s3
         self._settings = settings
+        self._ssm = ssm
 
     def entry(self, pack_id: str, pack_version: str) -> CatalogEntry:
         entry = self._settings.catalog.get(pack_id)
@@ -140,7 +144,23 @@ class PackRelease:
         ):
             raise StepError("statement_not_in_release")
         check_manifest(settings, manifest)
+        if manifest.id in settings.network.switched:
+            self._require_network(manifest.id)
         return VerifiedPack(statement=statement, statement_sha256=digest)
+
+    def _require_network(self, pack_id: str) -> None:
+        """The endpoints of a switched pack exist only while its stack parameter is on. Without
+        them every call of the pack would fail: refuse it now, with a code that says why."""
+        try:
+            response = self._ssm.get_parameter(Name=self._settings.network_switch(pack_id))
+        except ClientError as exc:
+            if error_code(exc) == "ParameterNotFound":
+                raise StepError("pack_network_disabled") from None
+            raise aws_error("GetPackNetworkSwitch", exc) from None
+        except BotoCoreError as exc:
+            raise aws_error("GetPackNetworkSwitch", exc) from None
+        if response["Parameter"].get("Value") != NETWORK_ON:
+            raise StepError("pack_network_disabled")
 
     def _envelope(self, key: str) -> bytes:
         settings = self._settings

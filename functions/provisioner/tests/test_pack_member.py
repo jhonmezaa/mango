@@ -67,7 +67,8 @@ def test_the_ceiling_of_a_member_pack_is_the_role_of_the_member_accounts() -> No
         check_manifest(SETTINGS, PackManifest.model_validate(member_manifest(iam=payer_action)))
     with pytest.raises(StepError, match="action_outside_broker"):
         check_manifest(SETTINGS, PackManifest.model_validate(account_data_manifest(iam=MEMBER_IAM)))
-    logs = [{"actions": ["logs:StartQuery"], "resources": ["*"], "reason": "No ARNs."}]
+    # Log events are never in the ceiling (D55 (3)); bounded Logs Insights queries are.
+    logs = [{"actions": ["logs:FilterLogEvents"], "resources": ["*"], "reason": "No ARNs."}]
     with pytest.raises(StepError, match="action_outside_broker"):
         check_manifest(SETTINGS, PackManifest.model_validate(member_manifest(iam=logs)))
 
@@ -85,7 +86,6 @@ def test_an_installation_that_predates_the_member_chain_still_starts() -> None:
     old = {k: v for k, v in ENV.items() if not k.startswith("PACK_MEMBER_")}
     settings = PackSettings.from_env(old)
     assert settings.can_broker and not settings.can_broker_members
-    assert settings.member_actions == frozenset()
     with pytest.raises(StepError, match="identity_unavailable"):
         check_manifest(settings, PackManifest.model_validate(member_manifest()))
 
@@ -105,8 +105,6 @@ def test_a_member_pack_needs_its_security_group_in_the_pack_network() -> None:
         ("PACK_MEMBER_BROKER_ROLE_ARN", "arn:aws:iam::123:role/*"),
         ("PACK_MEMBER_ROLE_NAME", "arn:aws:iam::111122223333:role/Mango-test-ReadOnly"),
         ("PACK_MEMBER_ROLE_NAME", "Mango-*"),
-        ("PACK_MEMBER_ACTIONS", '["cloudwatch:*"]'),
-        ("PACK_MEMBER_ACTIONS", "not json"),
     ],
 )
 def test_member_settings_are_strict(name: str, value: str) -> None:

@@ -62,10 +62,8 @@ POLICY_ENGINE_ID = "Mango_test_Tools-abcde12345"
 ALLOWED_ACTIONS = ["pricing:DescribeServices", "pricing:GetAttributeValues", "pricing:GetProducts"]
 BROKER_ARN = f"arn:aws:iam::{ACCOUNT}:role/Mango-{NS}-BillingBroker"
 TARGET_ARN = f"arn:aws:iam::999988887777:role/Mango-{NS}-BillingReader"
-BROKERED_ACTIONS = ["ce:GetCostAndUsage", "ce:GetCostForecast"]
 MEMBER_BROKER_ARN = f"arn:aws:iam::{ACCOUNT}:role/Mango-{NS}-ReadBroker"
 MEMBER_ROLE_NAME = f"Mango-{NS}-ReadOnly"
-MEMBER_ACTIONS = ["cloudwatch:DescribeAlarms", "cloudwatch:GetMetricData"]
 SUBNETS = ["subnet-0aaaaaaaaaaaaaaa1", "subnet-0aaaaaaaaaaaaaaa2"]
 PACK_SECURITY_GROUP = "sg-0bbbbbbbbbbbbbbb1"
 NETWORK: dict[str, Any] = {"subnets": SUBNETS, "security_groups": {PACK: PACK_SECURITY_GROUP}}
@@ -210,11 +208,9 @@ def env(
         "PACK_NETWORK": json.dumps(NETWORK if network is None else network),
         "PACK_BROKER_ROLE_ARN": BROKER_ARN if broker else "",
         "PACK_TARGET_ROLE_ARN": TARGET_ARN if broker else "",
-        "PACK_BROKERED_ACTIONS": json.dumps(BROKERED_ACTIONS if broker else []),
         "PACK_IDENTITY_KEY_ARN": IDENTITY_KEY_ARN if broker else "",
         "PACK_MEMBER_BROKER_ROLE_ARN": MEMBER_BROKER_ARN if broker else "",
         "PACK_MEMBER_ROLE_NAME": MEMBER_ROLE_NAME if broker else "",
-        "PACK_MEMBER_ACTIONS": json.dumps(MEMBER_ACTIONS if broker else []),
         "MANGO_NAMESPACE": NS,
         "MANGO_ACCOUNT_ID": ACCOUNT,
         "AWS_REGION": REGION,
@@ -724,6 +720,8 @@ class PackLab:
         self.logs = FakeLogs()
         self.firehose = FakeFirehose()
         self.kms = FakeKms()
+        # Switches of the pack network (inside ``mock_aws``, like the other clients).
+        self.ssm = boto3.client("ssm", region_name=REGION)
         self.broker = True
         self.network: dict[str, Any] = NETWORK
         self.now = NOW
@@ -764,7 +762,7 @@ class PackLab:
         self.provisioner = PackProvisioner(
             self.settings,
             store=self.store,
-            release=PackRelease(self.s3, self.settings),
+            release=PackRelease(self.s3, self.settings, self.ssm),
             roles=PackRoles(self.iam, self.settings),
             runtimes=PackRuntimes(self.agentcore, self.agentcore, self.settings),  # type: ignore[arg-type]
             gateway=PackGateway(self.agentcore, self.settings),  # type: ignore[arg-type]

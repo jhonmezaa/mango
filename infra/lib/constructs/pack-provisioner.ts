@@ -15,7 +15,7 @@ import { mangoName, packNames, roleNames } from "../names.js";
 import { acknowledge, arnWildcardFinding, REASONS } from "../nag.js";
 import { AgentPlatform } from "./agent-platform.js";
 import { LIVE_WAIT_SECONDS } from "./live-wait.js";
-import { NO_PACK_NETWORK, PackNetworkRef, provisionerSetting } from "./pack-network.js";
+import { NO_PACK_NETWORK, PackNetworkRef, provisionerSetting, readSwitchesStatement } from "./pack-network.js";
 import { PACK_DATA_ACTIONS, PackPlatform } from "./pack-platform.js";
 import { PythonFunction } from "./python-function.js";
 
@@ -76,15 +76,14 @@ export interface PackProvisionerProps {
   /** Chain a pack over account data assumes on every call, as the user (D10, D37). */
   readonly brokerRoleArn: string;
   readonly targetRoleArn: string;
-  /** Actions the role behind the broker allows: the ceiling of a `central_only` manifest. */
-  readonly brokeredActions: string[];
   /**
-   * Chain of a pack over member accounts (D51): the Read broker, the name of the role behind
-   * it in every member account and the actions that role allows (its manifest's ceiling).
+   * Chain of a pack over member accounts (D51): the Read broker and the name of the role behind
+   * it in every member account. What each role allows (the ceiling of a manifest) is code of
+   * the provisioner (`mango_provisioner/packs/ceilings.py`), kept equal to the lists of the
+   * roles by a test: Lambda limits the whole environment to 4 KB.
    */
   readonly memberBrokerRoleArn: string;
   readonly memberRoleName: string;
-  readonly memberActions: string[];
   /** Key the interceptor signs pack callers with; the provisioner only reads its public key. */
   readonly packIdentityKey: kms.IKey;
   /** Where pack runtimes run (R6). Absent when the release ships no pack. */
@@ -199,6 +198,10 @@ export class PackProvisioner extends Construct {
         }),
       );
     }
+    // Packs whose network is switched by a parameter of the pack network (D54, 2026-11-13):
+    // the provisioner reads each switch before it installs the pack, and nothing else of SSM.
+    const readSwitches = props.network && readSwitchesStatement(stack, ns, props.network);
+    if (readSwitches) role.addToPolicy(readSwitches);
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: "TagNewPackRuntime",
@@ -508,17 +511,15 @@ export class PackProvisioner extends Construct {
         POLICY_ENGINE_ID: props.policyEngine.attrPolicyEngineId,
         RUNTIME_LOGS_KEY_ARN: props.platform.runtimeLogsKey.keyArn,
         CONNECTOR_TARGETS: JSON.stringify(props.connectorTargets),
-        // Packs over account data (D37): where the broker is, what the role behind it
-        // allows and the key that signs their callers. Values of the stack, never of a pack.
+        // Packs over account data (D37): where the broker is and the key that signs their
+        // callers. Values of the stack, never of a pack.
         PACK_BROKER_ROLE_ARN: props.brokerRoleArn,
         PACK_TARGET_ROLE_ARN: props.targetRoleArn,
-        PACK_BROKERED_ACTIONS: JSON.stringify(props.brokeredActions),
         PACK_IDENTITY_KEY_ARN: props.packIdentityKey.keyArn,
         // Packs of the member chain (D51): the Read broker and the role name, never an ARN:
         // the account is the one each call asks for.
         PACK_MEMBER_BROKER_ROLE_ARN: props.memberBrokerRoleArn,
         PACK_MEMBER_ROLE_NAME: props.memberRoleName,
-        PACK_MEMBER_ACTIONS: JSON.stringify(props.memberActions),
         // R6: subnets of the pack VPC and the security group of each pack of the release. A
         // runtime is never created anywhere else; a pack without a group is not installed.
         PACK_NETWORK: props.network ? provisionerSetting(stack, props.network) : NO_PACK_NETWORK,

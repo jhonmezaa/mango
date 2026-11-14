@@ -21,6 +21,7 @@ from mango_packs.enablement import is_pack_id
 from mango_packs.signing import PackSignatureError, load_public_key
 from mango_provisioner.config import ConfigError as AgentConfigError
 from mango_provisioner.config import stack_id
+from mango_provisioner.packs.ceilings import BROKERED_ACTIONS, MEMBER_ACTIONS
 from mango_provisioner.stack_tags import StackTags, merge
 
 ENDPOINT_LIVE = "live"
@@ -118,6 +119,9 @@ class PackNetwork:
     subnets: tuple[str, ...]
     security_groups: Mapping[str, str]
     """Pack id -> its security group. A pack without one cannot be installed."""
+    switched: frozenset[str] = frozenset()
+    """Packs whose endpoints exist only while a stack parameter of the pack network turns them
+    on (D54, 2026-11-13). Before installing one, the provisioner reads its switch."""
 
     def configuration(self, pack_id: str) -> dict[str, object]:
         """``networkConfiguration`` of the pack's runtime. Never ``PUBLIC``."""
@@ -130,12 +134,17 @@ class PackNetwork:
         }
 
 
+_NETWORK_REQUIRED = frozenset({"subnets", "security_groups"})
+
+
 def _network(raw: object) -> PackNetwork:
     subnets = raw.get("subnets") if isinstance(raw, dict) else None
     groups = raw.get("security_groups") if isinstance(raw, dict) else None
+    # Absent while the release only has packs whose network is always on.
+    switched = raw.get("switched", []) if isinstance(raw, dict) else None
     if (
         not isinstance(raw, dict)
-        or set(raw) != {"subnets", "security_groups"}
+        or not _NETWORK_REQUIRED <= set(raw) <= _NETWORK_REQUIRED | {"switched"}
         or not isinstance(subnets, list)
         or len(subnets) > _MAX_SUBNETS
         or len(set(subnets)) != len(subnets)
@@ -147,9 +156,16 @@ def _network(raw: object) -> PackNetwork:
         )
         # A network with packs has subnets; a release without packs has neither.
         or (bool(groups) and len(subnets) < _MIN_SUBNETS)
+        # A switched pack is a pack of the network.
+        or not isinstance(switched, list)
+        or not all(isinstance(item, str) and item in groups for item in switched)
     ):
         raise ConfigError("PACK_NETWORK is invalid")
-    return PackNetwork(subnets=tuple(subnets), security_groups=MappingProxyType(dict(groups)))
+    return PackNetwork(
+        subnets=tuple(subnets),
+        security_groups=MappingProxyType(dict(groups)),
+        switched=frozenset(switched),
+    )
 
 
 def _public_key(value: str) -> bytes | None:
@@ -245,9 +261,8 @@ class PackSettings:
                 target_role_arn=_optional(
                     _ROLE_ARN_RE, "PACK_TARGET_ROLE_ARN", env["PACK_TARGET_ROLE_ARN"]
                 ),
-                brokered_actions=_strings(
-                    "PACK_BROKERED_ACTIONS", _json("PACK_BROKERED_ACTIONS", env), _ACTION_RE
-                ),
+                # The ceilings are code of the release, not settings (``ceilings.py``).
+                brokered_actions=BROKERED_ACTIONS,
                 identity_key_arn=_optional(
                     _KMS_KEY_ARN_RE, "PACK_IDENTITY_KEY_ARN", env["PACK_IDENTITY_KEY_ARN"]
                 ),
@@ -260,17 +275,11 @@ class PackSettings:
                 member_role_name=_optional(
                     _ROLE_NAME_RE, "PACK_MEMBER_ROLE_NAME", env.get("PACK_MEMBER_ROLE_NAME", "")
                 ),
-                member_actions=_strings(
-                    "PACK_MEMBER_ACTIONS",
-                    json.loads(env.get("PACK_MEMBER_ACTIONS", "[]")),
-                    _ACTION_RE,
-                ),
+                member_actions=MEMBER_ACTIONS,
                 network=_network(_json("PACK_NETWORK", env)),
             )
         except KeyError as exc:
             raise ConfigError(f"missing environment variable {exc.args[0]}") from None
-        except ValueError:
-            raise ConfigError("PACK_MEMBER_ACTIONS is not JSON") from None
         if settings.boundary_arn != settings.expected_boundary_arn:
             raise ConfigError("PACK_BOUNDARY_ARN is not this installation's pack boundary")
         return settings
@@ -290,6 +299,10 @@ class PackSettings:
         return self.member_broker_role_arn if member else self.broker_role_arn
 
     # --- Names (regla 6, D32) -------------------------------------------------------------
+
+    def network_switch(self, pack_id: str) -> str:
+        """SSM parameter of the pack network that says whether ``pack_id``'s network is on."""
+        return f"/Mango-{self.namespace}-pack-network/{pack_id}"
 
     @property
     def expected_boundary_arn(self) -> str:

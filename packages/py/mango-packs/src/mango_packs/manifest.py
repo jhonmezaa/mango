@@ -105,6 +105,19 @@ class AwsEndpoint(StrEnum):
     CLOUDWATCH = "cloudwatch"
     # As data, read with the caller's session. A pack's own log groups need no entry.
     LOGS = "logs"
+    CLOUDTRAIL = "cloudtrail"
+    APPLICATION_SIGNALS = "application-signals"
+    XRAY = "xray"
+    SYNTHETICS = "synthetics"
+    ELASTICACHE = "elasticache"
+    RDS = "rds"
+    PERFORMANCE_INSIGHTS = "pi"
+    EC2 = "ec2"
+    AUTOSCALING = "autoscaling"
+    ELASTIC_LOAD_BALANCING = "elasticloadbalancing"
+    ECS = "ecs"
+    CLOUDFORMATION = "cloudformation"
+    CONFIG = "config"
 
 
 class ToolAccess(StrEnum):

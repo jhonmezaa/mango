@@ -60,7 +60,11 @@ def _provisioner() -> PackProvisioner:
     return PackProvisioner(
         settings,
         store=PackStore(dynamodb, settings.settings_table),
-        release=PackRelease(boto3.client("s3", config=_CLIENT_CONFIG), settings),
+        release=PackRelease(
+            boto3.client("s3", config=_CLIENT_CONFIG),
+            settings,
+            boto3.client("ssm", config=_CLIENT_CONFIG),
+        ),
         roles=PackRoles(boto3.client("iam", config=_CLIENT_CONFIG), settings),
         runtimes=PackRuntimes(
             control, boto3.client("bedrock-agentcore", config=_INVOKE_CONFIG), settings

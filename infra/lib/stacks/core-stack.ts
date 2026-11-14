@@ -120,8 +120,6 @@ import { LogsKey, ShortKeyDeletionWindow } from "../logs.js";
 import { mangoName, roleNames } from "../names.js";
 import { tagNamespace } from "../params.js";
 import { ReleaseTarget } from "../release-target.js";
-import { MEMBER_READ_ONLY_DATA_ACTIONS } from "./member-stack.js";
-import { BILLING_READER_DATA_ACTIONS } from "./payer-stack.js";
 import {
   AuthorizationStack,
   CurReconciliationStack,
@@ -635,6 +633,8 @@ export class CoreStack extends Stack {
         ? new PackNetwork(this, "PackNetwork", {
             installation: cfg,
             packs: packRelease.packs,
+            // Every pack always on: only the network stack of a release switches them.
+            switchable: false,
           })
         : undefined;
     const packNetwork: PackNetworkRef | undefined =
@@ -656,10 +656,8 @@ export class CoreStack extends Stack {
       connectorTargets: tools.connectorTargets,
       brokerRoleArn: tools.billingBrokerArn,
       targetRoleArn: tools.billingReaderArn,
-      brokeredActions: BILLING_READER_DATA_ACTIONS,
       memberBrokerRoleArn: memberAccess.readBrokerArn,
       memberRoleName: memberAccess.memberRoleName,
-      memberActions: MEMBER_READ_ONLY_DATA_ACTIONS,
       packIdentityKey: tools.packIdentityKey,
       ...(packNetwork ? { network: packNetwork } : {}),
     });

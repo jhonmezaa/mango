@@ -1,10 +1,11 @@
-import { Duration, Fn, Stack, Tags } from "aws-cdk-lib";
+import { Aws, CfnCondition, CfnParameter, CfnResource, Duration, Fn, Stack, Tags } from "aws-cdk-lib";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatchActions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as route53resolver from "aws-cdk-lib/aws-route53resolver";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as sns from "aws-cdk-lib/aws-sns";
 import { Construct } from "constructs";
 import { ReleasePack } from "../config/pack-release.js";
@@ -38,7 +39,85 @@ export const PACK_EGRESS_SERVICES: Record<string, { endpoint: string; names: (re
   cloudwatch: { endpoint: "monitoring", names: (region) => [`monitoring.${region}.amazonaws.com`] },
   // The endpoint every pack has for its own log groups; a pack lists it to read Logs as data.
   logs: { endpoint: "logs", names: (region) => [`logs.${region}.amazonaws.com`] },
+  // Read by the SRE and database packs over member accounts. Each interface endpoint and its
+  // private DNS name were checked in the AWS documentation on 2026-11-13; the names are the
+  // ones botocore uses in a Region of the `aws` partition.
+  cloudtrail: { endpoint: "cloudtrail", names: (region) => [`cloudtrail.${region}.amazonaws.com`] },
+  "application-signals": {
+    endpoint: "application-signals",
+    names: (region) => [`application-signals.${region}.amazonaws.com`],
+  },
+  xray: { endpoint: "xray", names: (region) => [`xray.${region}.amazonaws.com`] },
+  synthetics: { endpoint: "synthetics", names: (region) => [`synthetics.${region}.amazonaws.com`] },
+  elasticache: { endpoint: "elasticache", names: (region) => [`elasticache.${region}.amazonaws.com`] },
+  rds: { endpoint: "rds", names: (region) => [`rds.${region}.amazonaws.com`] },
+  // Performance Insights.
+  pi: { endpoint: "pi", names: (region) => [`pi.${region}.amazonaws.com`] },
+  ec2: { endpoint: "ec2", names: (region) => [`ec2.${region}.amazonaws.com`] },
+  autoscaling: { endpoint: "autoscaling", names: (region) => [`autoscaling.${region}.amazonaws.com`] },
+  elasticloadbalancing: {
+    endpoint: "elasticloadbalancing",
+    names: (region) => [`elasticloadbalancing.${region}.amazonaws.com`],
+  },
+  ecs: { endpoint: "ecs", names: (region) => [`ecs.${region}.amazonaws.com`] },
+  cloudformation: { endpoint: "cloudformation", names: (region) => [`cloudformation.${region}.amazonaws.com`] },
+  config: { endpoint: "config", names: (region) => [`config.${region}.amazonaws.com`] },
 };
+
+/**
+ * Packs whose network exists whenever the release ships them: the packs of the releases before
+ * the network was switched per pack (D54). Updating an installation leaves their endpoints,
+ * groups and rules as they are. Every other pack has a stack parameter of its own,
+ * {@link packNetworkParameter}, off by default: its endpoints are paid for only where an
+ * installation turns it on (precision of D54, proposed on 2026-11-13).
+ */
+export const ALWAYS_ON_PACK_NETWORKS: ReadonlySet<string> = new Set(["aws-billing", "aws-cloudwatch", "aws-pricing"]);
+
+/** Values of a pack network parameter. */
+export const PACK_NETWORK_ENABLED = "Enabled";
+export const PACK_NETWORK_DISABLED = "Disabled";
+
+const pascal = (id: string) =>
+  id
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join("");
+
+/** Stack parameter that turns on the network of a pack (`aws-rds` -> `PackAwsRdsNetwork`). */
+export function packNetworkParameter(packId: string): string {
+  return `Pack${pascal(packId)}Network`;
+}
+
+/**
+ * SSM parameter where the pack network says whether a switched pack's network is on: the pack
+ * provisioner reads it before it installs the pack, and refuses one whose network is off
+ * (`pack_network_disabled`). A parameter, not an export: Core imports exports, and an export
+ * that another stack imports can never change value.
+ */
+export function packNetworkSwitchName(ns: string, packId: string): string {
+  return `/${mangoName(ns, "pack-network")}/${packId}`;
+}
+
+/**
+ * What the pack provisioner needs to read the switches of `network`: `ssm:GetParameter` on the
+ * exact parameter of each switched pack, nothing else of SSM. None without switched packs.
+ */
+export function readSwitchesStatement(stack: Stack, ns: string, network: PackNetworkRef): iam.PolicyStatement | undefined {
+  if (network.switchedPacks.length === 0) return undefined;
+  return new iam.PolicyStatement({
+    sid: "ReadPackNetworkSwitches",
+    actions: ["ssm:GetParameter"],
+    resources: network.switchedPacks.map(
+      (packId) => `arn:aws:ssm:${stack.region}:${stack.account}:parameter${packNetworkSwitchName(ns, packId)}`,
+    ),
+  });
+}
+
+/** Packs of the release whose network has a parameter of its own, sorted. */
+export function switchedPacks(packs: Pick<ReleasePack, "id">[]): string[] {
+  return packs.map((pack) => pack.id).filter((id) => !ALWAYS_ON_PACK_NETWORKS.has(id)).sort();
+}
 
 /**
  * What every pack runtime reaches besides its manifest: CloudWatch Logs for its own log
@@ -50,6 +129,19 @@ const PLATFORM_SERVICE = "logs";
 const S3_PREFIX_LISTS: Record<string, string> = { "us-east-1": "pl-63a5400a" };
 
 const HTTPS = ec2.Port.tcp(443);
+
+/**
+ * CloudFormation resources `change` defines under `scopes`. A rule between two security groups
+ * is a resource of its own (`AWS::EC2::SecurityGroupEgress`/`Ingress`) that `connections` does
+ * not return: this finds it, to give it a condition, without changing its logical id.
+ */
+function added(scopes: Construct[], change: () => void): CfnResource[] {
+  const before = new Set(scopes.flatMap((scope) => scope.node.findAll()));
+  change();
+  return scopes
+    .flatMap((scope) => scope.node.findAll())
+    .filter((node): node is CfnResource => !before.has(node) && node instanceof CfnResource);
+}
 
 /** `/24` subnets of the pack VPC, one per Availability Zone, out of its `/22`. */
 export function packSubnetCidrs(vpcCidr: string, count: number): string[] {
@@ -66,11 +158,21 @@ export interface PackNetworkRef {
   readonly subnetIds: string[];
   /** Pack id -> security group of its runtime. */
   readonly securityGroupIds: Record<string, string>;
+  /** Packs whose network is switched by a stack parameter ({@link switchedPacks}). */
+  readonly switchedPacks: string[];
 }
 
-/** `PACK_NETWORK` of the pack provisioner: ids of the template, nothing a request can set. */
+/**
+ * `PACK_NETWORK` of the pack provisioner: ids of the template, nothing a request can set. The
+ * switched packs only appear when there are some, so a release of the packs that are always on
+ * gives the provisioner the same setting as before.
+ */
 export function provisionerSetting(stack: Stack, network: PackNetworkRef): string {
-  return stack.toJsonString({ subnets: network.subnetIds, security_groups: network.securityGroupIds });
+  return stack.toJsonString({
+    subnets: network.subnetIds,
+    security_groups: network.securityGroupIds,
+    ...(network.switchedPacks.length > 0 ? { switched: network.switchedPacks } : {}),
+  });
 }
 
 /** Names `Mango-<ns>-PackNetwork` exports and `Mango-<ns>-Core` imports. */
@@ -106,6 +208,7 @@ export function importPackNetwork(ns: string, packs: Pick<ReleasePack, "id">[]):
     securityGroupIds: Object.fromEntries(
       packs.map((pack) => [pack.id, Fn.importValue(packNetworkExports.securityGroup(ns, pack.id))]),
     ),
+    switchedPacks: switchedPacks(packs),
   };
 }
 
@@ -113,6 +216,14 @@ export interface PackNetworkProps {
   readonly installation: Pick<Installation, "namespace" | "organizationId" | "packs">;
   /** Signed packs of the release: each one gets a security group built from its `egress`. */
   readonly packs: ReleasePack[];
+  /**
+   * Whether the packs that are not always on get a stack parameter that switches their network
+   * (D54, 2026-11-13). Only `Mango-<ns>-PackNetwork` of a release has them. A Core that keeps
+   * the network itself (a synthesis without release, D58) has every pack always on: Core's
+   * stack tagger waits for every security group and rule of its stack, and `DependsOn` cannot
+   * name a resource with a condition (D77, D58 (17)).
+   */
+  readonly switchable?: boolean;
 }
 
 /**
@@ -142,6 +253,9 @@ export class PackNetwork extends Construct implements PackNetworkRef {
   readonly securityGroups: Record<string, ec2.SecurityGroup> = {};
   /** Egress service id -> its interface endpoint (`logs` included). */
   readonly endpoints: Record<string, ec2.InterfaceVpcEndpoint> = {};
+  readonly switchedPacks: string[];
+  /** Switched pack id -> the condition that its network is on. */
+  readonly enabled: Record<string, CfnCondition> = {};
 
   constructor(scope: Construct, id: string, props: PackNetworkProps) {
     super(scope, id);
@@ -208,6 +322,34 @@ export class PackNetwork extends Construct implements PackNetworkRef {
       }),
     );
 
+    // --- Switches: one stack parameter per pack whose network is not always on ------------
+    const stack = Stack.of(this);
+    this.switchedPacks = props.switchable === false ? [] : switchedPacks(props.packs);
+    for (const packId of this.switchedPacks) {
+      const name = packNetworkParameter(packId);
+      // In the stack's scope, so that the logical id is the name the installer passes.
+      const parameter = new CfnParameter(stack, name, {
+        type: "String",
+        default: PACK_NETWORK_DISABLED,
+        allowedValues: [PACK_NETWORK_ENABLED, PACK_NETWORK_DISABLED],
+        // Plain ASCII, like every parameter description (params.ts).
+        description:
+          `Network of the MCP pack ${packId}: Enabled creates its VPC endpoints (they are billed per hour) ` +
+          "so that the pack can be enabled in the app. Disabled by default.",
+      });
+      this.enabled[packId] = new CfnCondition(stack, `${name}Enabled`, {
+        expression: Fn.conditionEquals(parameter.valueAsString, PACK_NETWORK_ENABLED),
+      });
+      // What the pack provisioner reads before it installs the pack (fails closed without it).
+      new ssm.StringParameter(this, `Switch-${packId}`, {
+        parameterName: packNetworkSwitchName(ns, packId),
+        // A path (it starts with `/`): the namespace may be a parameter of the release.
+        simpleName: false,
+        description: `Whether the network of the MCP pack ${packId} is on (stack parameter ${name})`,
+        stringValue: parameter.valueAsString,
+      });
+    }
+
     // --- Interface endpoints: the declared AWS APIs and CloudWatch Logs -------------------
     const declared = [...new Set(props.packs.flatMap((pack) => pack.egress.aws))].sort();
     const services = new Map<string, (typeof PACK_EGRESS_SERVICES)[string]>();
@@ -215,6 +357,22 @@ export class PackNetwork extends Construct implements PackNetworkRef {
       const known = PACK_EGRESS_SERVICES[service];
       if (known === undefined) throw new Error(`unknown pack egress service ${service}`);
       services.set(service, known);
+    }
+    // An endpoint exists while a pack that declares it has its network on. The platform
+    // endpoint and those of an always-on pack have no condition, as before.
+    const serviceConditions: Record<string, CfnCondition | undefined> = {};
+    for (const service of services.keys()) {
+      const users = props.packs.filter((pack) => pack.egress.aws.includes(service));
+      // `this.enabled` only holds switched packs: without switches every endpoint is always on.
+      if (service === PLATFORM_SERVICE || users.some((pack) => !(pack.id in this.enabled))) continue;
+      const conditions = users.map((pack) => this.enabled[pack.id]!);
+      if (conditions.length > 10) throw new Error(`more than 10 packs switch the endpoint of ${service}`);
+      serviceConditions[service] =
+        conditions.length === 1
+          ? conditions[0]!
+          : new CfnCondition(stack, `PackEndpoint${pascal(service)}Enabled`, {
+              expression: Fn.conditionOr(...conditions),
+            });
     }
     const endpointGroups: Record<string, ec2.SecurityGroup> = {};
     for (const [service, { endpoint }] of services) {
@@ -244,10 +402,18 @@ export class PackNetwork extends Construct implements PackNetworkRef {
           conditions: { StringEquals: { "aws:PrincipalOrgID": cfg.organizationId } },
         }),
       );
+      const condition = serviceConditions[service];
+      if (condition) {
+        for (const resource of [group.node.defaultChild, vpcEndpoint.node.defaultChild] as CfnResource[]) {
+          resource.cfnOptions.condition = condition;
+        }
+      }
       this.endpoints[service] = vpcEndpoint;
     }
 
     // --- One security group per pack: HTTPS to its endpoints, nothing else ----------------
+    // A switched pack keeps its group (free, and Core imports it) with no way to its endpoints
+    // while its network is off: only its own logs and S3, where AgentCore reads the code.
     const s3PrefixList = S3_PREFIX_LISTS[region];
     if (s3PrefixList === undefined) throw new Error(`no S3 prefix list is known for ${region}`);
     for (const pack of props.packs) {
@@ -256,8 +422,13 @@ export class PackNetwork extends Construct implements PackNetworkRef {
         description: `MCP pack ${pack.id}: HTTPS only to the VPC endpoints its signed manifest declares`,
         allowAllOutbound: false,
       });
+      const switched = this.enabled[pack.id];
       for (const service of new Set([PLATFORM_SERVICE, ...pack.egress.aws])) {
-        group.connections.allowTo(endpointGroups[service]!, HTTPS, `VPC endpoint of ${service}`);
+        const peer = endpointGroups[service]!;
+        const rules = added([group, peer], () => group.connections.allowTo(peer, HTTPS, `VPC endpoint of ${service}`));
+        if (switched && service !== PLATFORM_SERVICE) {
+          for (const rule of rules) rule.cfnOptions.condition = switched;
+        }
       }
       group.addEgressRule(ec2.Peer.prefixList(s3PrefixList), HTTPS, "S3 gateway endpoint (runtime code)");
       Tags.of(group).add("mango:pack", pack.id);
@@ -268,13 +439,19 @@ export class PackNetwork extends Construct implements PackNetworkRef {
     const allowed = new route53resolver.CfnFirewallDomainList(this, "DnsAllowed", {
       name: mangoName(ns, "PackDnsAllowed"),
       domains: [
-        ...[...services.values()].flatMap((service) => service.names(region)).map((name) => `${name}.`),
+        ...[...services].flatMap(([service, { names }]) =>
+          names(region).map((name) => ({ name: `${name}.`, when: serviceConditions[service] })),
+        ),
         // AgentCore asks for its code bucket by the global S3 name and writes platform logs
         // by the regional one. Queries for these names only ever reach AWS.
-        "*.s3.amazonaws.com.",
-        `s3.${region}.amazonaws.com.`,
-        `*.s3.${region}.amazonaws.com.`,
-      ].sort(),
+        ...["*.s3.amazonaws.com.", `s3.${region}.amazonaws.com.`, `*.s3.${region}.amazonaws.com.`].map((name) => ({
+          name,
+          when: undefined,
+        })),
+      ]
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+        // The name of an endpoint that is off is not resolved either.
+        .map(({ name, when }) => (when ? Fn.conditionIf(when.logicalId, name, Aws.NO_VALUE).toString() : name)),
     });
     if (PACK_DNS_PLATFORM_NAMES.some((name) => name.includes("*"))) {
       throw new Error("the platform names of the pack DNS Firewall are exact names, never wildcards");
@@ -317,7 +494,6 @@ export class PackNetwork extends Construct implements PackNetworkRef {
     // The metric of the alarm below says that a name was refused, not which one. The names a
     // compromised pack asks for are the data it tries to take out: the log group is encrypted
     // and kept as long as the flow logs.
-    const stack = Stack.of(this);
     const queryLogName = mangoName(ns, "PackNetwork-dns-queries");
     const queryLogArn = `arn:${stack.partition}:logs:${stack.region}:${stack.account}:log-group:${queryLogName}`;
     const queryLog = new logs.LogGroup(this, "DnsQueries", {
