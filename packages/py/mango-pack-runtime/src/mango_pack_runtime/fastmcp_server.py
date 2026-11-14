@@ -28,6 +28,13 @@ a pack over account data. So such a pack lists its schemas without that keyword
 because the server still validates the arguments of the tool itself once the guard has
 removed ``_mango_ctx``.
 
+A pack of the member chain (D51) is served like ``mango_pack_runtime.server`` serves one:
+``tools/list`` asks for Mango's ``account_id`` on every tool, bounds ``region`` to a Region name
+(and drops a literal Region default), and hides the arguments the entry point names
+(``load(hidden_arguments=…)``); the guard checks the account and the Region, assumes the
+member session before the tool runs and fills in the installation's Region when a tool that
+takes one is called without it.
+
 The guard is a ``fastmcp`` middleware, the first of the chain: ``on_call_tool`` awaits the
 rest of the chain and the tool inside the guard, in the task of the request, so the caller is
 bound in the very task that runs the tool, also for a tool of a mounted server.
@@ -39,7 +46,7 @@ import asyncio
 import logging
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any
 
 import mcp_types
@@ -48,10 +55,11 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import Tool, ToolResult
 
-from mango_pack_runtime.guard import CallGuard, RegionError
+from mango_pack_runtime.config import PackConfig
+from mango_pack_runtime.guard import REGION_ARG, CallGuard, RegionError
 from mango_pack_runtime.guard import logger as pack_logger
 from mango_pack_runtime.identity import IdentityError
-from mango_pack_runtime.server import REFUSED_MESSAGE, REGION_MESSAGE, Pack
+from mango_pack_runtime.server import REFUSED_MESSAGE, REGION_MESSAGE, Pack, listed_schema
 
 MCP_PATH = "/mcp"
 CLIENT_LOG = "fastmcp.server.context.to_client"
@@ -112,6 +120,46 @@ def open_schemas(mcp: FastMCP[Any]) -> None:
     mcp.add_middleware(OpenSchemas())
 
 
+class ListedSchemas(Middleware):
+    """List every tool with the schema the guard enforces (``server.listed_schema``): open,
+    without the hidden arguments and, in the member chain, with Mango's ``account_id`` and a
+    bounded ``region``."""
+
+    def __init__(self, config: PackConfig, hidden: Collection[str]) -> None:
+        self._config = config
+        self._hidden = frozenset(hidden)
+
+    async def on_list_tools(
+        self,
+        context: MiddlewareContext[mcp_types.ListToolsRequest],
+        call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]],
+    ) -> Sequence[Tool]:
+        return [
+            # A copy: the tool the server runs keeps its own schema and validation.
+            tool.model_copy(
+                update={"parameters": listed_schema(tool.parameters, self._config, self._hidden)}
+            )
+            for tool in await call_next(context)
+        ]
+
+
+def list_schemas(mcp: FastMCP[Any], config: PackConfig, hidden: Collection[str] = ()) -> None:
+    """Make ``tools/list`` answer what the guard enforces. Calls are not affected: the server
+    still validates each call with the tool's own schema, after the guard removed Mango's
+    arguments and the hidden ones."""
+    mcp.add_middleware(ListedSchemas(config, hidden))
+    asyncio.run(mcp.list_tools())  # fail at start (an upstream `account_id`), not on a listing
+
+
+def region_tools(mcp: FastMCP[Any]) -> frozenset[str]:
+    """Tools of ``mcp`` that take a ``region`` argument (their own schemas)."""
+    return frozenset(
+        tool.name
+        for tool in asyncio.run(mcp.list_tools(run_middleware=False))
+        if REGION_ARG in (tool.parameters.get("properties") or {})
+    )
+
+
 def _tool_names(mcp: FastMCP[Any]) -> set[str]:
     return {tool.name for tool in asyncio.run(mcp.list_tools(run_middleware=False))}
 
@@ -166,12 +214,15 @@ def log_calls() -> None:
 
 
 def serve(pack: Pack, mcp: FastMCP[Any]) -> None:
-    if pack.config.member_chain or pack.hidden_arguments:
-        # Only `mango_pack_runtime.server` lists `account_id` and hides arguments.
-        raise SystemExit("the fastmcp adapter does not serve packs of the member chain")
-    restrict_tools(mcp, pack.config.tools)
+    config = pack.config
+    restrict_tools(mcp, config.tools)
+    if config.member_chain:
+        # Before the listing is rewritten: the tools' own schemas.
+        pack.guard.default_region_for(region_tools(mcp))
     bind(mcp, pack.guard)
-    if pack.config.needs_caller:
+    if config.member_chain or pack.hidden_arguments:
+        list_schemas(mcp, config, pack.hidden_arguments)
+    elif config.needs_caller:
         open_schemas(mcp)
     log_calls()
     mcp.run(

@@ -13,6 +13,7 @@ import socket
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import boto3
@@ -157,6 +158,13 @@ def pack_url(
     open_schemas(mcp)
     # As `serve` does, before the HTTP server (and its logging setup) exists.
     log_calls()
+    with serve_http(mcp) as url:
+        yield url
+
+
+@contextmanager
+def serve_http(mcp: FastMCP[Any]) -> Iterator[str]:
+    """Stateless streamable HTTP on a free local port, as ``serve`` runs it."""
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
