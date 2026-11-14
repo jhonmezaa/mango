@@ -1,6 +1,6 @@
 # MCP packs
 
-Un **MCP pack** es un servidor MCP de terceros (hoy, los de `awslabs/mcp`) que Mango fija, revisa, empaqueta y firma en su CI para hospedarlo en AgentCore Runtime de la instalación (D19, `docs/specs/marketplace-v1.md` §4).
+Un **MCP pack** es un servidor MCP de terceros (hoy, los de `awslabs/mcp`) o de código propio de Mango (ver «Packs de código propio») que Mango fija, revisa, empaqueta y firma en su CI para hospedarlo en AgentCore Runtime de la instalación (D19, `docs/specs/marketplace-v1.md` §4).
 
 Aquí vive el **formato** y el **pipeline**. Habilitar un pack en una instalación (rol, Runtime, target del Gateway) es trabajo del provisioner de packs: ver «Instalación».
 
@@ -30,8 +30,8 @@ El esquema es `PackManifest` en `packages/py/mango-packs/src/mango_packs/manifes
 | Campo | Regla |
 |---|---|
 | `id` | Igual al nombre de la carpeta |
-| `version` | `<versión upstream>-<revisión de Mango>`, p. ej. `1.1.1-3`. La revisión sube cuando cambia algo nuestro (punto de entrada, tools permitidas, el lock con el mismo upstream) sin cambiar la versión upstream |
-| `source` | Paquete, versión, `sha256` del wheel y `exclude_newer` (corte de la resolución) |
+| `version` | `<versión upstream>-<revisión de Mango>`, p. ej. `1.1.1-3`. La revisión sube cuando cambia algo nuestro (punto de entrada, tools permitidas, el lock con el mismo upstream) sin cambiar la versión upstream. En un pack de código propio, `<versión del código>-<revisión>` |
+| `source` | Paquete, versión, `sha256` del wheel y `exclude_newer` (corte de la resolución). En un pack de código propio, `kind: mango`, la versión del código y `exclude_newer`, sin paquete ni wheel |
 | `data_tier` · `identity_mode` | `public` va con `service` y solo con él. `account_data` y `write` exigen `central_only` o `per_user_adapter` |
 | `identity.chain` | Solo en packs `central_only`. `payer` (por defecto; no se escribe): broker de Billing → `Mango-<ns>-BillingReader` en la pagadora. `member`: broker de lectura → `Mango-<ns>-ReadOnly` de la cuenta miembro que pide cada llamada (D51). Va firmado; cambiarlo en un pack instalado exige deshabilitar y habilitar de nuevo |
 | `iam` | Acciones **exactas** (`servicio:Acción`), sin comodines. `resources: ["*"]` solo con `reason`. En un pack `service` son los permisos de su rol. En uno `central_only` son el tope de cada llamada (session policy): su rol no recibe ninguna |
@@ -89,7 +89,7 @@ Un pack de esta cadena lee **una cuenta miembro por llamada**. Todo lo anterior 
 - **`account_id` es un argumento de Mango**, no del servidor upstream. El punto de entrada lo añade como obligatorio al esquema de cada tool (12 dígitos) y la guardia lo quita antes de la tool. Si una tool upstream ya tiene un argumento con ese nombre, el pack no arranca.
 - **El destino es siempre `Mango-<ns>-ReadOnly` de esa cuenta.** El Runtime recibe el nombre del rol (`MANGO_PACK_TARGET_ROLE_NAME`), nunca un ARN, y el broker de lectura (`MANGO_PACK_BROKER_ROLE_ARN`).
 - **La cuenta se valida por formato y por IAM** (usuario, 2026-10-02): 12 dígitos y nunca la cuenta Mango; que sea una cuenta que Mango puede leer lo decide IAM en esa misma llamada (el rol solo existe donde el StackSet lo desplegó y el broker solo asume dentro de la organización). La sesión se asume **antes** de que corra la tool, y cualquier fallo responde el mismo mensaje fijo.
-- **`region`** pasa a la tool, pero solo si tiene forma de nombre de región (el esquema listado lleva el mismo patrón) y **es la región de la instalación**. La red de packs solo tiene endpoints de esa región (R6): otra región se rechaza antes de asumir la sesión, con un mensaje que dice cuál se puede leer (usuario, 2026-10-02).
+- **`region`** pasa a la tool, pero solo si tiene forma de nombre de región (el esquema listado lleva el mismo patrón) y **es la región de la instalación**. La red de packs solo tiene endpoints de esa región (R6): otra región se rechaza antes de asumir la sesión, con un mensaje que dice cuál se puede leer (usuario, 2026-10-02). **Si la tool acepta `region` y el modelo la omite (o la manda `null`), la guardia pone la de la instalación**: un valor por defecto de upstream (el de CloudTrail es el literal `us-east-1`) iría a una región sin ruta. Y si upstream le pone a `region` un literal de región por defecto, el esquema listado quita ese `default` y las frases de su descripción que lo nombran (el modelo lo copiaría); un `default` nulo se lista como estaba.
 - **Argumentos ocultos.** El punto de entrada nombra los argumentos de upstream que el modelo nunca debe fijar (`load(hidden_arguments=…)`): no se listan y la guardia los quita. En CloudWatch: `profile_name` (otras credenciales) y `account_identifiers` e `include_linked_accounts` (otras cuentas, por la observabilidad entre cuentas).
 - Las acciones `iam` deben estar en la lista del rol de las cuentas miembro (`MEMBER_READ_ONLY_STATEMENTS` en `infra/lib/stacks/member-stack.ts`). Añadir una exige desplegar de nuevo el StackSet (`deployment/deploy-org-access.sh`) y es un cambio de IAM en **todas** las cuentas objetivo: solo acciones exactas de lectura, con decisión registrada si leen contenido.
 - Solo lo sirve `mango_pack_runtime.server` (SDK oficial de MCP). El adaptador de `fastmcp` no arranca un pack de esta cadena.
@@ -155,6 +155,85 @@ Lo que el punto de entrada de `aws-billing` cambia del servidor, además:
 - Al revisar una versión nueva: `utilities/sql_utils.py` y `utilities/logging_utils.py` de upstream, además de las tools. Por cada tool servida: qué operaciones de AWS llama (cada una debe tener su acción en el manifiesto y ninguna puede escribir) y qué argumentos acepta. Si una acepta `region`, comprobar con el botocore del lock nuevo que un valor que no sea un nombre de host se rechaza.
 
 Modelo de amenazas: `docs/security/threat-models/aws-billing-pack-threat-model.md`.
+
+### Packs de código propio
+
+Un pack cuyo servidor MCP es **código de este repositorio**, no un paquete de PyPI: para lo que ningún servidor upstream cubre bien (decisión `propuesta`, precisa D19 y D37; la registra `docs`). Pasa por el mismo pipeline, con la misma cuarentena, el mismo snapshot sin red y la misma firma.
+
+```
+packs/<id>/
+├── manifest.yaml        # source: {kind: mango, version, exclude_newer}
+├── requirements.in      # dependencias directas, cada una name==versión exacta
+├── requirements.lock    # todas las dependencias, con versión y hashes (mismo comando `lock`)
+├── entrypoint.py        # el punto de entrada común, igual que un upstream de la cadena member
+├── <módulo>/            # el código del servidor: el id con `_` en vez de `-` (aws-ops → aws_ops)
+│   ├── __init__.py
+│   └── server.py        # MCPServer del SDK oficial de MCP
+├── tests/               # sus pruebas: se quedan en el repositorio, no entran en el zip
+├── tools.snapshot.json
+└── constraints.txt      # opcional, mismas reglas
+```
+
+Manifiesto (lo que cambia respecto de un upstream):
+
+```yaml
+schema_version: 1
+id: aws-ops
+version: "0.1.0-1"          # <versión del código>-<revisión>
+source:
+  kind: mango
+  version: "0.1.0"          # sube con cada cambio del código
+  exclude_newer: "2026-11-05T00:00:00Z"   # corte de sus dependencias, con la cuarentena de 7 días
+data_tier: account_data
+identity_mode: central_only
+identity:
+  chain: member
+# iam, egress, tools y tools_hash: igual que cualquier pack
+```
+
+`requirements.in`:
+
+```
+mcp==2.3.0
+boto3==1.43.115
+cryptography==50.0.2
+```
+
+`entrypoint.py`:
+
+```python
+from mango_pack_runtime.server import load
+
+pack = load()  # antes de importar el servidor: nada de lo que cree verá el rol del pack
+
+from aws_ops.server import mcp  # noqa: E402
+
+pack.serve(mcp)
+```
+
+Reglas (las comprueba `check`; `mango_packs.manifest` y `mango_pack_builder.pack`):
+
+- **Solo cadena `member`:** `source.kind: mango` va con `identity_mode: central_only` e `identity.chain: member`. Otro modo pide su propia decisión.
+- **SDK oficial de MCP.** El servidor es un `MCPServer` (`mcp.server.mcpserver`) y lo sirve `mango_pack_runtime.server`, como a CloudWatch: `account_id`, `region` acotada y rellenada, argumentos ocultos, guardia y sesión del usuario en cada llamada. `fastmcp` no puede estar en el lock.
+- **`requirements.in`** nombra solo las dependencias directas, cada una `nombre==versión` (sin URLs, opciones, extras ni marcadores, y sin repetir). Debe nombrar `mcp`, `boto3` y `cryptography`. El lock fija cada una a esa versión y todo lo demás por hash; `check-lock` lo resuelve de nuevo con el mismo corte. `constraints.txt` no puede acotar una dependencia directa.
+- **El código** vive en `packs/<id>/<módulo>/` y el build lo copia al zip junto al punto de entrada, a `pack.json` y a `mango_pack_runtime`/`mango_aws`. Solo admite archivos `.py` (y `py.typed`): un enlace simbólico, un binario o un archivo de datos paran el build. El nombre no puede chocar con un paquete del lock ni con el código común.
+- **Versión:** cualquier cambio del código sube `source.version` (y `version`); la revisión sube con lo demás (lock, manifiesto, punto de entrada).
+- **Firma, `statement` y snapshot no cambian:** la firma cubre el hash del zip, que lleva el código, y el `tools/list` sale del zip construido en el contenedor sin red. En la tarjeta del catálogo el proveedor es «Mango».
+- Las tools llaman a boto3 **en la tarea de la petición** o con `asyncio.to_thread`/`anyio.to_thread` (heredan la identidad), nunca con `run_in_executor` ni hilos propios. Cada tool declara `readOnlyHint` y no puede leer archivos, salir a la web ni aceptar `profile`, credenciales o endpoints.
+- `region`: si una tool la acepta, puede dejar `None` por defecto; la guardia la rellena con la de la instalación.
+- **Calidad:** el pack añade `packs/<id>/<módulo>` a `files` y `packs/<id>` a `mypy_path` de mypy, y `packs/<id>` a `testpaths` y `pythonpath` de pytest (`pyproject.toml` de la raíz): su código pasa `mypy --strict` y sus pruebas, sin AWS real (`botocore.stub`), corren con `mise run test`.
+- Como cualquier pack de datos de cuentas: su modelo de amenazas, su matriz en `packs.yml` y sus acciones en `MEMBER_READ_ONLY_STATEMENTS`.
+
+Comandos, iguales que para un upstream:
+
+```sh
+uv run python -m mango_pack_builder lock packs/<id>
+uv run python -m mango_pack_builder snapshot packs/<id> --update   # y copiar tools_hash
+uv run python -m mango_pack_builder check packs/<id>
+mise run pack -- packs/<id> dist/packs
+```
+
+La prueba del formato está en `deployment/pack-builder/tests/test_own_code.py` (un pack mínimo de ejemplo que lista sus tools por el SDK oficial y el código común).
 
 ## Pipeline
 

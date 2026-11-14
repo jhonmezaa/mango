@@ -223,7 +223,7 @@ def test_constraints_are_upper_bounds_of_packages_the_lock_pins(pack_dir: Path) 
         ("dep<2 ; sys_platform == 'linux'\n", "only 'name<version'"),
         ("dep<2\nDep<3\n", "more than once"),
         ("# nothing\n", "empty"),
-        ("fake-mcp-server<2\n", "upstream package itself"),
+        ("fake-mcp-server<2\n", r"must not bound what requirements\.in pins"),
         ("other<2\n", "does not pin"),
     ],
 )

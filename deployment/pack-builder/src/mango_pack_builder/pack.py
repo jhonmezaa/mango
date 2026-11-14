@@ -10,7 +10,7 @@ from typing import Literal
 import yaml
 from pydantic import ValidationError
 
-from mango_packs.manifest import IdentityMode, PackManifest, StrictModel
+from mango_packs.manifest import IdentityMode, PackManifest, PackSource, StrictModel
 
 MANIFEST = "manifest.yaml"
 REQUIREMENTS = "requirements.in"
@@ -24,6 +24,15 @@ SNAPSHOT = "tools.snapshot.json"
 PACK_JSON = "pack.json"
 # What Mango's common entry point (`mango_pack_runtime`) needs from the pack's own lock.
 RUNTIME_REQUIREMENTS = ("boto3", "cryptography")
+# What a server of Mango's own code (`source.kind: mango`) names in its `requirements.in`: the
+# official MCP SDK, which `mango_pack_runtime.server` serves, and the entry point's needs.
+OWN_CODE_REQUIREMENTS = ("mcp", *RUNTIME_REQUIREMENTS)
+# Servers the common entry point cannot serve over member accounts (`mango_pack_runtime.server`
+# wraps `MCPServer` of the official SDK only).
+OWN_CODE_FORBIDDEN = ("fastmcp",)
+# Files of the server's own package that go into the zip: Python sources and the typing marker.
+_OWN_CODE_SUFFIXES = frozenset({".py"})
+_OWN_CODE_NAMES = frozenset({"py.typed"})
 
 _MAX_MANIFEST_BYTES = 64 * 1024
 _REQUIREMENT = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)==(?P<version>[^\s;\\]+)")
@@ -34,6 +43,12 @@ _HASH = re.compile(r"--hash=sha256:(?P<sha256>[0-9a-f]{64})")
 _CONSTRAINT = re.compile(
     r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)<(?P<version>[0-9]+(\.[0-9]+){0,3})$"
 )
+
+# A direct dependency of a pack of Mango's own code: an exact release, nothing else.
+_EXACT = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)==(?P<version>[0-9][A-Za-z0-9.!+]*)$")
+
+Locked = dict[str, tuple[str, frozenset[str]]]
+"""Each locked package (normalized name) with its version and sha256 hashes."""
 
 
 class PackError(Exception):
@@ -85,6 +100,43 @@ class Pack:
             raise PackError(f"{path} is not a valid build file:\n{error}") from error
 
     @property
+    def code_module(self) -> str:
+        """Top-level package of a pack of Mango's own code: its id, with ``_`` for ``-``."""
+        return self.manifest.id.replace("-", "_")
+
+    @property
+    def code(self) -> Path | None:
+        """The package of the server's own code, for a pack of Mango's own code."""
+        if not self.manifest.source.own_code:
+            return None
+        return self.directory / self.code_module
+
+    def code_files(self) -> list[Path]:
+        """Every file of the server's own package that goes into the zip, sorted.
+
+        Only Python sources (and ``py.typed``) are allowed: anything else (a symlink, a
+        binary, a stray data file) fails, so what is reviewed in the diff is what runs.
+        """
+        code = self.code
+        if code is None:
+            return []
+        if not (code / "__init__.py").is_file() or code.is_symlink():
+            raise PackError(f"{code.name}/__init__.py not found: the pack's own code package")
+        files: list[Path] = []
+        for path in sorted(code.rglob("*")):
+            relative = path.relative_to(code)
+            if "__pycache__" in relative.parts or path.suffix == ".pyc":
+                continue
+            if path.is_symlink():
+                raise PackError(f"{code.name}/{relative} is a symlink")
+            if path.is_dir():
+                continue
+            if path.suffix not in _OWN_CODE_SUFFIXES and path.name not in _OWN_CODE_NAMES:
+                raise PackError(f"{code.name}/{relative}: only Python sources go in the pack")
+            files.append(path)
+        return files
+
+    @property
     def entrypoint(self) -> Path:
         return self.directory / self.manifest.runtime.entrypoint
 
@@ -115,13 +167,13 @@ def load_pack(directory: Path) -> Pack:
     return Pack(directory=directory, manifest=manifest)
 
 
-def parse_lock(text: str) -> dict[str, tuple[str, frozenset[str]]]:
+def parse_lock(text: str) -> Locked:
     """Map each locked package to its version and sha256 hashes.
 
     Fails on anything that is not `name==version` with at least one hash: a requirement
     without a hash, a URL, an editable install or an extra index would bypass the pinning.
     """
-    locked: dict[str, tuple[str, frozenset[str]]] = {}
+    locked: Locked = {}
     for block in _logical_lines(text):
         match = _REQUIREMENT.match(block)
         if match is None:
@@ -177,30 +229,72 @@ def parse_constraints(text: str) -> dict[str, str]:
     return bounds
 
 
-def check_pack(pack: Pack) -> None:
-    """Offline consistency checks between manifest, requirements, lock and entry point."""
-    source = pack.manifest.source
-    if not pack.entrypoint.is_file():
-        raise PackError(f"entry point {pack.entrypoint.name} not found")
-    pinned = [
+def _requirement_lines(pack: Pack) -> list[str]:
+    return [
         line.strip()
         for line in pack.requirements.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
+
+
+def _check_upstream(pack: Pack, source: PackSource, locked: Locked) -> set[str]:
+    """One line, the upstream package, pinned in the lock with the wheel the manifest names."""
     expected = f"{source.package}=={source.version}"
-    if pinned != [expected]:
+    if _requirement_lines(pack) != [expected]:
         raise PackError(f"{REQUIREMENTS} must contain exactly {expected!r}")
-    locked = parse_lock(pack.lock.read_text())
     version, hashes = locked.get(normalize_name(source.package), ("", frozenset()))
     if version != source.version:
         raise PackError(f"the lock pins {source.package}=={version}, not {source.version}")
     if source.sha256 not in hashes:
         raise PackError("source.sha256 is not one of the hashes the lock pins for the package")
+    return {normalize_name(source.package)}
+
+
+def _check_own_code(pack: Pack, locked: Locked) -> set[str]:
+    """The server's dependencies, each one exact, and the package of its code.
+
+    ``requirements.in`` names only direct dependencies, each ``name==version`` (no URLs,
+    options, extras or markers): the official MCP SDK and what the common entry point needs,
+    never ``fastmcp``. The lock pins each one at that version, and everything else by hash.
+    """
+    direct: dict[str, str] = {}
+    for line in _requirement_lines(pack):
+        match = _EXACT.fullmatch(line)
+        if match is None:
+            raise PackError(f"{REQUIREMENTS}: only exact 'name==version' lines: {line[:80]!r}")
+        name = normalize_name(match.group("name"))
+        if name in direct:
+            raise PackError(f"{REQUIREMENTS} names {name} more than once")
+        direct[name] = match.group("version")
+    missing = sorted(name for name in OWN_CODE_REQUIREMENTS if name not in direct)
+    if missing:
+        raise PackError(f"{REQUIREMENTS} must name {missing}: the pack's server needs them")
+    for name, version in sorted(direct.items()):
+        pinned = locked.get(name, ("", frozenset()))[0]
+        if pinned != version:
+            raise PackError(f"the lock pins {name}=={pinned or '(nothing)'}, not {version}")
+    forbidden = sorted(name for name in OWN_CODE_FORBIDDEN if name in locked)
+    if forbidden:
+        raise PackError(f"the lock pins {forbidden}: own code is served by the official MCP SDK")
+    pack.code_files()  # the package exists and holds only Python sources
+    return set(direct)
+
+
+def check_pack(pack: Pack) -> None:
+    """Offline consistency checks between manifest, requirements, lock and entry point."""
+    source = pack.manifest.source
+    if not pack.entrypoint.is_file():
+        raise PackError(f"entry point {pack.entrypoint.name} not found")
+    locked = parse_lock(pack.lock.read_text())
+    if isinstance(source, PackSource):
+        direct = _check_upstream(pack, source, locked)
+    else:
+        direct = _check_own_code(pack, locked)
     _ = pack.build_options  # a malformed build.yaml fails here, before anything is built
     if pack.constraints is not None:
         bounds = parse_constraints(pack.constraints.read_text())
-        if normalize_name(source.package) in bounds:
-            raise PackError(f"{CONSTRAINTS} must not bound the upstream package itself")
+        if direct & bounds.keys():
+            raise PackError(f"{CONSTRAINTS} must not bound what {REQUIREMENTS} pins")
         unused = sorted(name for name in bounds if name not in locked)
         if unused:
             raise PackError(f"{CONSTRAINTS} bounds packages the lock does not pin: {unused}")

@@ -277,7 +277,7 @@ class PackState:
             kind="pack",
             name=manifest.name,
             description=manifest.description,
-            provider=manifest.source.package,
+            provider=manifest.provider,
             data_tier=DataTier(data_tier),
             identity_mode=IdentityMode(identity_mode),
             gateway_target=manifest.id,
