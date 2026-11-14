@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01 · qué dispara la firma, del 2026-10-09
 - **Precisa / reemplaza a:** ajusta [D19](D019-catalogo-de-mcp.md)
-- **Precisada por:** [D58](D058-distribucion-para-clientes.md) (precisa: la firma se muda a la cuenta del proveedor)
+- **Precisada por:** [D58](D058-distribucion-para-clientes.md) (precisa: la firma se muda a la cuenta del proveedor); [D126](D126-packs-de-codigo-propio.md) (el zip puede llevar código propio del repositorio; la firma no cambia; en estado propuesta)
 - **Tema en el registro original:** Artefacto y firma de los MCP packs (ajusta [D19](D019-catalogo-de-mcp.md))
 
 ## Decisión

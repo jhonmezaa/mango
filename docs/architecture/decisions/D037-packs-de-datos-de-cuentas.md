@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01
 - **Precisa / reemplaza a:** —
-- **Precisada por:** [D49](D049-identidad-en-packs-de-datos.md) (precisa); [D52](D052-pack-de-billing-ampliado.md) (precisa)
+- **Precisada por:** [D49](D049-identidad-en-packs-de-datos.md) (precisa); [D52](D052-pack-de-billing-ampliado.md) (precisa); [D126](D126-packs-de-codigo-propio.md) (un pack propio de datos de cuentas usa el mismo punto de entrada y el modo `central_only`; en estado propuesta)
 
 ## Decisión
 

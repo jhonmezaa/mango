@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-01 · `PASSWORD` enmascarada y no bloqueada, 2026-11-09 (decisión del dueño, por menú) · `PASSWORD` solo en la salida, 2026-11-09 (decisión del dueño, por menú) · versión de turno sin `PROMPT_ATTACK` de entrada, 2026-11-09 (decisión 44 del dueño, por menú)
 - **Precisa / reemplaza a:** en el texto de [D18](D018-creacion-y-publicacion-de-agentes.md) (ajuste del 2026-10-01): ajusta [D18](D018-creacion-y-publicacion-de-agentes.md) (guardrail base compartido en vez de uno por agente)
-- **Precisada por:** [D42](D042-chat-con-varios-agentes.md) (precisa la siembra, punto 3); [D58](D058-distribucion-para-clientes.md) (precisa); [D80](D080-actualizacion-del-agente-de-la-release.md) (precisa: una versión posterior actualiza el agente si la instalación no lo cambió)
+- **Precisada por:** [D42](D042-chat-con-varios-agentes.md) (precisa la siembra, punto 3); [D58](D058-distribucion-para-clientes.md) (precisa); [D80](D080-actualizacion-del-agente-de-la-release.md) (precisa: una versión posterior actualiza el agente si la instalación no lo cambió); [D127](D127-agentes-sre-y-de-bases-de-datos.md) (dos agentes más en la release, `sre` y `dba`; en estado propuesta)
 
 ## Decisión
 

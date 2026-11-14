@@ -3,7 +3,7 @@
 - **Estado:** vigente
 - **Fecha:** 2026-10-02
 - **Precisa / reemplaza a:** precisa [D49](D049-identidad-en-packs-de-datos.md) (5) y [D51](D051-acceso-a-cuentas-miembro.md) (3, 7); en el texto: mantiene [D50](D050-per-user-adapter-en-v1.md) (punto 6)
-- **Precisada por:** —
+- **Precisada por:** [D127](D127-agentes-sre-y-de-bases-de-datos.md) (precisa el punto 3: Logs Insights con límites duros; en estado propuesta)
 - **Tema en el registro original:** Pack de CloudWatch sobre cuentas miembro (precisa [D49](D049-identidad-en-packs-de-datos.md) (5) y [D51](D051-acceso-a-cuentas-miembro.md) (3, 7))
 
 ## Decisión
