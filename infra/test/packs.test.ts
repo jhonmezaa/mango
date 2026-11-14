@@ -1007,7 +1007,7 @@ describe("packs over member accounts use the Read broker (D51, identity.chain: m
     (
       Object.values(all).find((r) => r.Type === "AWS::IAM::Role" && r.Properties.RoleName === `Mango-${ns}-${broker}`)!
         .Properties.AssumeRolePolicyDocument.Statement as Statement[]
-    ).filter((s) => !s.Sid?.startsWith("AccountHealth"));
+    ).filter((s) => !s.Sid?.startsWith("AccountHealth") && s.Sid !== "SessionTagsOfTheCallers");
   const packCallers = (trust: Statement[]): string[][] =>
     trust.map((s) => JSON.stringify(s.Condition!.ArnEquals!["aws:PrincipalArn"]).match(/Mango-[a-z0-9]+-mcp-[a-z0-9-]+/g) ?? []);
 

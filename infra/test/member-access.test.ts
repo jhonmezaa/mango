@@ -485,13 +485,17 @@ describe("ReadBroker (Core)", () => {
   it("trusts exactly the AdminProbe role, of the organization, with SourceIdentity", () => {
     const all = broker.Properties.AssumeRolePolicyDocument.Statement as Statement[];
     // The daily account health has statements of its own (D84, account-health.test.ts).
-    const statements = all.filter((s) => !s.Sid?.startsWith("AccountHealth"));
-    expect(all.length - statements.length).toBe(2);
-    expect(statements.flatMap((s) => listed(s.Action)).sort()).toEqual([
-      "sts:AssumeRole",
-      "sts:SetSourceIdentity",
-      "sts:TagSession",
-    ]);
+    const statements = all.filter((s) => !s.Sid?.startsWith("AccountHealth") && s.Sid !== "SessionTagsOfTheCallers");
+    expect(all.length - statements.length).toBe(3);
+    expect(statements.flatMap((s) => listed(s.Action)).sort()).toEqual(["sts:AssumeRole", "sts:SetSourceIdentity"]);
+    // Session tags: their own statement, without the list (STS authorizes TagSession without
+    // sts:SourceIdentity); tagging grants nothing without AssumeRole above. AGENTS.md, 2026-11-14.
+    const tags = all.find((s) => s.Sid === "SessionTagsOfTheCallers")!;
+    expect(tags.Action).toBe("sts:TagSession");
+    expect(tags.Condition).toEqual({
+      StringEquals: { "aws:PrincipalOrgID": cfg.organizationId },
+      "ForAllValues:StringEquals": { "aws:TagKeys": SESSION_TAG_KEYS },
+    });
     for (const statement of statements) {
       expect(JSON.stringify(statement.Principal)).toContain(`:iam::${MANGO}:root`);
       expect(statement.Condition?.ArnEquals).toEqual({
@@ -599,19 +603,20 @@ describe("trust of the ReadBroker, with every pack of the member chain", () => {
   );
   const trust = role!.Properties.AssumeRolePolicyDocument as { Statement: Statement[] };
 
-  it("names each caller once, in one statement for the three actions of a call", () => {
+  it("names each caller once, in one statement for AssumeRole and SetSourceIdentity", () => {
     expect(memberChainPacks.length).toBeGreaterThanOrEqual(6);
-    const callers = trust.Statement.filter((s) => !s.Sid?.startsWith("AccountHealth"));
+    const callers = trust.Statement.filter((s) => s.Condition?.ArnEquals && !s.Sid?.startsWith("AccountHealth"));
     expect(callers).toHaveLength(1);
-    expect(listed(callers[0]!.Action).sort()).toEqual(["sts:AssumeRole", "sts:SetSourceIdentity", "sts:TagSession"]);
-    expect(callers[0]!.Condition).toEqual(
-      expect.objectContaining({
-        Null: { "sts:SourceIdentity": "false" },
-        StringNotEqualsIgnoreCase: { "sts:SourceIdentity": "mango-health" },
-        "ForAllValues:StringEquals": { "aws:TagKeys": SESSION_TAG_KEYS },
-        StringEquals: { "aws:PrincipalOrgID": cfg.organizationId },
-      }),
-    );
+    expect(listed(callers[0]!.Action).sort()).toEqual(["sts:AssumeRole", "sts:SetSourceIdentity"]);
+    expect(callers[0]!.Condition).toEqual({
+      ArnEquals: expect.anything(),
+      Null: { "sts:SourceIdentity": "false" },
+      StringNotEqualsIgnoreCase: { "sts:SourceIdentity": "mango-health" },
+      StringEquals: { "aws:PrincipalOrgID": cfg.organizationId },
+    });
+    // TagSession, the only statement without the list, grants tags and nothing else.
+    const unlisted = trust.Statement.filter((s) => !s.Condition?.ArnEquals);
+    expect(unlisted.map((s) => s.Action)).toEqual(["sts:TagSession"]);
     expect(listed(callers[0]!.Condition!.ArnEquals!["aws:PrincipalArn"])).toHaveLength(memberChainPacks.length + 1);
   });
 
