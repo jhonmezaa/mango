@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import json
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import boto3
 import pytest
@@ -19,6 +20,7 @@ from botocore.exceptions import ClientError, EndpointConnectionError
 from botocore.stub import ANY, Stubber
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from pydantic import Field
 
 from mango_pack_runtime import credentials
 from mango_pack_runtime.config import PackConfig, PackConfigError, Statement
@@ -32,7 +34,13 @@ from mango_pack_runtime.guard import (
     session_policy,
 )
 from mango_pack_runtime.identity import Caller, IdentityError, IdentityVerifier
-from mango_pack_runtime.server import REFUSED_MESSAGE, bind, list_schemas, restrict_tools
+from mango_pack_runtime.server import (
+    REFUSED_MESSAGE,
+    bind,
+    list_schemas,
+    region_tools,
+    restrict_tools,
+)
 
 from .conftest import IdentityKey
 
@@ -176,10 +184,35 @@ def test_the_region_of_the_installation_passes(identity_key: IdentityKey) -> Non
     arguments = _arguments(identity_key, account_id=MEMBER, region="us-east-1")
     with _guard(identity_key, Assumed()).call(TOOL, arguments) as cleaned:
         assert cleaned == {"region": "us-east-1"}
-    # No Region: the upstream default, which is the Region the runtime runs in.
+    # A tool the entry point did not name as taking `region`: nothing is added.
     with _guard(identity_key, Assumed()).call(
         TOOL, _arguments(identity_key, account_id=MEMBER)
     ) as cleaned:
+        assert cleaned == {}
+
+
+@pytest.mark.parametrize("supplied", [{}, {"region": None}])
+def test_a_region_left_out_is_the_installations(
+    identity_key: IdentityKey, supplied: dict[str, Any]
+) -> None:
+    """SRE P4: an upstream default (CloudTrail's is the literal us-east-1) would reach a Region
+    the pack network has no route to; the guard sets the installation's instead."""
+    config = member_config(identity_key)
+    guard = CallGuard(
+        dataclasses.replace(config, region="eu-west-1"),
+        verifier=IdentityVerifier(identity_key.public_der, PACK),
+        member_assume=Assumed(),
+        hidden_arguments=HIDDEN,
+    )
+    guard.default_region_for({TOOL})
+    arguments = _arguments(identity_key, account_id=MEMBER, **supplied)
+    with guard.call(TOOL, arguments) as cleaned:
+        assert cleaned == {"region": "eu-west-1"}
+    # Only for the tools named: another tool gets no argument it does not take.
+    other = {
+        "_mango_ctx": {"identity": identity_key.assertion("alice", "get_metric_data", pack=PACK)}
+    }
+    with guard.call("get_metric_data", {**other, "account_id": MEMBER}) as cleaned:
         assert cleaned == {}
 
 
@@ -473,11 +506,14 @@ def _upstream() -> MCPServer:
     return mcp
 
 
-def _served(key: IdentityKey, assumed: Assumed) -> MCPServer:
-    mcp = _upstream()
+def _served(key: IdentityKey, assumed: Assumed, mcp: MCPServer | None = None) -> MCPServer:
+    """What ``Pack.serve`` does before it starts the transport."""
+    mcp = mcp or _upstream()
     config = member_config(key)
+    guard = _guard(key, assumed)
     restrict_tools(mcp, config.tools)
-    bind(mcp, _guard(key, assumed))
+    guard.default_region_for(region_tools(mcp))
+    bind(mcp, guard)
     list_schemas(mcp, config, HIDDEN)
     return mcp
 
@@ -538,6 +574,67 @@ def test_a_call_through_the_server_reaches_the_tool_without_mangos_arguments(
     for bad in ({"account_id": MANGO_ACCOUNT}, {}, {"account_id": MEMBER, "region": "x.y/z"}):
         with pytest.raises(ToolError, match=REFUSED_MESSAGE):
             asyncio.run(mcp.call_tool(TOOL, _arguments(identity_key, **bad)))
+
+
+def test_a_tool_whose_upstream_default_is_another_region_reads_the_installations(
+    identity_key: IdentityKey,
+) -> None:
+    """Like CloudTrail's ``lookup_events``: ``region`` defaults to a literal Region."""
+    mcp = MCPServer("upstream")
+
+    @mcp.tool()
+    def get_active_alarms(region: str = "ap-south-1") -> str:
+        """Defaults to a Region of its own."""
+        return region
+
+    @mcp.tool()
+    def get_metric_data(namespace: str) -> str:
+        """Takes no Region: none is added."""
+        return namespace
+
+    served = _served(identity_key, Assumed(), mcp)
+    result = asyncio.run(served.call_tool(TOOL, _arguments(identity_key, account_id=MEMBER)))
+    assert result.content[0].text == "us-east-1"
+    metric = {
+        "_mango_ctx": {"identity": identity_key.assertion("alice", "get_metric_data", pack=PACK)},
+        "account_id": MEMBER,
+        "namespace": "AWS/EC2",
+    }
+    assert asyncio.run(served.call_tool("get_metric_data", metric)).content[0].text == "AWS/EC2"
+
+
+def test_a_literal_region_default_is_not_listed(identity_key: IdentityKey) -> None:
+    """Listed, the model copies ``us-east-1`` and sends it; the guard fills the Region in."""
+    mcp = MCPServer("upstream")
+
+    @mcp.tool()
+    def get_active_alarms(
+        region: Annotated[
+            str, Field(description="AWS region to query. Defaults to us-east-1. Lowercase.")
+        ] = "us-east-1",
+    ) -> str:
+        """Like CloudTrail's lookup_events."""
+        return region
+
+    @mcp.tool()
+    def get_metric_data(
+        region: Annotated[
+            str | None, Field(description="AWS region. Defaults to us-east-1 if not set.")
+        ] = None,
+    ) -> str:
+        """Like CloudWatch's tools: a null default is listed as it was."""
+        return region or ""
+
+    tools = {t.name: t for t in asyncio.run(_served(identity_key, Assumed(), mcp).list_tools())}
+    region = tools[TOOL].input_schema["properties"]["region"]
+    assert "default" not in region
+    assert region["description"] == (
+        "AWS region to query. Lowercase. Leave it out to read the installation's Region."
+    )
+    assert region["pattern"] == REGION_PATTERN
+    untouched = tools["get_metric_data"].input_schema["properties"]["region"]
+    assert untouched["default"] is None
+    assert untouched["description"] == "AWS region. Defaults to us-east-1 if not set."
 
 
 def test_an_upstream_tool_with_its_own_account_id_stops_the_start(

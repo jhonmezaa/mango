@@ -19,7 +19,8 @@ What ``tools/list`` answers is rewritten to match what the guard does with a cal
 (``list_schemas``): arguments the entry point hides are not listed, a pack over account data
 lists open schemas (the Gateway validates after its interceptor added ``_mango_ctx``), and a
 pack of the member chain lists Mango's ``account_id`` as a required argument of every tool
-and ``region`` with a closed pattern.
+and ``region`` with a closed pattern; a tool that takes ``region`` gets the installation's Region
+when the model leaves it out.
 
 The guard wraps ``MCPServer.call_tool``, the public method the ``tools/call`` handler awaits:
 the caller is bound in the very task that runs the tool, so it does not depend on how the
@@ -33,6 +34,7 @@ import copy
 import importlib
 import logging
 import os
+import re
 import sys
 from collections.abc import Collection
 from dataclasses import dataclass
@@ -52,6 +54,7 @@ from mango_pack_runtime.guard import (
 from mango_pack_runtime.guard import logger as pack_logger
 from mango_pack_runtime.identity import IdentityError
 
+_REGION_RE = re.compile(REGION_PATTERN, re.ASCII)
 REFUSED_MESSAGE = "this call is not allowed: the caller could not be verified"
 REGION_MESSAGE = (
     "this pack only reads the Region {region}: leave 'region' out or set it to {region}"
@@ -67,6 +70,15 @@ def restrict_tools(mcp: Any, allowed: frozenset[str]) -> None:
         raise SystemExit(f"upstream no longer provides: {sorted(missing)}")
     for name in registered - allowed:
         mcp.remove_tool(name)
+
+
+def region_tools(mcp: Any) -> frozenset[str]:
+    """Tools of ``mcp`` that take a ``region`` argument."""
+    return frozenset(
+        tool.name
+        for tool in asyncio.run(mcp.list_tools())
+        if REGION_ARG in ((tool.input_schema or {}).get("properties") or {})
+    )
 
 
 def bind(mcp: Any, guard: CallGuard) -> None:
@@ -110,6 +122,35 @@ def _bounded_region(schema: Any) -> Any:
     return schema
 
 
+REGION_LEFT_OUT = "Leave it out to read the installation's Region."
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def _without_region_default(schema: Any) -> Any:
+    """``schema`` of a ``region`` argument without an upstream default that names a Region.
+
+    A literal default (CloudTrail's is ``us-east-1``) is not what the call reads: the guard
+    fills in the installation's Region. Listed, the model copies it and sends it explicitly,
+    and the call is refused. The default and every sentence of the description that names it
+    go; a ``null`` default is left as it is.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    default = schema.get("default")
+    if not isinstance(default, str) or not _REGION_RE.fullmatch(default):
+        return schema
+    listed = {key: value for key, value in schema.items() if key != "default"}
+    description = listed.get("description")
+    if isinstance(description, str):
+        kept = [
+            sentence
+            for sentence in _SENTENCE_END.split(description.strip())
+            if default not in sentence
+        ]
+        listed["description"] = " ".join([*kept, REGION_LEFT_OUT])
+    return listed
+
+
 def listed_schema(schema: dict[str, Any], config: PackConfig, hidden: Collection[str]) -> Any:
     """The input schema of one tool as the Gateway and the model see it."""
     listed = copy.deepcopy(schema)
@@ -127,7 +168,9 @@ def listed_schema(schema: dict[str, Any], config: PackConfig, hidden: Collection
         properties[ACCOUNT_ARG] = dict(ACCOUNT_SCHEMA)
         required = [ACCOUNT_ARG, *required]
         if REGION_ARG in properties:
-            properties[REGION_ARG] = _bounded_region(properties[REGION_ARG])
+            properties[REGION_ARG] = _bounded_region(
+                _without_region_default(properties[REGION_ARG])
+            )
     listed["properties"] = properties
     if required:
         listed["required"] = required
@@ -173,6 +216,9 @@ class Pack:
 
     def serve(self, mcp: Any) -> None:
         restrict_tools(mcp, self.config.tools)
+        if self.config.member_chain:
+            # Before the listing is rewritten: the tools' own schemas.
+            self.guard.default_region_for(region_tools(mcp))
         bind(mcp, self.guard)
         if self.config.needs_caller or self.hidden_arguments:
             list_schemas(mcp, self.config, self.hidden_arguments)
