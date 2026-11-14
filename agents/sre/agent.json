@@ -60,7 +60,6 @@
       "aws-application-signals.list_canaries",
       "aws-application-signals.list_change_events",
       "aws-application-signals.list_group_services",
-      "aws-application-signals.list_grouping_attribute_definitions",
       "aws-application-signals.list_monitored_services",
       "aws-application-signals.list_slis",
       "aws-application-signals.list_slos",
