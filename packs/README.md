@@ -325,7 +325,7 @@ Modelo de amenazas: `docs/security/threat-models/aws-ops-pack-threat-model.md`.
 
 ### Cuándo se construye y cuándo se firma
 
-El workflow `.github/workflows/packs.yml` construye los tres packs en cada ejecución y, en `main`, los firma. Cada firma espera la aprobación del dueño (entorno `pack-signing`), así que un `push` a `main` solo lo arranca por lo que puede cambiar un byte de un zip o de una declaración firmada (D36, 2026-10-09):
+El workflow `.github/workflows/packs.yml` construye todos los packs de `packs/` en cada ejecución (un test exige que su matriz sea exactamente la lista de carpetas) y, en `main`, los firma. Cada firma espera la aprobación del dueño (entorno `pack-signing`), así que un `push` a `main` solo lo arranca por lo que puede cambiar un byte de un zip o de una declaración firmada (D36, 2026-10-09):
 
 | Ruta | Qué pone en un pack |
 |---|---|

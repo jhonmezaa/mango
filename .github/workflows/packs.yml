@@ -71,7 +71,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pack: [aws-pricing, aws-billing, aws-cloudwatch]
+        pack:
+          - aws-pricing
+          - aws-billing
+          - aws-cloudwatch
+          - aws-cloudtrail
+          - aws-application-signals
+          - aws-elasticache
+          - aws-rds
+          - aws-ops
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,7 +115,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pack: [aws-pricing, aws-billing, aws-cloudwatch]
+        pack:
+          - aws-pricing
+          - aws-billing
+          - aws-cloudwatch
+          - aws-cloudtrail
+          - aws-application-signals
+          - aws-elasticache
+          - aws-rds
+          - aws-ops
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
