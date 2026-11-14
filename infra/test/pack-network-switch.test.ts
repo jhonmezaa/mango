@@ -2,6 +2,7 @@ import { App, Stack } from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { ReleasePack } from "../lib/config/pack-release.js";
+import { AGENTCORE_VPC_ZONE_IDS } from "../lib/config/schema.js";
 import {
   ALWAYS_ON_PACK_NETWORKS,
   importPackNetwork,
@@ -248,5 +249,51 @@ describe("what Core gets from a release's pack network (D58)", () => {
         (id) => `arn:aws:ssm:${REGION}:111122223333:parameter/Mango-${NS}-pack-network/${id}`,
       ),
     });
+  });
+});
+
+describe("endpoints in the zones where their service is offered", () => {
+  const template = synth([...ALWAYS_ON, ...SWITCHED]);
+  const endpointOf = (service: string) => {
+    const name = `com.amazonaws.${REGION}.${PACK_EGRESS_SERVICES[service]!.endpoint}`;
+    const found = Object.values(template.Resources).filter(
+      (r) => r.Type === "AWS::EC2::VPCEndpoint" && JSON.stringify(r.Properties.ServiceName).includes(name),
+    );
+    expect(found, service).toHaveLength(1);
+    return found[0]!;
+  };
+  const holds = (name: string): boolean => {
+    const [a, b] = (template.Conditions![name] as { "Fn::Equals": unknown[] })["Fn::Equals"];
+    return a === b;
+  };
+  /** The subnets CloudFormation gives the endpoint, by their index in the network. */
+  const subnetsOf = (service: string): number[] => {
+    const ids = endpointOf(service).Properties.SubnetIds as unknown[];
+    const subnets = Object.entries(template.Resources)
+      .filter(([, r]) => r.Type === "AWS::EC2::Subnet")
+      .map(([id]) => id);
+    return ids.flatMap((entry: any) => {
+      const value = "Fn::If" in entry ? (holds(entry["Fn::If"][0]) ? entry["Fn::If"][1] : entry["Fn::If"][2]) : entry;
+      return value.Ref === "AWS::NoValue" ? [] : [subnets.indexOf(value.Ref)];
+    });
+  };
+
+  it("leaves application-signals out of use1-az2, and every other endpoint in both zones", () => {
+    expect(subnetsOf("application-signals")).toEqual([0]);
+    for (const service of ["sts", "logs", "cloudwatch", "xray", "rds", "pi", "ec2"]) {
+      expect(subnetsOf(service), service).toEqual([0, 1]);
+    }
+  });
+
+  it("keeps at least one zone for every service, whatever two AgentCore zones are chosen", () => {
+    const zones = [...AGENTCORE_VPC_ZONE_IDS] as string[];
+    for (const [i, a] of zones.entries()) {
+      for (const b of zones.slice(i + 1)) {
+        for (const [service, { missingZoneIds = [] }] of Object.entries(PACK_EGRESS_SERVICES)) {
+          const offered = [a, b].filter((zone) => !missingZoneIds.includes(zone));
+          expect(offered.length, `${service} in ${a},${b}`).toBeGreaterThan(0);
+        }
+      }
+    }
   });
 });

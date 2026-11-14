@@ -22,7 +22,19 @@ const AGENTCORE_SERVICE = "bedrock-agentcore.amazonaws.com";
  * compares them). The endpoints only exist for the services the packs of the release declare,
  * and only in the Region of the installation: a pack reads no other Region.
  */
-export const PACK_EGRESS_SERVICES: Record<string, { endpoint: string; names: (region: string) => string[] }> = {
+export const PACK_EGRESS_SERVICES: Record<
+  string,
+  {
+    endpoint: string;
+    names: (region: string) => string[];
+    /**
+     * Zone ids of the pack network where the endpoint service is not offered. The endpoint
+     * skips the subnet of such a zone; a runtime there still reaches it, in the other zone,
+     * through the same private DNS name. Read with `ec2:DescribeVpcEndpointServices`.
+     */
+    missingZoneIds?: readonly string[];
+  }
+> = {
   sts: { endpoint: "sts", names: (region) => [`sts.${region}.amazonaws.com`] },
   pricing: { endpoint: "pricing.api", names: (region) => [`api.pricing.${region}.amazonaws.com`] },
   ce: { endpoint: "ce", names: (region) => [`ce.${region}.amazonaws.com`] },
@@ -46,6 +58,9 @@ export const PACK_EGRESS_SERVICES: Record<string, { endpoint: string; names: (re
   "application-signals": {
     endpoint: "application-signals",
     names: (region) => [`application-signals.${region}.amazonaws.com`],
+    // Offered in use1-az1, use1-az4 and use1-az6 (2026-11-14): not in use1-az2, a zone of
+    // AgentCore. Creating the endpoint with a subnet there fails and rolls the stack back.
+    missingZoneIds: ["use1-az2"],
   },
   xray: { endpoint: "xray", names: (region) => [`xray.${region}.amazonaws.com`] },
   synthetics: { endpoint: "synthetics", names: (region) => [`synthetics.${region}.amazonaws.com`] },
@@ -375,7 +390,24 @@ export class PackNetwork extends Construct implements PackNetworkRef {
             });
     }
     const endpointGroups: Record<string, ec2.SecurityGroup> = {};
-    for (const [service, { endpoint }] of services) {
+    // Per zone of the network, whether it is one of the given zone ids. The zone ids are a stack
+    // parameter, so this is a condition, made once per set of zones.
+    const zoneConditions = new Map<string, CfnCondition[]>();
+    const inZones = (zoneIds: readonly string[]): CfnCondition[] => {
+      const key = [...zoneIds].sort().join(",");
+      let found = zoneConditions.get(key);
+      if (found === undefined) {
+        found = network.availabilityZoneIds.map((zoneId, index) => {
+          const equals = zoneIds.map((missing) => Fn.conditionEquals(zoneId, missing));
+          return new CfnCondition(stack, `PackZone${index + 1}In${pascal(key.replace(/,/g, "-"))}`, {
+            expression: equals.length === 1 ? equals[0]! : Fn.conditionOr(...equals),
+          });
+        });
+        zoneConditions.set(key, found);
+      }
+      return found;
+    };
+    for (const [service, { endpoint, missingZoneIds }] of services) {
       const group = new ec2.SecurityGroup(this, `EndpointSg-${service}`, {
         vpc: this.vpc,
         description: `VPC endpoint of ${service}: HTTPS only from the packs that declare it`,
@@ -402,6 +434,14 @@ export class PackNetwork extends Construct implements PackNetworkRef {
           conditions: { StringEquals: { "aws:PrincipalOrgID": cfg.organizationId } },
         }),
       );
+      if (missingZoneIds !== undefined && missingZoneIds.length > 0) {
+        // Every pair of AgentCore zones has one where the service is offered (a test checks it).
+        const missing = inZones(missingZoneIds);
+        (vpcEndpoint.node.defaultChild as CfnResource).addPropertyOverride(
+          "SubnetIds",
+          this.subnets.map((subnet, index) => Fn.conditionIf(missing[index]!.logicalId, Aws.NO_VALUE, subnet.subnetId)),
+        );
+      }
       const condition = serviceConditions[service];
       if (condition) {
         for (const resource of [group.node.defaultChild, vpcEndpoint.node.defaultChild] as CfnResource[]) {
