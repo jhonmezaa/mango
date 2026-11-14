@@ -17,7 +17,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
  * Agents that ship with the release (D34). Their ids are slugs reserved for the release;
  * agents made in the app get random 16-character ids (D32).
  */
-export const RELEASE_AGENT_IDS = ["finops"] as const;
+export const RELEASE_AGENT_IDS = ["finops", "sre", "dba"] as const;
 
 /** When the agents of this list became data of the release; only a timestamp of the seed. */
 const SEEDED_AT = "2026-10-01T00:00:00+00:00";

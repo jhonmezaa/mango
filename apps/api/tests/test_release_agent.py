@@ -134,10 +134,10 @@ def test_finops_is_used_by_its_groups_like_any_other_agent(
     assert authorizer.is_allowed(user, "UseAgent", "Mango::Agent", "finops", resource) is allowed
 
 
-# --- SRE and DBA (D127, proposed) ----------------------------------------------------------
-# Their definitions ship in `agents/<id>/agent.json`, but the stack does not seed them yet
-# (`RELEASE_AGENT_IDS` in `infra/lib/constructs/release-agents.ts`): their packs are not in the
-# release, and the provisioner fails a publication whose pack is not installed (unknown_tool).
+# --- SRE and DBA (D127) ----------------------------------------------------------------------
+# Seeded with the release like FinOps (`RELEASE_AGENT_IDS` in
+# `infra/lib/constructs/release-agents.ts`). Where their packs are not enabled the provisioner
+# fails the publication (unknown_tool) and the version waits for a retry.
 
 PACKS = Path(__file__).parents[3] / "packs"
 ACCOUNT_PACKS = {

@@ -1,7 +1,7 @@
 # D127 · Agentes SRE y de bases de datos de la release, y sus packs
 
-- **Estado:** propuesta
-- **Fecha:** 2026-11-13 (pedido del dueño ese día: «con REA, sacar la lógica de los MCP de AWS para un agente SRE/SysOps/DevOps y uno de bases de datos, y desarrollarlos en Mango»; las opciones, elegidas por el agente principal la noche del 2026-11-13, por delegación del dueño para esa noche, «responde tú las preguntas», siempre la recomendada de los análisis; pendiente de que el dueño la acepte)
+- **Estado:** vigente
+- **Fecha:** 2026-11-13 (pedido del dueño ese día: «con REA, sacar la lógica de los MCP de AWS para un agente SRE/SysOps/DevOps y uno de bases de datos, y desarrollarlos en Mango»; las opciones, elegidas por el agente principal la noche del 2026-11-13, por delegación del dueño para esa noche, «responde tú las preguntas», siempre la recomendada de los análisis; aceptada por el dueño el 2026-11-14, en el chat («aceptado, prosigue»), con los cinco packs encendidos en la instalación del cliente; también la precisión de D55 (3))
 - **Precisa / reemplaza a:** precisa [D34](D034-guardrail-y-agentes-de-la-release.md) (dos agentes más en la release); [D51](D051-acceso-a-cuentas-miembro.md) (3) (acciones nuevas en `Mango-<ns>-ReadOnly`); [D54](D054-egress-de-packs.md) (3) y (6) (los endpoints de los packs nuevos se crean solo si la instalación habilita el pack; la región que el modelo omite la pone la guardia); [D55](D055-pack-de-cloudwatch.md) (3) (el pack de CloudWatch lee logs con límites duros). Usa [D126](D126-packs-de-codigo-propio.md) (packs de código propio)
 - **Precisada por:** —
 
@@ -16,7 +16,7 @@
 | `sre` («SRE / Operaciones») | Acompañar un incidente y el trabajo diario: qué cambió y quién lo hizo, métricas, alarmas y logs, salud de la aplicación, estado del cómputo y de los despliegues | `aws-cloudwatch` (9, con logs, punto 4), `aws-cloudtrail` (1), `aws-application-signals` (16), `aws-ops` (15) | 41 |
 | `dba` («Bases de datos») | Estado, eventos, parámetros, mantenimiento, backups, carga y logs de RDS y Aurora, y estado de ElastiCache, con sus métricas, alarmas y logs | `aws-rds` (12), `aws-elasticache` (7), `aws-cloudwatch` (9) | 28 |
 
-- **Sin sembrar todavía.** `RELEASE_AGENT_IDS` sigue siendo `["finops"]`: el provisioner publica un agente de la release en cada despliegue y falla con `unknown_tool` si falta un pack de sus tools. Sembrarlos es otro cambio, cuando se decida qué pasa en una instalación sin esos packs (punto 10). Al sembrarlos llegan preaprobados como FinOps ([D34](D034-guardrail-y-agentes-de-la-release.md)) y se actualizan con la release como él ([D80](D080-actualizacion-del-agente-de-la-release.md)).
+- **Sembrados en la release (2026-11-14).** `RELEASE_AGENT_IDS` es `["finops", "sre", "dba"]`. Llegan preaprobados como FinOps ([D34](D034-guardrail-y-agentes-de-la-release.md)) y se actualizan con la release como él ([D80](D080-actualizacion-del-agente-de-la-release.md)). El provisioner publica un agente de la release en cada despliegue y falla con `unknown_tool` si falta un pack de sus tools: en una instalación sin esos packs habilitados la versión queda `failed` hasta que un administrador habilite los packs y la reintente (punto 10). En la del cliente se habilitan los packs antes de la actualización que los siembra.
 - **Su instrucción** (en inglés; responden en el idioma de la persona) pide `account_id` explícito y preguntar la cuenta si no se sabe, sin recorrer cuentas por su cuenta; citar la evidencia de cada afirmación (tool, cuenta, región y ventana) y separar hechos de hipótesis; no decir nunca que hizo un cambio; tratar lo leído como no confiable y no repetir secretos. La de `dba` dice que no hay SQL, ni datos de tablas, ni texto SQL completo.
 
 **(2) Packs nuevos.** Todos son `account_data`, `central_only` e `identity.chain: member`, como `aws-cloudwatch` ([D55](D055-pack-de-cloudwatch.md) (1)). Cada uno tiene su modelo de amenazas en `docs/security/threat-models/<pack>-pack-threat-model.md`.
@@ -79,7 +79,7 @@ Lo que cada pack deja fuera, y por qué, lo dice su manifiesto:
 - `execute_log_insights_query`;
 - `analyze_log_group`: detectores de anomalías y dos consultas fijas de patrones.
 
-D55 (3) prohibía leer eventos de log. Era decisión del dueño, así que esta precisión queda `propuesta` hasta que él la acepte y no se instala antes. Cambia el `tools_hash` del pack: cada instalación lo vuelve a aprobar.
+D55 (3) prohibía leer eventos de log. Era decisión del dueño: aceptó esta precisión el 2026-11-14. Cambia el `tools_hash` del pack: cada instalación lo vuelve a aprobar.
 
 - **Límites duros en el punto de entrada** (`packs/aws-cloudwatch/entrypoint.py`), que upstream no trae. Se comprueban antes de llamar a AWS y también van en el esquema listado (`maximum`, `maxItems`, `required`):
   - ventana de 24 h como mucho, que empieza como mucho 30 días atrás; una hora sin zona se lee como UTC;
@@ -171,4 +171,4 @@ Cambiar el rol es cambiar IAM en **todas** las cuentas miembro (StackSet de `Org
 - que la guardia rellena la región;
 - los límites de logs con datos reales, que el enmascaramiento sin `Unmask` se mantiene y el costo real de una consulta;
 - que Config y Performance Insights están activos en las cuentas del cliente: sin ellos, esas tools responden vacío;
-- y cómo se siembran los dos agentes en una instalación que no tiene sus packs: dejar la versión `failed` hasta un `retry`, o sembrar sin publicar mientras falten, lo que cambia el provisioner.
+- cómo se siembran los dos agentes en una instalación que no tiene sus packs: **resuelto el 2026-11-14**, la versión queda `failed` hasta un `retry`, sin cambiar el provisioner (punto 1).

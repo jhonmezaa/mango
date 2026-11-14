@@ -65,30 +65,29 @@ const [shippedId, shipped] = customResource("agents-release-finops");
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
 describe("release agent definition (D34)", () => {
-  it("ships FinOps, and only agents with a release slug", () => {
-    expect([...RELEASE_AGENT_IDS]).toEqual(["finops"]);
+  it("ships FinOps, SRE and DBA, and only agents with a release slug", () => {
+    expect([...RELEASE_AGENT_IDS]).toEqual(["finops", "sre", "dba"]);
     for (const id of RELEASE_AGENT_IDS) expect(id).toMatch(/^[a-z][a-z0-9]{1,15}$/);
     // Routes of the API that an agent id must not shadow.
     for (const reserved of ["mine", "reviews", "org", "platform"]) expect(RELEASE_AGENT_IDS).not.toContain(reserved);
   });
 
-  it("knows every definition in agents/: SRE and DBA ship as files, not seeded yet (D127)", () => {
-    // Their packs are not in the release yet, and the provisioner fails a publication whose
-    // pack is not installed (unknown_tool). Seeding them is its own change.
-    const notSeeded = ["dba", "sre"];
+  it("seeds every definition in agents/: SRE and DBA are central, read-only agents (D127)", () => {
     const dirs = readdirSync(resolve(repo, "agents"), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(dirs).toEqual([...RELEASE_AGENT_IDS, ...notSeeded].sort());
-    for (const id of notSeeded) {
-      expect(RELEASE_AGENT_IDS).not.toContain(id);
-      expect(id).toMatch(/^[a-z][a-z0-9]{1,15}$/);
+    expect(dirs).toEqual([...RELEASE_AGENT_IDS].sort());
+    for (const id of ["sre", "dba"]) {
       const definition = JSON.parse(releaseAgentDefinition(id, "us.anthropic.claude-sonnet-4-6").canonical);
       expect(definition.approval_tools).toEqual([]);
       expect(definition.users).toEqual([]);
       expect(definition.groups).toEqual(["finops-central"]);
       for (const tool of definition.tools as string[]) expect(tool).toMatch(/^aws-[a-z-]+\.[A-Za-z0-9_-]+$/);
+      // Seeded, published and kept up to date like FinOps.
+      customResource(`agents-seed-${id}`);
+      customResource(`agents-release-${id}`);
+      customResource(`agents-publish-${id}`);
     }
   });
 
@@ -196,15 +195,21 @@ describe("seed of the release agents (TM-M16)", () => {
       // The provisioner writes its own partition (`PUBLISHED#`) and the next version of a
       // release agent (D80): provisioner.test.ts.
       .filter(({ s }) => !["WritePublishedPointer", "AddReleaseAgentVersion"].includes(s.Sid ?? ""));
-    // The seed and the definition of the release share the grant (one per resource).
-    expect(grants.length).toBeGreaterThanOrEqual(1);
+    // The seed and the definition of the release share the grant (one per resource), and each
+    // grant names the partition of one release agent only.
+    expect(grants.length).toBeGreaterThanOrEqual(RELEASE_AGENT_IDS.length);
+    const partitions = new Set<string>();
     for (const { roles, s } of grants) {
       expect(s.Resource).toEqual({ "Fn::GetAtt": [agentsId, "Arn"] });
-      expect(s.Condition).toEqual({ "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["AGENT#finops"] } });
+      const keys = s.Condition?.["ForAllValues:StringEquals"]?.["dynamodb:LeadingKeys"] as string[];
+      expect(Object.keys(s.Condition ?? {})).toEqual(["ForAllValues:StringEquals"]);
+      expect(keys).toHaveLength(1);
+      partitions.add(keys[0]!);
       // The CDK singleton provider, which only CloudFormation invokes.
       expect(roles).toHaveLength(1);
       expect(roles[0].Ref).toMatch(/^AWS679f53fac002430cb0da5b7982bd2287ServiceRole/);
     }
+    expect([...partitions].sort()).toEqual(RELEASE_AGENT_IDS.map((id) => `AGENT#${id}`).sort());
   });
 });
 
@@ -260,9 +265,9 @@ describe("publication of the release agents", () => {
       .filter((r) => r.Type === "AWS::IAM::Policy" && r.Properties.Roles.some((x: { Ref: string }) => /^AWS679f53fac/.test(x.Ref)))
       .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
       .filter((s) => JSON.stringify(s.Action).includes("states:"));
-    // One for the release agents, one for the Playground's test harness (D91) and one for the
-    // evals harness (D110), on the same provider role: all only start the agent provisioner.
-    expect(grants).toHaveLength(3);
+    // One per release agent, one for the Playground's test harness (D91) and one for the evals
+    // harness (D110), on the same provider role: all only start the agent provisioner.
+    expect(grants).toHaveLength(RELEASE_AGENT_IDS.length + 2);
     for (const grant of grants) {
       expect(grant.Action).toBe("states:StartExecution");
       expect(grant.Resource).toEqual({ Ref: machineId });
@@ -271,7 +276,10 @@ describe("publication of the release agents", () => {
 
   it("tells the provisioner which release approvals are genuine", () => {
     const env = resources[functionId]!.Properties.Environment.Variables as Record<string, string>;
-    expect(JSON.parse(env.RELEASE_AGENTS!)).toEqual({ finops: finops!.contentHash });
+    expect(JSON.parse(env.RELEASE_AGENTS!)).toEqual(
+      Object.fromEntries(releaseAgents(cfg).map((agent) => [agent.id, agent.contentHash])),
+    );
+    expect(JSON.parse(env.RELEASE_AGENTS!).finops).toBe(finops!.contentHash);
   });
 });
 

@@ -1,7 +1,7 @@
 # D126 · Packs de código propio de Mango
 
-- **Estado:** propuesta
-- **Fecha:** 2026-11-13 (propuesta por el agente principal la noche del 2026-11-13, por delegación del dueño para esa noche, «responde tú las preguntas»: preguntas P3 del análisis SRE y P1 del de bases de datos, opción recomendada; pendiente de que el dueño la acepte)
+- **Estado:** vigente
+- **Fecha:** 2026-11-13 (propuesta por el agente principal la noche del 2026-11-13, por delegación del dueño para esa noche, «responde tú las preguntas»: preguntas P3 del análisis SRE y P1 del de bases de datos, opción recomendada; aceptada por el dueño el 2026-11-14, en el chat («aceptado, prosigue»), con los cinco packs encendidos en la instalación del cliente)
 - **Precisa / reemplaza a:** precisa [D19](D019-catalogo-de-mcp.md) (2) (un MCP pack puede ser código de Mango, no solo un servidor de terceros fijado por versión), [D36](D036-artefacto-y-firma-de-packs.md) (el zip lleva el código del repositorio en lugar del paquete upstream; el artefacto y la firma no cambian) y [D37](D037-packs-de-datos-de-cuentas.md) (un pack propio de datos de cuentas usa el mismo punto de entrada común y el mismo modo `central_only`)
 - **Precisada por:** —
 
