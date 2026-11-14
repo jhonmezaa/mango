@@ -201,7 +201,7 @@ describe("reconciler function and schedule", () => {
     ]);
     // Ids and hashes of the agents the release ships: the same the provisioner gets (D42).
     const shipped = JSON.parse(fn.Properties.Environment.Variables.RELEASE_AGENTS as string) as Record<string, string>;
-    expect(Object.keys(shipped)).toEqual(["finops"]);
+    expect(Object.keys(shipped)).toEqual(["finops", "sre", "dba"]);
     expect(shipped.finops).toMatch(/^[0-9a-f]{64}$/);
     const provisioner = Object.values(resources).find(
       (r) => r.Type === "AWS::Lambda::Function" && r.Properties.FunctionName === `Mango-${ns}-Provisioner`,

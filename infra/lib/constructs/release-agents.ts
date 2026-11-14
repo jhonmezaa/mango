@@ -6,6 +6,7 @@ import { Stack } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as cr from "aws-cdk-lib/custom-resources";
 import { Construct, IDependable } from "constructs";
@@ -167,22 +168,46 @@ export class ReleaseAgents extends Construct {
     const at = { S: SEEDED_AT };
     const one = { N: "1" };
 
+    // One policy for every call below, on the role of CDK's singleton provider: they all run
+    // as that role, so one policy per resource grants nothing narrower, and with three agents
+    // their resources no longer fit Core's budget (D99). Put-if-absent in the partitions of the
+    // release agents, nothing else of the table, and only this state machine.
+    const partitions = props.agents.map((agent) => `AGENT#${agent.id}`);
+    const shared = cr.AwsCustomResourcePolicy.fromStatements([
+      new iam.PolicyStatement({
+        actions: ["dynamodb:PutItem"],
+        resources: [props.agentsTable.tableArn],
+        conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": partitions } },
+      }),
+      new iam.PolicyStatement({
+        actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
+        resources: [props.dataKey.keyArn],
+        // Only through DynamoDB, never direct use of the shared data key.
+        conditions: { StringEquals: { "kms:ViaService": `dynamodb.${stack.region}.amazonaws.com` } },
+      }),
+      new iam.PolicyStatement({
+        actions: ["states:StartExecution"],
+        resources: [props.stateMachine.stateMachineArn],
+      }),
+    ]);
+    // The first resource writes the policy (and makes the provider if no other did); the rest
+    // run as the provider's role, after the policy exists.
+    let grant: { policy?: cr.AwsCustomResourcePolicy; role?: iam.IRole } = { policy: shared };
+    let policy: IDependable | undefined;
+    const access = (resource: cr.AwsCustomResource) => {
+      if (policy !== undefined) {
+        resource.node.addDependency(policy);
+        return;
+      }
+      policy = resource.node.findChild("CustomResourcePolicy");
+      const provider = stack.node.findChild(
+        `AWS${cr.AwsCustomResource.PROVIDER_FUNCTION_UUID.replace(/-/g, "")}`,
+      ) as lambda.SingletonFunction;
+      grant = { role: provider.role! };
+    };
+
     for (const agent of props.agents) {
       const key = { S: `AGENT#${agent.id}` };
-      // Both writes below: put-if-absent in the partition of this agent, nothing else.
-      const seedPolicy = cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ["dynamodb:PutItem"],
-          resources: [props.agentsTable.tableArn],
-          conditions: { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": [`AGENT#${agent.id}`] } },
-        }),
-        new iam.PolicyStatement({
-          actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey"],
-          resources: [props.dataKey.keyArn],
-          // Only through DynamoDB, never direct use of the shared data key.
-          conditions: { StringEquals: { "kms:ViaService": `dynamodb.${stack.region}.amazonaws.com` } },
-        }),
-      ]);
       const absent = "attribute_not_exists(PK)";
       // Item layout: `packages/py/mango-core/src/mango_core/agents_table.py`.
       const putIfAbsent: Omit<cr.AwsSdkCall, "physicalResourceId"> = {
@@ -246,9 +271,10 @@ export class ReleaseAgents extends Construct {
       const seed = new cr.AwsCustomResource(this, `Seed-${agent.id}`, {
         onCreate: seedCall,
         onUpdate: seedCall,
-        policy: seedPolicy,
+        ...grant,
         installLatestAwsSdk: false,
       });
+      access(seed);
       seed.node.addDependency(props.agentsTable);
       this.seeds.push(seed);
 
@@ -276,9 +302,10 @@ export class ReleaseAgents extends Construct {
       const shipped = new cr.AwsCustomResource(this, `Release-${agent.id}`, {
         onCreate: releaseCall,
         onUpdate: releaseCall,
-        policy: seedPolicy,
+        ...grant,
         installLatestAwsSdk: false,
       });
+      access(shipped);
       shipped.node.addDependency(seed);
 
       // Publication: identifiers, the hash and the release only. It runs on the first
@@ -296,14 +323,10 @@ export class ReleaseAgents extends Construct {
       const publish = new cr.AwsCustomResource(this, `Publish-${agent.id}`, {
         onCreate: startCall,
         onUpdate: startCall,
-        policy: cr.AwsCustomResourcePolicy.fromStatements([
-          new iam.PolicyStatement({
-            actions: ["states:StartExecution"],
-            resources: [props.stateMachine.stateMachineArn],
-          }),
-        ]),
+        ...grant,
         installLatestAwsSdk: false,
       });
+      access(publish);
       publish.node.addDependency(seed, shipped, props.stateMachine, props.provisioner);
     }
   }

@@ -159,20 +159,20 @@ describe("Agents table (Marketplace v1, D18)", () => {
     // D48: it reads the state of a retired agent and holds its lock; no content, no state change.
     expect(sidsOf(deprovisionerRoleId)).toEqual(["HoldAgentLock", "ReadAgentStateWithoutContent"]);
     // The only other grant: the stack's own seeds of the release agents (put-if-absent): the
-    // first version and the definition each release ships (D80), one policy per resource.
+    // first version and the definition each release ships (D80), one policy for all of them.
     // D121: the turn worker reads the published agent, and writes nothing.
     const worker = others.filter((g) => g.roles.some((r) => r.startsWith("TurnWorkerTaskRole")));
     expect(worker.map((g) => g.statement.Sid)).toEqual(["ReadAgents"]);
     expect([worker[0]!.statement.Action].flat().sort()).toEqual(["dynamodb:BatchGetItem", "dynamodb:GetItem", "dynamodb:Query"]);
     const known = [provisionerRoleId, deprovisionerRoleId, reconcilerRoleId];
     const rest = others.filter((g) => !g.roles.some((r) => known.includes(r)) && !worker.includes(g));
-    expect(rest).toHaveLength(2);
+    expect(rest).toHaveLength(1);
     for (const grant of rest) {
       expect(grant.statement.Action).toBe("dynamodb:PutItem");
       expect(grant.roles).toHaveLength(1);
       expect(grant.roles[0]).toMatch(/^AWS679f53fac002430cb0da5b7982bd2287ServiceRole/);
     }
-    expect(others).toHaveLength(12);
+    expect(others).toHaveLength(11);
   });
 
   it("passes the table name to mango-api", () => {

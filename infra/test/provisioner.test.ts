@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { loadInstallation } from "../lib/config/schema.js";
 import { API_MEMORY_ACTIONS } from "../lib/constructs/agent-memory.js";
 import { connectorCatalog, PROVISIONER_WRITABLE_ATTRIBUTES, RELEASE_META_ATTRIBUTES, RELEASE_VERSION_ATTRIBUTES } from "../lib/constructs/provisioner.js";
+import { RELEASE_AGENT_IDS } from "../lib/constructs/release-agents.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import { fromCore } from "./nested.js";
 import { expectOnlyTheEvalsContentDeny } from "./evals-deny.js";
@@ -39,8 +40,14 @@ function logicalId(type: string, props: Record<string, unknown>): string {
 
 /** Identity-policy statements attached to a role (by logical id). */
 function statementsOf(roleId: string): Statement[] {
-  return Object.values(resources)
-    .filter((r) => r.Type === "AWS::IAM::Policy" && r.Properties.Roles.some((x: { Ref: string }) => x.Ref === roleId))
+  return Object.entries(resources)
+    // With the overflow policies CDK adds when a role's inline policy grows too large.
+    .filter(
+      ([id, r]) =>
+        (r.Type === "AWS::IAM::Policy" || (r.Type === "AWS::IAM::ManagedPolicy" && id.includes("OverflowPolicy"))) &&
+        (r.Properties.Roles ?? []).some((x: { Ref: string }) => x.Ref === roleId),
+    )
+    .map(([, r]) => r)
     .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[]);
 }
 const actions = (s: Statement) => (Array.isArray(s.Action) ? s.Action : [s.Action]);
@@ -318,7 +325,7 @@ describe("provisioner role: wildcards and the rest", () => {
   });
 
   it("adds versions only to the agents of the release, with the seed's attributes (D80)", () => {
-    const only = { "dynamodb:LeadingKeys": ["AGENT#finops"] };
+    const only = { "dynamodb:LeadingKeys": RELEASE_AGENT_IDS.map((id) => `AGENT#${id}`).sort() };
     const query = bySid(provisioner, "ReadReleaseAgentAuthors");
     expect(actions(query)).toEqual(["dynamodb:Query"]);
     expect(query.Resource).toEqual({ "Fn::GetAtt": [agentsId, "Arn"] });

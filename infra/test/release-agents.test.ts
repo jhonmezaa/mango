@@ -195,16 +195,15 @@ describe("seed of the release agents (TM-M16)", () => {
       // The provisioner writes its own partition (`PUBLISHED#`) and the next version of a
       // release agent (D80): provisioner.test.ts.
       .filter(({ s }) => !["WritePublishedPointer", "AddReleaseAgentVersion"].includes(s.Sid ?? ""));
-    // The seed and the definition of the release share the grant (one per resource), and each
-    // grant names the partition of one release agent only.
-    expect(grants.length).toBeGreaterThanOrEqual(RELEASE_AGENT_IDS.length);
+    // One grant for every seed and definition of the release (they all run as the provider's
+    // role), naming the partitions of the release agents and nothing else.
+    expect(grants).toHaveLength(1);
     const partitions = new Set<string>();
     for (const { roles, s } of grants) {
       expect(s.Resource).toEqual({ "Fn::GetAtt": [agentsId, "Arn"] });
       const keys = s.Condition?.["ForAllValues:StringEquals"]?.["dynamodb:LeadingKeys"] as string[];
       expect(Object.keys(s.Condition ?? {})).toEqual(["ForAllValues:StringEquals"]);
-      expect(keys).toHaveLength(1);
-      partitions.add(keys[0]!);
+      for (const key of keys) partitions.add(key);
       // The CDK singleton provider, which only CloudFormation invokes.
       expect(roles).toHaveLength(1);
       expect(roles[0].Ref).toMatch(/^AWS679f53fac002430cb0da5b7982bd2287ServiceRole/);
@@ -265,9 +264,10 @@ describe("publication of the release agents", () => {
       .filter((r) => r.Type === "AWS::IAM::Policy" && r.Properties.Roles.some((x: { Ref: string }) => /^AWS679f53fac/.test(x.Ref)))
       .flatMap((r) => r.Properties.PolicyDocument.Statement as Statement[])
       .filter((s) => JSON.stringify(s.Action).includes("states:"));
-    // One per release agent, one for the Playground's test harness (D91) and one for the evals
-    // harness (D110), on the same provider role: all only start the agent provisioner.
-    expect(grants).toHaveLength(RELEASE_AGENT_IDS.length + 2);
+    // One for the release agents (their shared policy), one for the Playground's test harness
+    // (D91) and one for the evals harness (D110), on the same provider role: all only start
+    // the agent provisioner.
+    expect(grants).toHaveLength(3);
     for (const grant of grants) {
       expect(grant.Action).toBe("states:StartExecution");
       expect(grant.Resource).toEqual({ Ref: machineId });
