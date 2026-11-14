@@ -63,17 +63,22 @@ export class MemberAccess extends Construct {
       }),
       maxSessionDuration: Duration.hours(1),
     });
-    broker.assumeRolePolicy?.addStatements(
-      new iam.PolicyStatement({
-        actions: ["sts:SetSourceIdentity"],
-        principals: [principal],
-        conditions: { ...fromCallers, StringLike: { "sts:SourceIdentity": "*" }, ...NOT_THE_SYSTEM_IDENTITY },
-      }),
-      new iam.PolicyStatement({
-        actions: ["sts:TagSession"],
-        principals: [principal],
-        conditions: { ...fromCallers, "ForAllValues:StringEquals": { "aws:TagKeys": SESSION_TAG_KEYS } },
-      }),
+    // The same statement also grants SetSourceIdentity and TagSession, so that the list of
+    // callers is written once: IAM caps a trust policy at 2,048 characters (ACLSizePerRole),
+    // and three copies of the list do not fit with the six packs of the member chain (seen in
+    // an installation on 2026-11-14). Every action must meet every condition, the same as or
+    // stricter than one statement each: a SourceIdentity that is not the system's, and only
+    // the session tag keys Mango passes. CDK has no principal for SetSourceIdentity, so the
+    // actions are written on the statement `assumedBy` made, the first of the trust.
+    const cfnBroker = broker.node.defaultChild as iam.CfnRole;
+    cfnBroker.addPropertyOverride("AssumeRolePolicyDocument.Statement.0.Action", [
+      "sts:AssumeRole",
+      "sts:SetSourceIdentity",
+      "sts:TagSession",
+    ]);
+    cfnBroker.addPropertyOverride(
+      "AssumeRolePolicyDocument.Statement.0.Condition.ForAllValues:StringEquals",
+      { "aws:TagKeys": SESSION_TAG_KEYS },
     );
 
     // The daily account health enters each member account through this broker, only as

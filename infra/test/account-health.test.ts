@@ -72,7 +72,10 @@ describe("daily account health (D84): its own role, as the system identity only"
   it.each(["ReadBroker", "BillingBroker"])("no other caller of the %s may name the system identity", (broker) => {
     const others = trustOf(broker).filter((s) => !callersOf(s).includes(HEALTH_ROLE));
     const identity = others.filter((s) => listed(s.Action).some((a) => a !== "sts:TagSession"));
-    expect(identity.map((s) => listed(s.Action)).flat().sort()).toEqual(["sts:AssumeRole", "sts:SetSourceIdentity"]);
+    // The ReadBroker grants TagSession on the same statement (its trust must stay under 2,048
+    // characters); every statement that grants an identity action is checked below.
+    const granted = identity.map((s) => listed(s.Action)).flat();
+    expect(granted.filter((a) => a !== "sts:TagSession").sort()).toEqual(["sts:AssumeRole", "sts:SetSourceIdentity"]);
     for (const s of identity) {
       expect(s.Condition!.StringNotEqualsIgnoreCase).toEqual({ "sts:SourceIdentity": SYSTEM_SOURCE_IDENTITY });
       expect(callersOf(s)).not.toContain("AccountHealth");

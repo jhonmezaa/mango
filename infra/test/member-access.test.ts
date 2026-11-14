@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { App } from "aws-cdk-lib";
+import { readdirSync } from "node:fs";
+import { App, Stack } from "aws-cdk-lib";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import { Template } from "aws-cdk-lib/assertions";
 import { describe, expect, it } from "vitest";
 import { Installation, installationSchema, loadInstallation } from "../lib/config/schema.js";
 import { SESSION_TAG_KEYS } from "../lib/names.js";
+import { MemberAccess } from "../lib/constructs/member-access.js";
 import { CoreStack } from "../lib/stacks/core-stack.js";
 import {
   MEMBER_READ_ONLY_DATA_ACTIONS,
@@ -566,5 +569,62 @@ describe("ReadBroker (Core)", () => {
     // The accounts it checks are the ones the StackSet reaches (same configuration).
     expect(variables.ORG_ACCESS_TARGETS).toBe(cfg.orgAccess!.targets.join(","));
     expect(variables.ORG_ACCESS_EXCLUDED_ACCOUNT_IDS).toBe(cfg.orgAccess!.excludedAccountIds.join(","));
+  });
+});
+
+describe("trust of the ReadBroker, with every pack of the member chain", () => {
+  // The packs of the repository that read member accounts (`identity.chain: member`).
+  const packsDir = resolve(import.meta.dirname, "../../packs");
+  const memberChainPacks = readdirSync(packsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((id) => {
+      try {
+        return /^\s+chain:\s*member\s*$/m.test(readFileSync(resolve(packsDir, id, "manifest.yaml"), "utf8"));
+      } catch {
+        return false;
+      }
+    })
+    .sort();
+  const stack = new Stack(new App(), "Broker", { env: { account: MANGO, region: cfg.region } });
+  const probe = new lambda.Function(stack, "Probe", {
+    functionName: PROBE_ROLE,
+    runtime: lambda.Runtime.PYTHON_3_13,
+    handler: "index.handler",
+    code: lambda.Code.fromInline("def handler(event, context):\n    return None\n"),
+  });
+  new MemberAccess(stack, "MemberAccess", { installation: cfg, adminProbe: probe, memberChainPacks });
+  const [role] = Object.values(
+    Template.fromStack(stack).findResources("AWS::IAM::Role", { Properties: { RoleName: `Mango-${ns}-ReadBroker` } }),
+  );
+  const trust = role!.Properties.AssumeRolePolicyDocument as { Statement: Statement[] };
+
+  it("names each caller once, in one statement for the three actions of a call", () => {
+    expect(memberChainPacks.length).toBeGreaterThanOrEqual(6);
+    const callers = trust.Statement.filter((s) => !s.Sid?.startsWith("AccountHealth"));
+    expect(callers).toHaveLength(1);
+    expect(listed(callers[0]!.Action).sort()).toEqual(["sts:AssumeRole", "sts:SetSourceIdentity", "sts:TagSession"]);
+    expect(callers[0]!.Condition).toEqual(
+      expect.objectContaining({
+        Null: { "sts:SourceIdentity": "false" },
+        StringNotEqualsIgnoreCase: { "sts:SourceIdentity": "mango-health" },
+        "ForAllValues:StringEquals": { "aws:TagKeys": SESSION_TAG_KEYS },
+        StringEquals: { "aws:PrincipalOrgID": cfg.organizationId },
+      }),
+    );
+    expect(listed(callers[0]!.Condition!.ArnEquals!["aws:PrincipalArn"])).toHaveLength(memberChainPacks.length + 1);
+  });
+
+  it("stays under the 2,048 characters IAM allows in a trust policy (ACLSizePerRole)", () => {
+    // Resolved, without whitespace, as IAM counts it; with a namespace of 12 characters (the
+    // longest the parameter admits) in every name that carries it.
+    // The two tokens left, as CloudFormation resolves them: the account root and the probe's
+    // role, whose generated name is at most 64 characters.
+    const text = JSON.stringify(Stack.of(stack).resolve(trust))
+      .replace(/\{"Fn::Join":\["",\["arn:",\{"Ref":"AWS::Partition"\},":iam::(\d{12}):root"\]\]\}/g, '"arn:aws:iam::$1:root"')
+      .replace(/\{"Fn::GetAtt":\["[A-Za-z0-9]+","Arn"\]\}/g, `"arn:aws:iam::${MANGO}:role/${"p".repeat(64)}"`);
+    expect(text).not.toContain("Fn::");
+    const longestNamespace = text.length + (12 - ns.length) * text.split(`Mango-${ns}-`).length;
+    expect(longestNamespace).toBeLessThan(2048);
   });
 });
