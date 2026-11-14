@@ -21,14 +21,20 @@ item keeps its own license.
    (https://github.com/awslabs/mcp) together with its Python dependencies, at
    the versions and hashes pinned in the pack's requirements.lock:
 
-     packs/aws-pricing      awslabs.aws-pricing-mcp-server
-     packs/aws-billing      awslabs.billing-cost-management-mcp-server
-     packs/aws-cloudwatch   awslabs.cloudwatch-mcp-server
+     packs/aws-pricing               awslabs.aws-pricing-mcp-server
+     packs/aws-billing               awslabs.billing-cost-management-mcp-server
+     packs/aws-cloudwatch            awslabs.cloudwatch-mcp-server
+     packs/aws-cloudtrail            awslabs.cloudtrail-mcp-server
+     packs/aws-application-signals   awslabs.cloudwatch-applicationsignals-mcp-server
+     packs/aws-elasticache           awslabs.elasticache-mcp-server
 
    The AWS Labs MCP servers are Copyright Amazon.com, Inc. or its affiliates and
    licensed under the Apache License 2.0. Their dependencies keep their own
    licenses. Each archive keeps the metadata directory (*.dist-info) of every
    distribution it bundles, with the license files that distribution ships.
+
+   The archives of Mango's own packs (packs/aws-ops, packs/aws-rds) bundle no
+   AWS Labs server: only their Python dependencies, under their own licenses.
 
 3. Development and runtime dependencies
 

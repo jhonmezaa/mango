@@ -177,6 +177,18 @@ def test_only_the_signing_jobs_can_get_credentials() -> None:
             assert not ANY_SECRET.search(json.dumps(job))
 
 
+def test_every_pack_of_the_matrix_is_built_and_signed_from_its_folder() -> None:
+    """The same packs in both matrices, each one a pack of this repository. Adding a pack to
+    the matrix comes with (or after) its folder: a name without one would fail the build."""
+    packs = next(path for path in WORKFLOWS if path.name == "packs.yml")
+    jobs = _jobs(packs)
+    built = jobs["build"]["strategy"]["matrix"]["pack"]
+    assert built == jobs["sign"]["strategy"]["matrix"]["pack"]
+    assert len(set(built)) == len(built)
+    for pack in built:
+        assert (REPO / "packs" / pack / "manifest.yaml").is_file(), pack
+
+
 def test_a_remote_profile_is_signed_only_as_it_was_checked() -> None:
     packs = next(path for path in WORKFLOWS if path.name == "packs.yml")
     jobs = _jobs(packs)
