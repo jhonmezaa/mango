@@ -7,7 +7,7 @@
 
 ## Decisión
 
-**(1) Qué.** Un MCP pack puede ser **código propio de Mango**: un servidor MCP escrito en el repositorio, dentro de `packs/<id>/`, en lugar de un paquete upstream de PyPI. Se usa solo cuando ningún servidor upstream cubre una necesidad de lectura, o el que existe no se puede acotar a la lista cerrada de un manifiesto. Los primeros son `aws-ops` (EC2, Auto Scaling, ELB, ECS, CloudFormation y Config) y `aws-rds` (plano de control de RDS y Aurora, Performance Insights y logs de la base), de [D127](D127-agentes-sre-y-de-bases-de-datos.md).
+**(1) Qué.** Un MCP pack puede ser **código propio de Mango**: un servidor MCP escrito en el repositorio, dentro de `packs/<id>/`, en lugar de un paquete upstream de PyPI. Se usa solo cuando ningún servidor upstream cubre una necesidad de lectura, o el que existe no se puede acotar a la lista cerrada de un manifiesto. Los primeros son `aws-ops` `0.1.0-1` (15 tools de EC2, Auto Scaling, ELB, ECS, CloudFormation y Config) y `aws-rds` `0.1.0-1` (12 tools del plano de control de RDS y Aurora, Performance Insights y logs de la base), de [D127](D127-agentes-sre-y-de-bases-de-datos.md).
 
 - Ningún servidor de `awslabs/mcp` da el plano de control de RDS ni el estado de EC2, Auto Scaling y ELB.
 - `ecs-mcp-server` mezcla lectura y escritura en una misma tool según un argumento, con la escritura apagada solo por una variable de entorno, y monta un proxy a un host externo.
@@ -15,13 +15,17 @@
   - `aws-api-mcp-server` (`call_aws`): una sola tool genérica cuyo argumento es una línea de CLI libre. Además descarga de internet su lista de operaciones de solo lectura. No cabe en «acciones exactas» del manifiesto ni en R6.
   - Envolver `ecs-mcp-server` con una lista de operaciones permitidas en el punto de entrada: frágil, y deja el proxy externo montado.
 
-**(2) Formato.** Lo fija el agente de plataforma de packs (`packs/README.md`, «Packs de código propio», y `PackManifest` en `packages/py/mango-packs`). En resumen:
+**(2) Formato.** Lo detallan `packs/README.md` («Packs de código propio») y `PackManifest` en `packages/py/mango-packs`:
 
-- `source` tiene una variante de código propio, sin wheel upstream. El código vive en `packs/<id>/` y viaja dentro del zip.
-- Las dependencias (`mcp`, `boto3` y lo que haga falta) se fijan igual que las de un upstream: `requirements.in`, un `requirements.lock` con hashes y las mismas reglas de cuarentena (corte `exclude_newer`, 7 días).
-- La versión es `<semver>-<revisión de Mango>`.
-- El servidor usa el **SDK oficial de MCP** y `mango_pack_runtime`: el punto de entrada común, la cadena `member` (D55 (1)), la guardia de `account_id` y de región y los argumentos ocultos. Es el mismo que usan los packs upstream.
-- `check`, `check-lock`, la construcción, el snapshot sin red y la declaración firmada aceptan la variante; ninguno se salta para ella.
+- `source` tiene dos formas. La upstream (`PackSource`) sigue igual, sin `kind`, así que los manifiestos ya firmados conservan sus bytes. La propia (`MangoSource`) es `kind: mango`, con `version` (la del código), `exclude_newer` y `quarantine_exception`, sin paquete ni wheel.
+- Solo va con `identity_mode: central_only` e `identity.chain: member`. Otro modo pide su propia decisión.
+- La versión del pack es `<versión del código>-<revisión de Mango>`, como la de un upstream.
+- El código vive en `packs/<id>/<id con _>/` (`aws-ops` → `aws_ops`), con `__init__.py`, y solo admite `.py` y `py.typed`: un enlace simbólico u otro archivo paran el build. Viaja dentro del zip, junto al punto de entrada, `mango_pack_runtime` y `mango_aws`; el build para si su nombre choca con una dependencia o con un paquete común.
+- Las dependencias se fijan igual que las de un upstream, con las mismas reglas de cuarentena (corte `exclude_newer`, 7 días): `requirements.in` solo con líneas `nombre==versión` exactas, que nombran `mcp`, `boto3` y `cryptography`; un `requirements.lock` con hashes que fija cada una a esa versión; y un `constraints.txt` que no puede acotar lo que `requirements.in` fija.
+- El servidor usa el **SDK oficial de MCP** (`MCPServer`), nunca `fastmcp` (un `fastmcp` en el lock es un error), y `mango_pack_runtime`: el punto de entrada común, la cadena `member` ([D55](D055-pack-de-cloudwatch.md) (1)), la guardia de `account_id` y de región y los argumentos ocultos. Es el mismo que usan los packs upstream.
+- `check` comprueba todo lo anterior. `check-lock`, `pip-audit`, el snapshot sin red y la declaración firmada no cambian y ninguno se salta para un pack propio. La firma cubre el hash del zip, que lleva el código.
+- El catálogo muestra «Mango» como proveedor (`PackManifest.provider`).
+- El riesgo del pipeline lo recoge TM-P15 en `docs/security/threat-models/mcp-pack-pipeline-threat-model.md`: la revisión del código propio es la del PR.
 
 **(3) Lo que no cambia.**
 
@@ -33,11 +37,13 @@
 
 - Solo lectura en v1: ninguna tool `write` ni `destructive`.
 - Una lista cerrada de operaciones de boto3 por tool, cada una con su acción en el manifiesto.
-- El servidor quita de la respuesta lo que no se debe leer. `aws-rds` no devuelve `MasterUserSecret`. `aws-ops` no llama a `ecs:DescribeTaskDefinition`, porque trae variables de entorno.
+- El servidor quita de la respuesta lo que no se debe leer. `aws-rds` no devuelve `MasterUserSecret`. `aws-ops` no llama a `ecs:DescribeTaskDefinition`, porque trae variables de entorno, y quita `overrides` de las tareas.
 - Topes propios de filas, bytes y ventana de tiempo.
 - No lanza procesos, no escribe archivos y no sale a la red fuera de su `egress`.
 - No registra contenido en logs ([D16](D016-observabilidad-de-agentes.md)).
-- Lo vigilan ruff, `mypy --strict` y pytest en el CI, como al resto del código Python del repositorio.
+- Llama a boto3 en la tarea de la petición o con `anyio.to_thread`, nunca con hilos propios, para que firme con la sesión de quien llama.
+- Ninguna tool recibe `account_id` (es de Mango), perfil, credenciales ni endpoint.
+- Lo vigilan ruff, `mypy --strict` y pytest en el CI, como al resto del código Python del repositorio; sus tests (`packs/<id>/tests/`, sin AWS real) no entran en el zip.
 
 **(5) Riesgos.**
 
@@ -47,7 +53,7 @@
 
 **(6) Falta ver en una instalación.** Nada de esto se instaló. Falta ver que un pack propio:
 
-- se construye y se firma en el workflow `packs` desde `main`;
+- se construye y se firma en el workflow `packs` desde `main` (hoy solo se construyó en local: la matriz de `packs.yml` aún no tiene los packs nuevos);
 - se habilita con el provisioner, que crea el rol, el Runtime en la red de packs y el target;
 - responde `tools/list` igual que su snapshot;
 - y lee una cuenta miembro con la cadena `member`, con `SourceIdentity` de la persona en el CloudTrail de esa cuenta.
