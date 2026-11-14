@@ -162,10 +162,14 @@ Cambiar el rol es cambiar IAM en **todas** las cuentas miembro (StackSet de `Org
   - Si en una instalación no autoriza por ARN, las tools de logs no funcionan.
   - En ese caso no se pone `*`: hacerlo sería una excepción nueva, que decide el dueño.
 
-**(10) Falta ver en una instalación.** Nada se instaló. Falta ver:
+**(10) Instalación del cliente (2026-11-14) y lo que falta ver.** Visto al instalar:
 
-- que los 13 endpoints existen en la región de la instalación, y que `application-signals` y `config` admiten política de endpoint (la documentación no lo dice; si no la admiten, el `UpdateStack` que enciende el pack falla y se revierte, y quitar la política sería una excepción de seguridad);
-- **Visto el 2026-11-14 al habilitar `aws-rds` `0.1.0-1`:** el Gateway descartó `tail_db_log_file`, cuyo esquema tenía un `pattern` con repeticiones anidadas, y la política Cedar del pack falló con «unrecognized action». La `0.1.0-2` usa un patrón plano y el resto lo comprueba la tool;
+- los 13 endpoints existen en us-east-1 y todos admiten política de endpoint; `application-signals` no está en `use1-az2`, una zona de AgentCore, y su endpoint va solo en la subnet de la otra zona (D54, `missingZoneIds`);
+- con seis packs de la cadena `member`, la confianza del `ReadBroker` pasaba de los 2.048 caracteres de IAM: `AssumeRole` y `SetSourceIdentity` comparten una declaración con la lista de llamantes, y `TagSession` va aparte sin la lista, porque STS la autoriza sin `sts:SourceIdentity` (excepción en `AGENTS.md`, elegida por el dueño);
+- al habilitar `aws-rds` `0.1.0-1`, el Gateway descartó `tail_db_log_file`, cuyo esquema tenía un `pattern` con repeticiones anidadas, y la política Cedar del pack falló con «unrecognized action»: la `0.1.0-2` usa un patrón plano y el resto lo comprueba la tool.
+
+Falta ver:
+
 - que cada acción acotada por ARN autoriza la llamada real, sobre todo `logs:GetQueryResults` sobre `log-group` y las de Performance Insights sobre `metrics/rds/*`;
 - que cada pack lee una cuenta miembro por la cadena `member`, con la persona en el CloudTrail de esa cuenta;
 - que la guardia rellena la región;
