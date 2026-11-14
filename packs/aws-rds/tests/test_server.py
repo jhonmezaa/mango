@@ -383,7 +383,7 @@ def test_top_sql_is_tokenized_and_split_by_wait_event_type(aws: Clients) -> None
                     "Dimensions": {
                         "db.sql_tokenized.id": "ABC",
                         "db.sql_tokenized.statement": "SELECT * FROM t WHERE id = ?" + " " * 3000,
-                        "db.sql.statement": "SELECT * FROM t WHERE id = 42",
+                        "db.sql.statement": "SELECT * FROM t WHERE secret = 'planted-sql-literal'",
                     },
                     "Total": 1.5,
                     "Partitions": [1.0, 0.5],
@@ -411,7 +411,8 @@ def test_top_sql_is_tokenized_and_split_by_wait_event_type(aws: Clients) -> None
     )
     answer = server.get_top_load_contributors("orders-db-1", region=REGION)
     [top] = answer["contributors"]
-    assert "42" not in repr(answer)  # a db.sql dimension never passes, even if AWS sent one
+    # A db.sql dimension never passes, even if AWS sent one.
+    assert "planted-sql-literal" not in repr(answer)
     assert top["dimensions"]["db.sql_tokenized.id"] == "ABC"
     assert len(top["dimensions"]["db.sql_tokenized.statement"]) <= server.PI_STATEMENT + 40
     assert top["load_by_wait_event_type"] == {"CPU": 1.0, "IO": 0.5}
