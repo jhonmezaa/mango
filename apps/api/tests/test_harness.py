@@ -5,7 +5,7 @@ import logging
 import socket
 import threading
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -1686,3 +1686,29 @@ def test_a_lost_answer_is_never_asked_again() -> None:
     with pytest.raises(ReadTimeoutError):
         list(harness.run(flaky, {}, harness.InvocationResult(), sleep=lambda _s: None))  # type: ignore[arg-type]
     assert flaky.calls == 1
+
+
+def test_the_last_message_tells_the_time_of_the_turn() -> None:
+    """Without the hour an agent asked Logs Insights for a window still to come (2026-11-16).
+    The system prompt keeps only the date, the same all day; the time goes after the person's
+    text in what is sent, never in the stored history."""
+    history = [harness.ChatTurn("user", "antes"), harness.ChatTurn("assistant", "ok")]
+    history.append(harness.ChatTurn("user", "hola"))
+    request = harness.build_request(
+        _invocation(),
+        session_id="s" * 33,
+        actor_id="user-1",
+        access_token="token",
+        invocation_signature="sig",
+        history=history,
+        today="2026-11-16",
+        now=datetime(2026, 11, 16, 1, 20, 59, tzinfo=UTC),
+    )
+    *earlier, last = request["messages"]
+    assert last["content"] == [
+        {"text": "hola"},
+        {"text": "Current time (UTC): 2026-11-16T01:20Z."},
+    ]
+    assert all(len(message["content"]) == 1 for message in earlier)
+    assert "01:20" not in request["systemPrompt"][0]["text"]
+    assert [turn.text for turn in history] == ["antes", "ok", "hola"]

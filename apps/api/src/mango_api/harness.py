@@ -470,6 +470,7 @@ def build_request(
     invocation_signature: str,
     history: list[ChatTurn],
     today: str | None = None,
+    now: datetime | None = None,
     inline_tools: tuple[dict[str, Any], ...] = (),
     test_skills: tuple[dict[str, Any], ...] = (),
     recalled: str = "",
@@ -486,7 +487,12 @@ def build_request(
     ``test_skills``: only for the Playground's test harness, which has no skills of its own
     (D91 (12)): the ``s3`` sources of the tested version's approved skills, built by mango-api
     from the stored version. Invoke-time skills are added to the harness's, so an agent's own
-    harness never gets them (D92 (4))."""
+    harness never gets them (D92 (4)).
+
+    ``now``: the time of the turn. It goes after the person's text in the last message, like
+    ``recalled`` only in what is sent: the system prompt keeps just the date, which does not
+    change within a day. Without the hour an agent asked Logs Insights for a window that had
+    not happened yet (seen on 2026-11-16)."""
     date_line = f"Current date (UTC): {today or datetime.now(UTC).date().isoformat()}."
     charts = CHARTS_LINE
     if textdoc_names(agent.allowed_tools):
@@ -501,6 +507,10 @@ def build_request(
     ]
     if recalled and messages and messages[-1]["role"] == "user":
         messages[-1] = {**messages[-1], "content": [{"text": recalled}, *messages[-1]["content"]]}
+    if messages and messages[-1]["role"] == "user":
+        at = (now or datetime.now(UTC)).astimezone(UTC)
+        clock = {"text": f"Current time (UTC): {at:%Y-%m-%dT%H:%M}Z."}
+        messages[-1] = {**messages[-1], "content": [*messages[-1]["content"], clock]}
     limits = agent.limits
     # Server-defined model configuration with the base guardrail (never client-supplied).
     model: dict[str, Any] = {"modelId": agent.model}

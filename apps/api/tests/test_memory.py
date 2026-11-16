@@ -851,10 +851,11 @@ def test_a_turn_with_memory_recalls_into_the_prompt_and_remembers_only_the_quest
     (request,) = h.agentcore.requests
     # The harness has no memory: it gets the sentinel, never the person's actor.
     assert request["actorId"] == SENTINEL_ACTOR
-    first, question = request["messages"][-1]["content"]
+    first, question, clock = request["messages"][-1]["content"]
     assert first["text"].startswith("<mango_memory>")
     assert "- Se llama Ana" in first["text"]
     assert question == {"text": "¿Cómo me llamo?"}
+    assert clock["text"].startswith("Current time (UTC): ")
     assert "Se llama Ana" not in request["systemPrompt"][0]["text"]
     (event,) = fake.written
     assert event["actorId"] == actor
