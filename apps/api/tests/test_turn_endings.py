@@ -937,3 +937,19 @@ def test_a_first_turn_whose_settlement_fails_was_answered_and_gets_its_title(
 
     monkeypatch.setattr(env.budgets, "settle_turn", broken)
     assert _titled(env, lambda: [TEXT, END, CALL])
+
+
+@pytest.mark.parametrize(
+    ("reply", "title"),
+    [
+        ("Gasto de AWS este mes", "Gasto de AWS este mes"),
+        ('"Gasto de AWS"', "Gasto de AWS"),
+        ("# Consulta AWS: logs y Config\n\nNo puedo ejecutar eso.", "Consulta AWS: logs y Config"),
+        ("\n**Instancias RDS**\n", "Instancias RDS"),
+        ("«Costos por cuenta»", "Costos por cuenta"),
+        ("x" * 100, "x" * 80),
+        ("   \n  ", ""),
+    ],
+)
+def test_the_title_is_the_first_line_of_the_reply_without_markdown(reply: str, title: str) -> None:
+    assert turns_module.clean_title(reply) == title

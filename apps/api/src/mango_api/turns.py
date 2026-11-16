@@ -599,6 +599,13 @@ def auxiliary_price(services: Services) -> ModelPrice:
     return settings.model_prices[settings.auxiliary_model]
 
 
+def clean_title(text: str) -> str:
+    """The title in the auxiliary model's reply: its first line, without Markdown marks or
+    quotes. Asked for the title only, it has answered with a heading and a paragraph."""
+    line = next((line for line in text.splitlines() if line.strip()), "")
+    return line.strip().lstrip("#>*-_ ").rstrip("*_ ").strip().strip("\"'«»“”").strip()[:80]
+
+
 def generate_title(
     services: Services,
     *,
@@ -625,7 +632,7 @@ def generate_title(
             messages=[{"role": "user", "content": [{"text": first_message[:1000]}]}],
             inferenceConfig={"maxTokens": 30, "temperature": 0},
         )
-        title = resp["output"]["message"]["content"][0]["text"].strip().strip('"')[:80]
+        title = clean_title(resp["output"]["message"]["content"][0]["text"])
         usage = Usage.from_bedrock(resp.get("usage", {}))
         spend = cost(usage, auxiliary_price(services))
         services.budgets.charge(scopes, spend, period, counters, day)
