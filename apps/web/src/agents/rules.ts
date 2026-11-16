@@ -37,7 +37,10 @@ const UNWORDED: ReadonlySet<string> = new Set<RuleCode>([
   'code_interpreter_unavailable',
   'tool_name_too_long',
 ]);
-export type WordedRuleCode = Exclude<RuleCode, 'code_interpreter_unavailable' | 'tool_name_too_long'>;
+export type WordedRuleCode = Exclude<
+  RuleCode,
+  'code_interpreter_unavailable' | 'tool_name_too_long'
+>;
 
 const KNOWN: ReadonlySet<string> = new Set(RULE_CODES);
 
