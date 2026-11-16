@@ -23,6 +23,7 @@ from mango_api.model_catalog import ModelCatalog
 from mango_api.skills_store import SkillVersion
 from mango_core.agents import ROOT_SUPERVISOR, AgentDefinition, dumps_definition
 from mango_core.groups import GroupDef
+from mango_core.harness_tools import ALLOWED_TOOL_MAX, allowed_tool
 from mango_core.knowledge import Status as KnowledgeStatus
 
 MAX_DRAFTS = 20
@@ -179,6 +180,16 @@ def _tools(definition: AgentDefinition, ctx: RuleContext) -> list[Violation]:
     unavailable = tuple(ref for ref, tool in resolved.items() if tool is None or not tool.enabled)
     if unavailable:
         out.append(Violation("tool_not_enabled", "tools", unavailable))
+    # The harness takes no allow-list entry longer than its limit: such a tool would fail the
+    # agent's publication, after its review.
+    too_long = tuple(
+        ref
+        for ref, tool in resolved.items()
+        if tool is not None
+        and len(allowed_tool(tool.server.gateway_target, tool.tool.name)) > ALLOWED_TOOL_MAX
+    )
+    if too_long:
+        out.append(Violation("tool_name_too_long", "tools", too_long))
     stray = tuple(ref for ref in definition.approval_tools if ref not in resolved)
     if stray:
         out.append(Violation("approval_tool_not_selected", "approval_tools", stray))

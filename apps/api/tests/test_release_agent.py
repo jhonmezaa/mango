@@ -24,7 +24,7 @@ from mango_core.agents import (
     verify_content,
 )
 from mango_core.groups import GroupDef
-from mango_core.harness_tools import allowed_tool
+from mango_core.harness_tools import ALLOWED_TOOL_MAX, allowed_tool
 from mango_core.identity import user_from_claims
 
 from .cedar_fake import CedarPolicyStore
@@ -185,9 +185,6 @@ def test_sre_and_dba_only_read_account_packs(agent_id: str) -> None:
                 assert served.get(tool) == "read", ref
 
 
-# AgentCore's `allowedTools` takes entries of at most 64 characters (HarnessAllowedTool): a
-# longer one fails CreateHarness with a ValidationException (seen on 2026-11-14 with SRE).
-HARNESS_ALLOWED_TOOL_MAX = 64
 RELEASE_AGENTS = ("finops", "sre", "dba")
 
 
@@ -196,7 +193,7 @@ def test_release_agent_tools_fit_the_harness_allow_list(agent_id: str) -> None:
     for ref in release_definition(agent_id, MODEL).tools:
         target, _, tool = ref.partition(".")
         entry = allowed_tool(target, tool)
-        assert len(entry) <= HARNESS_ALLOWED_TOOL_MAX, entry
+        assert len(entry) <= ALLOWED_TOOL_MAX, entry
 
 
 @pytest.mark.parametrize("agent_id", sorted(ACCOUNT_PACKS))

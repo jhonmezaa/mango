@@ -12,6 +12,10 @@ GATEWAY_MCP_SERVER = "mango"
 """Name of the Gateway MCP server in a harness (``remote_mcp`` tool)."""
 _TARGET_SEPARATOR = "___"
 
+ALLOWED_TOOL_MAX = 64
+"""Longest ``allowedTools`` entry AgentCore takes (``HarnessAllowedTool``). A longer one fails
+``CreateHarness`` with a ``ValidationException`` and no message (seen on 2026-11-14)."""
+
 KNOWLEDGE_TARGET = "knowledge"
 """Gateway target of the ``knowledge-retrieve`` tool (D88 (14)): a Mango connector."""
 KNOWLEDGE_TOOL = "retrieve"

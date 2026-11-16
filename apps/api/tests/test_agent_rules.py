@@ -32,6 +32,8 @@ CONNECTORS = Path(__file__).parents[3] / "connectors"
 SONNET = "us.anthropic.claude-sonnet-4-6"
 HAIKU = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 SELF = "abcdefghijklmnop"
+LONG_TOOL = "list_attribute_definitions_of_every_service_in_x"
+"""``@mango/pricing___`` plus this name is 65 characters: one more than the harness takes."""
 
 GROUPS = {
     group.id: group
@@ -94,7 +96,7 @@ def _ctx(org: Org | None = None, models: tuple[ModelEntry, ...] | None = None) -
     catalog = McpCatalog(
         [
             *release.connectors,
-            _connector("pricing", "public", "service", get_products="read"),
+            _connector("pricing", "public", "service", get_products="read", **{LONG_TOOL: "read"}),
             _connector("cloudwatch", "account_data", "central_only", describe_alarms="read"),
             _connector("ec2-ops", "write", "service", describe="read", stop_instances="write"),
         ]
@@ -318,6 +320,15 @@ def test_tools_must_exist_in_the_enabled_catalog() -> None:
     assert violations == [
         Violation("tool_not_enabled", "tools", ("cost-explorer.drop_everything", "sap.get"))
     ]
+
+
+def test_tools_must_fit_the_harness_allow_list() -> None:
+    """A tool whose ``allowedTools`` entry passes 64 characters would fail the publication."""
+    long_ref = f"pricing.{LONG_TOOL}"
+    violations = validate_for_review(
+        SELF, _definition(tools=["pricing.get_products", long_ref]), _ctx()
+    )
+    assert violations == [Violation("tool_name_too_long", "tools", (long_ref,))]
 
 
 def test_write_tools_must_be_marked_for_approval() -> None:
