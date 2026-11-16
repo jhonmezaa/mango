@@ -171,7 +171,7 @@ Cambiar el rol es cambiar IAM en **todas** las cuentas miembro (StackSet de `Org
 
 Falta ver:
 
-- que cada acción acotada por ARN autoriza la llamada real, sobre todo `logs:GetQueryResults` sobre `log-group` y las de Performance Insights sobre `metrics/rds/*`: **visto el 2026-11-16** para `StartQuery`/`GetQueryResults` y `GetResourceMetrics`; `ListAvailableResourceMetrics` queda por ver con la `0.1.0-3`;
+- que cada acción acotada por ARN autoriza la llamada real, sobre todo `logs:GetQueryResults` sobre `log-group` y las de Performance Insights sobre `metrics/rds/*`: **visto el 2026-11-16** para `StartQuery`/`GetQueryResults` y `GetResourceMetrics`; `ListAvailableResourceMetrics`, con la `0.1.0-3`, también (139 métricas de una instancia PostgreSQL, en páginas de 25);
 - que cada pack lee una cuenta miembro por la cadena `member`, con la persona en el CloudTrail de esa cuenta;
 - que la guardia rellena la región;
 - los límites de logs con datos reales, que el enmascaramiento sin `Unmask` se mantiene y el costo real de una consulta: **visto el 2026-11-16** el límite de 24 horas por consulta (el agente lo respeta y propone ventanas) y el costo (un día de un log group de Lambda escaneó 590 bytes; a USD 0,005 por GB, una consulta del tope cuesta centavos aun en un log group grande); el enmascaramiento queda por ver;
