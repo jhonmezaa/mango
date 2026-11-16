@@ -3,7 +3,7 @@
 # propio»). Threat model: docs/security/threat-models/aws-rds-pack-threat-model.md.
 schema_version: 1
 id: aws-rds
-version: "0.1.0-2" # <code version>-<Mango revision>
+version: "0.1.0-3" # <code version>-<Mango revision>
 name: AWS RDS
 description: RDS and Aurora of the organization's member accounts, read in the account each question names. Instances, clusters, events, modified parameters, pending maintenance, snapshots, Performance Insights (tokenized SQL only) and the tail of database log files. Central users only.
 

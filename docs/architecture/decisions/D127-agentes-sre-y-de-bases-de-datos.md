@@ -27,7 +27,7 @@
 | `aws-application-signals` | `0.2.1-1`, `awslabs.cloudwatch-applicationsignals-mcp-server` 0.2.1 | 16 tools de lectura: servicios, SLOs y SLIs, dependencias, cambios, grupos, auditorías, canarios y trazas de X-Ray | `application-signals`, `xray`, `synthetics` |
 | `aws-elasticache` | `0.2.2-1`, `awslabs.elasticache-mcp-server` 0.2.2 (0.2.3 no cumplía la cuarentena; el código es el mismo) | 7 tools de lectura de clústeres, grupos de replicación, cachés serverless, eventos, versiones del motor, parámetros por defecto y actualizaciones de servicio | `elasticache` |
 | `aws-ops` | `0.1.0-1`, código propio ([D126](D126-packs-de-codigo-propio.md)) | 15 tools: EC2 (instancias y su estado), Auto Scaling (grupos y actividades), ELB (load balancers, target groups y salud de los targets), ECS (clústeres, servicios y sus eventos, despliegues y tareas paradas), CloudFormation (stacks y sus eventos) y Config (historial de un recurso) | `ec2`, `autoscaling`, `elasticloadbalancing`, `ecs`, `cloudformation`, `config` |
-| `aws-rds` | `0.1.0-2` (la `-1` no se pudo habilitar: ver punto 10), código propio ([D126](D126-packs-de-codigo-propio.md)) | 12 tools: instancias y clústeres, eventos, parámetros cambiados, mantenimiento pendiente, snapshots, Performance Insights (métricas y mayores contribuyentes a la carga, con SQL **tokenizado**) y logs de la base (punto 5) | `rds`, `pi` |
+| `aws-rds` | `0.1.0-3` (la `-1` no se pudo habilitar y la `-3` corrige el tamaño de página de Performance Insights: ver punto 10), código propio ([D126](D126-packs-de-codigo-propio.md)) | 12 tools: instancias y clústeres, eventos, parámetros cambiados, mantenimiento pendiente, snapshots, Performance Insights (métricas y mayores contribuyentes a la carga, con SQL **tokenizado**) y logs de la base (punto 5) | `rds`, `pi` |
 
 Lo que cada pack deja fuera, y por qué, lo dice su manifiesto:
 
@@ -167,12 +167,14 @@ Cambiar el rol es cambiar IAM en **todas** las cuentas miembro (StackSet de `Org
 - los 13 endpoints existen en us-east-1 y todos admiten política de endpoint; `application-signals` no está en `use1-az2`, una zona de AgentCore, y su endpoint va solo en la subnet de la otra zona (D54, `missingZoneIds`);
 - con seis packs de la cadena `member`, la confianza del `ReadBroker` pasaba de los 2.048 caracteres de IAM: `AssumeRole` y `SetSourceIdentity` comparten una declaración con la lista de llamantes, y `TagSession` va aparte sin la lista, porque STS la autoriza sin `sts:SourceIdentity` (excepción en `AGENTS.md`, elegida por el dueño);
 - al habilitar `aws-rds` `0.1.0-1`, el Gateway descartó `tail_db_log_file`, cuyo esquema tenía un `pattern` con repeticiones anidadas, y la política Cedar del pack falló con «unrecognized action»: la `0.1.0-2` usa un patrón plano y el resto lo comprueba la tool.
+- con datos reales (2026-11-16), Logs Insights (`StartQuery` y `GetQueryResults` acotados por ARN), el historial de AWS Config y la carga de Performance Insights respondieron en las cuentas miembro; `list_performance_metrics` falló con `ValidationException`: Performance Insights admite como mucho 25 resultados por página y el pack pedía 500 (botocore solo comprueba el mínimo). La `0.1.0-3` pide 25.
 
 Falta ver:
 
-- que cada acción acotada por ARN autoriza la llamada real, sobre todo `logs:GetQueryResults` sobre `log-group` y las de Performance Insights sobre `metrics/rds/*`;
+- que cada acción acotada por ARN autoriza la llamada real, sobre todo `logs:GetQueryResults` sobre `log-group` y las de Performance Insights sobre `metrics/rds/*`: **visto el 2026-11-16** para `StartQuery`/`GetQueryResults` y `GetResourceMetrics`; `ListAvailableResourceMetrics` queda por ver con la `0.1.0-3`;
 - que cada pack lee una cuenta miembro por la cadena `member`, con la persona en el CloudTrail de esa cuenta;
 - que la guardia rellena la región;
-- los límites de logs con datos reales, que el enmascaramiento sin `Unmask` se mantiene y el costo real de una consulta;
-- que Config y Performance Insights están activos en las cuentas del cliente: sin ellos, esas tools responden vacío;
+- los límites de logs con datos reales, que el enmascaramiento sin `Unmask` se mantiene y el costo real de una consulta: **visto el 2026-11-16** el límite de 24 horas por consulta (el agente lo respeta y propone ventanas) y el costo (un día de un log group de Lambda escaneó 590 bytes; a USD 0,005 por GB, una consulta del tope cuesta centavos aun en un log group grande); el enmascaramiento queda por ver;
+- que Config y Performance Insights están activos en las cuentas del cliente: sin ellos, esas tools responden vacío. **Visto el 2026-11-16:** Config registra en la cuenta consultada (historial de una instancia EC2) y la única instancia RDS de las seis cuentas tiene Performance Insights (7 días);
+- que el agente sabe la hora: el harness le da la fecha, no la hora, y pidió a Logs Insights una ventana que aún no había pasado (2026-11-16); con la hora en el mensaje acertó;
 - cómo se siembran los dos agentes en una instalación que no tiene sus packs: **resuelto el 2026-11-14**, la versión queda `failed` hasta un `retry`, sin cambiar el provisioner (punto 1).

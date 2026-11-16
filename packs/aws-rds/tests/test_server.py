@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import boto3
+import botocore.session
 import pytest
 import yaml
 from aws_rds import curate, server
@@ -478,13 +479,21 @@ def test_available_metrics(aws: Clients) -> None:
             "ServiceType": "RDS",
             "Identifier": RESOURCE_ID,
             "MetricTypes": ["os", "db"],
-            "MaxResults": 500,
+            "MaxResults": 25,
         },
     )
     answer = server.list_performance_metrics("orders-db-1", region=REGION)
     assert answer["metrics"] == [
         {"metric": "db.load.avg", "unit": "Sessions", "description": "load"}
     ]
+
+
+def test_performance_insights_pages_fit_what_aws_takes() -> None:
+    """botocore checks only the minimum of ``MaxResults``: AWS refuses more than its maximum."""
+    model = botocore.session.get_session().get_service_model("pi")
+    for operation in ("ListAvailableResourceMetrics", "DescribeDimensionKeys"):
+        shape = model.operation_model(operation).input_shape.members["MaxResults"]
+        assert shape.metadata["max"] >= server.PI_PAGE, operation
 
 
 # --- Database log files ---

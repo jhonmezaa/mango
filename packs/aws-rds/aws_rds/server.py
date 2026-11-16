@@ -58,6 +58,9 @@ PI_PERIODS = (60, 300, 3600, 86400)
 PI_MAX_POINTS = 360
 PI_MAX_METRICS = 10
 PI_STATEMENT = 2000
+PI_PAGE = 25  # the most results a Performance Insights page holds (MaxResults); botocore
+# checks only the minimum, so a larger one reaches AWS and fails there (seen on 2026-11-16)
+PI_METRIC_PAGES = 20  # an engine lists a few hundred metrics at most
 LOG_LINES = 200
 LOG_LINE_BYTES = 2048
 LOG_BYTES = 256 * 1024
@@ -740,12 +743,12 @@ def list_performance_metrics(
     try:
         items: list[Mapping[str, Any]] = []
         token: str | None = None
-        for _ in range(MAX_PAGES):
+        for _ in range(PI_METRIC_PAGES):
             page = pi.list_available_resource_metrics(
                 ServiceType="RDS",
                 Identifier=resource,
                 MetricTypes=list(dict.fromkeys(metric_types)),
-                MaxResults=500,
+                MaxResults=PI_PAGE,
                 **({"NextToken": token} if token else {}),
             )
             items.extend(page.get("Metrics") or [])
@@ -844,7 +847,7 @@ def get_top_load_contributors(
     end_hours_ago: Annotated[
         int, Field(ge=0, le=PI_HOURS - 1, description="Window end, in hours before now.")
     ] = 0,
-    max_items: Annotated[int, Field(ge=1, le=25, description="Most items to return.")] = 10,
+    max_items: Annotated[int, Field(ge=1, le=PI_PAGE, description="Most items to return.")] = 10,
     region: Region = None,
 ) -> dict[str, Any]:
     """Top contributors to the database load (db.load.avg) of a DB instance in a window, from
