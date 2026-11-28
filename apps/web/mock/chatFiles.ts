@@ -36,7 +36,10 @@ interface MockChatFile {
 }
 
 const files = new Map<string, MockChatFile>();
-/** Names whose first upload already failed («falla»), so «Reintentar» goes through. */
+/**
+ * Files («falla») whose first upload already failed, so «Reintentar» goes through. By
+ * conversation and name: another chat (a test run again against the same server) fails again.
+ */
 const failedOnce = new Set<string>();
 
 const kindOf = (name: string) => {
@@ -209,8 +212,9 @@ export async function handleChatFilesS3(
     res.end();
     return true;
   }
-  if (/falla/i.test(file.name) && !failedOnce.has(file.name)) {
-    failedOnce.add(file.name);
+  const once = `${file.conversationId}/${file.name}`;
+  if (/falla/i.test(file.name) && !failedOnce.has(once)) {
+    failedOnce.add(once);
     res.statusCode = 500;
     res.end();
     return true;

@@ -105,6 +105,9 @@ test.describe('Chat attachments', () => {
 
   test('a failed upload is retried, and past 20 files the rest stay out', async () => {
     await pushRoute(page, '/');
+    // The new chat first: a file attached while the previous chat is still on screen goes to its
+    // composer, which drops it when the new chat renders.
+    await expect(page.locator('.msg-user')).toHaveCount(0);
     await page.locator('input[type="file"]').setInputFiles([file('cur_falla.csv')]);
     const chip = page.locator('.composer-box .cr-chip').first();
     await expect(chip).toContainText('No se pudo subir');
@@ -130,6 +133,7 @@ test.describe('Chat attachments', () => {
     await expect(page).toHaveURL(/\/c\/[0-9a-f]{32}$/);
     await expect(page.locator('.composer-box .cr-chip')).toHaveCount(0);
     await pushRoute(page, '/');
+    await expect(page.locator('.msg-user')).toHaveCount(0);
     await expect(page.locator('.composer-box .cr-chip')).toHaveCount(0);
     // Built in the page (the e2e have no DOM types): one CSV, as a drag from the desktop.
     const transfer = await page.evaluateHandle(`(() => {
