@@ -9,6 +9,6 @@ packages:
 # TypeScript stays on 6.0.x: typescript-eslint supports `typescript <6.1.0`.
 catalog:
   typescript: 6.0.3
-  "@types/node": 26.6.5
-  vitest: 5.0.5
+  "@types/node": 26.6.6
+  vitest: 5.1.0
   zod: 4.6.7

@@ -91,7 +91,7 @@ await build({
     emptyOutDir: true,
     target: 'es2022',
     minify: true,
-    rollupOptions: {
+    rolldownOptions: {
       input: reactInput,
       preserveEntrySignatures: 'strict',
       output: { format: 'es', entryFileNames: '[name].mjs', chunkFileNames: 'shared-[hash].mjs' },
@@ -130,7 +130,7 @@ await build({
     emptyOutDir: true,
     target: 'es2022',
     minify: true,
-    rollupOptions: {
+    rolldownOptions: {
       input: { recharts: rechartsEntry },
       preserveEntrySignatures: 'strict',
       output: { format: 'es', entryFileNames: '[name].mjs', chunkFileNames: 'recharts-[hash].mjs' },

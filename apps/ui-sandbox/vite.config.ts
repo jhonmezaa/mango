@@ -10,7 +10,7 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: false,
-    rollupOptions: { input: 'sandbox.html' },
+    rolldownOptions: { input: 'sandbox.html' },
   },
   worker: { format: 'iife' },
   test: {

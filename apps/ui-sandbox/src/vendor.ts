@@ -7,8 +7,8 @@
  */
 export const VENDOR_VERSIONS = {
   react: '18.3.1',
-  recharts: '3.8.1',
-  babel: '8.1.1',
+  recharts: '3.10.1',
+  babel: '8.1.2',
   tailwind: '4.3.5',
   pyodide: '0.26.4',
 } as const;
