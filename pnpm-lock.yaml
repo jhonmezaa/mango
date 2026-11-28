@@ -92,8 +92,8 @@ importers:
         specifier: workspace:*
         version: link:../ui-sandbox
       i18next:
-        specifier: 26.5.2
-        version: 26.5.2(typescript@6.0.3)
+        specifier: 27.0.1
+        version: 27.0.1(typescript@6.0.3)
       oidc-client-ts:
         specifier: 3.5.0
         version: 3.5.0
@@ -107,8 +107,8 @@ importers:
         specifier: 19.3.1
         version: 19.3.1(react@19.3.1)
       react-i18next:
-        specifier: 17.1.0
-        version: 17.1.0(i18next@26.5.2(typescript@6.0.3))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3)
+        specifier: 18.0.1
+        version: 18.0.1(@types/react@19.3.0)(i18next@27.0.1(typescript@6.0.3))(react@19.3.1)(typescript@6.0.3)
       react-markdown:
         specifier: 10.1.0
         version: 10.1.0(@types/react@19.3.0)(react@19.3.1)
@@ -1689,8 +1689,9 @@ packages:
   html-url-attributes@3.0.1:
     resolution: {integrity: sha512-ol6UPyBWqsrO6EJySPz2O7ZSr856WDrEzM5zMqp+FJJLGMW35cLYmmZnl0vztAZxRUoNZJFTCohfjuIJ8I4QBQ==}
 
-  i18next@26.5.2:
-    resolution: {integrity: sha512-6fIXt//2MZNok3tULyjnypxe3vbsy3pV1bVg8p2x3yKrzZvp7z3T+wXx/88LQsATRdhyJeAUAvUxEtxsHdJ29w==}
+  i18next@27.0.1:
+    resolution: {integrity: sha512-KaE5ozP8UUeVpOJIwMVbbnpRKpyYQuxd9ZbseJoDzezE3nvLnZZQn20pkzyIJwPI2Uet/Qs3WzPTG812f6F/Eg==}
+    engines: {node: '>=22'}
     peerDependencies:
       typescript: ^5 || ^6 || ^7
     peerDependenciesMeta:
@@ -2283,18 +2284,16 @@ packages:
     peerDependencies:
       react: ^19.3.1
 
-  react-i18next@17.1.0:
-    resolution: {integrity: sha512-4VouOnTDyvhvqXx6WZ+s3/cgSiaLutILdYkO3P1Ms+4qcKR7At+JP4Vi7IeHkVLyVV+DmN1l23Pn73UcwSGGPA==}
+  react-i18next@18.0.1:
+    resolution: {integrity: sha512-kPWXI0E/lrPj3+/umcKNzYZVnWmEedLiamMzDIHfbs+5ANf6yzvlZsjKou8f7kaGkfMMDLIZBejV+4aSN1CyBw==}
+    engines: {node: '>=22'}
     peerDependencies:
-      i18next: '>= 26.2.0'
-      react: '>= 16.8.0'
-      react-dom: '*'
-      react-native: '*'
+      '@types/react': '*'
+      i18next: '>= 27.0.1'
+      react: '>= 18.0.0'
       typescript: ^5 || ^6 || ^7
     peerDependenciesMeta:
-      react-dom:
-        optional: true
-      react-native:
+      '@types/react':
         optional: true
       typescript:
         optional: true
@@ -4043,7 +4042,7 @@ snapshots:
 
   html-url-attributes@3.0.1: {}
 
-  i18next@26.5.2(typescript@6.0.3):
+  i18next@27.0.1(typescript@6.0.3):
     optionalDependencies:
       typescript: 6.0.3
 
@@ -4772,15 +4771,13 @@ snapshots:
       react: 19.3.1
       scheduler: 0.28.0
 
-  react-i18next@17.1.0(i18next@26.5.2(typescript@6.0.3))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3):
+  react-i18next@18.0.1(@types/react@19.3.0)(i18next@27.0.1(typescript@6.0.3))(react@19.3.1)(typescript@6.0.3):
     dependencies:
-      '@babel/runtime': 7.29.10
       html-parse-stringify: 4.0.1
-      i18next: 26.5.2(typescript@6.0.3)
+      i18next: 27.0.1(typescript@6.0.3)
       react: 19.3.1
-      use-sync-external-store: 1.7.0(react@19.3.1)
     optionalDependencies:
-      react-dom: 19.3.1(react@19.3.1)
+      '@types/react': 19.3.0
       typescript: 6.0.3
 
   react-is@17.0.2: {}
@@ -5081,10 +5078,6 @@ snapshots:
   use-sync-external-store@1.7.0(react@18.3.1):
     dependencies:
       react: 18.3.1
-
-  use-sync-external-store@1.7.0(react@19.3.1):
-    dependencies:
-      react: 19.3.1
 
   verkit@0.5.0: {}
 

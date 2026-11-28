@@ -55,7 +55,7 @@ describe('adminErrorKey', () => {
       'audit_unavailable',
     ]) {
       const key = adminErrorKey(new ApiError(400, code, 'x'));
-      expect(i18n.t(key)).not.toBe(key);
+      expect(i18n.t(key, { when: 'x' })).not.toBe(key);
     }
   });
 

@@ -36,7 +36,9 @@ function isForbidden(error: unknown): boolean {
  * another change of administrators in progress; on a change applied at once, `version_conflict`
  * is the administrators having changed meanwhile, and trying again is the answer too.
  */
-export function peopleErrorKey(error: unknown): PeopleErrorKey {
+export function peopleErrorKey(
+  error: unknown,
+): Exclude<PeopleErrorKey, `people.errors.approve.${ApproveRefusal}`> {
   const code = apiErrorCode(error);
   if (code === 'last_admins') return 'people.errors.last_admins';
   if (code === 'busy' || code === 'version_conflict') return 'people.errors.busy';
