@@ -20,7 +20,7 @@ Controles construidos (en el punto de entrada y el manifiesto firmado):
 - **Solo la cuenta de la llamada.** Un manejador `before-parameter-build` en todos los clientes del servidor (y en la sesión por defecto, para los que cree después) pone `IncludeLinkedAccounts=false` en toda operación que lo tenga y rechaza, antes de firmar, una petición que nombre otra cuenta (`AwsAccountId`, `SloOwnerAwsAccountId`, `AccountId` en cualquier nivel). La cuenta de la sesión se pregunta a STS (`GetCallerIdentity`, sin permisos) solo cuando una petición nombra alguna. `include_linked_accounts` no se lista y la guardia lo quita.
 - **Sin auditor `log`.** `ListAuditFindings` siempre lleva la lista de auditores, nunca `log`; pedir solo `log` se rechaza con un mensaje fijo.
 - **Sin logs en disco ni de upstream.** `AUDITOR_LOG_PATH=/dev/null` antes de importar y durante toda la vida del proceso; se quitan todos los destinos de loguru (el de por defecto antes de importar y los del servidor después). Solo queda `pack.call` (D16).
-- **Entorno limpio.** Se borran `MCP_*` (overrides de endpoints y el user agent), `FASTMCP_*`, `AWS_PROFILE` y cualquier `AUDITOR_LOG_PATH` heredado. `AWS_REGION` = `MANGO_PACK_REGION`: todos los clientes son de la región de la instalación.
+- **Entorno limpio.** Se borran `MCP_*` (overrides de endpoints y el user agent), `FASTMCP_*`, `AWS_PROFILE` y cualquier `AUDITOR_LOG_PATH` heredado. `AWS_REGION` = `MANGO_PACK_REGION`: todos los clientes son de la región de la instalación. Después el punto de entrada fija un solo override, `MCP_APPLICATIONSIGNALS_ENDPOINT` = `https://application-signals.<región>.api.aws` (desde la `0.2.1-2`): el DNS privado del endpoint de VPC de Application Signals solo publica ese nombre, y botocore construye el cliente con `amazonaws.com`. El host sale solo de la región de la instalación, validada como región de la partición `aws` (si no, el pack no arranca), nunca de un argumento. Al arrancar, el pack comprueba que ese cliente va ahí y que ningún otro va a un nombre `api.aws` (si no, no arranca).
 - **`tools/list` independiente de la instalación:** el `region` de `list_canaries` y `list_change_events` no lista su valor por defecto (la región del proceso que lista), así que el `tools_hash` firmado vale en cualquier región.
 - **16 tools, 18 acciones exactas de lectura** (session policy de cada llamada). Quedan fuera las 30 tools restantes, con motivo en el manifiesto.
 
@@ -97,7 +97,7 @@ flowchart LR
 | `auditors` | Modelo → upstream → AWS | `all` = todos (incluido `log`) | `audit_utils.py:394-424` |
 | `region` | Modelo → guardia → upstream | Acotado por la guardia; los clientes son de la región de la instalación de todos modos | `server.py:1625`, `change_tools.py:366` |
 | `AUDITOR_LOG_PATH`, sumidero de loguru | Upstream → disco | `/dev/null`, sumideros quitados | `server.py:97-117`, `audit_utils.py:37-165` |
-| `MCP_*_ENDPOINT` | Entorno → upstream | Borrados | `aws_clients.py:62-89` |
+| `MCP_*_ENDPOINT` | Entorno → upstream | Borrados; `MCP_APPLICATIONSIGNALS_ENDPOINT` lo fija el punto de entrada desde la región validada | `aws_clients.py:62-89` |
 | Descripciones de las tools | Upstream → modelo | Mencionan tools que no se sirven (`get_service_health_overview`, `analyze_canary_failures`) | `tools.snapshot.json` |
 
 ## Top abuse paths
@@ -106,7 +106,7 @@ flowchart LR
 2. **Otra cuenta en un objetivo de auditoría.** `service_targets` con `AwsAccountId` de una cuenta enlazada → el manejador compara con la cuenta de la sesión y rechaza antes de firmar; el modelo recibe el mensaje fijo.
 3. **Logs por la auditoría.** `auditors: "all"` o `"log"` → el manejador quita `log` (o rechaza si era el único).
 4. **Argumentos en disco.** Cada auditoría escribiría su payload en `aws_api.log` → va a `/dev/null`; el sumidero de loguru no queda.
-5. **Endpoint ajeno por el entorno.** `MCP_APPLICATIONSIGNALS_ENDPOINT` → borrado antes de importar; además la red de packs solo alcanza los endpoints declarados.
+5. **Endpoint ajeno por el entorno.** `MCP_APPLICATIONSIGNALS_ENDPOINT` → borrado antes de importar y reescrito con el nombre dual-stack de la región de la instalación (nada que venga del entorno o del modelo); además la red de packs solo alcanza los endpoints declarados y su DNS Firewall solo resuelve sus nombres exactos (para Application Signals, `application-signals.<región>.api.aws`).
 6. **Tools fuera del manifiesto.** El modelo, guiado por una descripción, llama `get_service_health_overview` → el servidor no la tiene; la guardia la rechaza.
 7. **Instrucciones en datos.** Una anotación de traza o un nombre de servicio con instrucciones → el agente solo tiene tools de lectura.
 

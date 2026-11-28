@@ -57,7 +57,11 @@ export const PACK_EGRESS_SERVICES: Record<
   cloudtrail: { endpoint: "cloudtrail", names: (region) => [`cloudtrail.${region}.amazonaws.com`] },
   "application-signals": {
     endpoint: "application-signals",
-    names: (region) => [`application-signals.${region}.amazonaws.com`],
+    // The private DNS of this endpoint publishes only the dual-stack name (and its `-fips`
+    // one), not `amazonaws.com` (seen 2026-11-27): the pack points its client here
+    // (packs/aws-application-signals/entrypoint.py), and botocore's default name would only
+    // resolve to the public endpoint, which the pack network does not reach.
+    names: (region) => [`application-signals.${region}.api.aws`],
     // Offered in use1-az1, use1-az4 and use1-az6 (2026-11-14): not in use1-az2, a zone of
     // AgentCore. Creating the endpoint with a subnet there fails and rolls the stack back.
     missingZoneIds: ["use1-az2"],

@@ -3,7 +3,7 @@
 # threat-models/aws-application-signals-pack-threat-model.md.
 schema_version: 1
 id: aws-application-signals
-version: "0.2.1-1" # <upstream version>-<Mango revision>
+version: "0.2.1-2" # <upstream version>-<Mango revision>
 name: AWS Application Signals
 description: Services, operations, dependencies, SLOs, change events and audits of CloudWatch Application Signals, X-Ray traces by id and Synthetics canaries, read in the member account each question names. No log events. Central users only.
 
@@ -90,7 +90,12 @@ egress:
 #   No log file and no upstream log records: the server opens a loguru file sink at import
 #     and appends the parameters and the full response of every audit to a second file
 #     (AUDITOR_LOG_PATH, set to /dev/null before importing; every loguru sink removed after).
-#   MCP_* variables (endpoint overrides) and AWS_PROFILE are removed before importing.
+#   MCP_* variables (endpoint overrides) and AWS_PROFILE are removed before importing. Then
+#     the entry point sets one, MCP_APPLICATIONSIGNALS_ENDPOINT, to the dual-stack name of the
+#     installation's Region (https://application-signals.<region>.api.aws): the private DNS
+#     of that VPC endpoint publishes no other name, and botocore builds the client with
+#     amazonaws.com (0.2.1-2). Every other client keeps botocore's name; the pack does not
+#     start if a client goes elsewhere.
 #   `region` (list_canaries, list_change_events) stays, held to the installation's Region by
 #     the common entry point; its listed default (the Region of the build) is not listed.
 #

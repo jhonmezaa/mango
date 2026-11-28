@@ -26,10 +26,15 @@ What this file changes of the upstream server:
   (no log content, D55 (3));
 * every client of the server is built for the installation's Region, the only one the pack
   network reaches, and the ``region`` arguments do not list the Region of the build as their
-  default (``tools/list`` must be the same in every installation).
+  default (``tools/list`` must be the same in every installation);
+* the Application Signals client, and only that one, goes to the service's dual-stack name
+  (``application-signals.<region>.api.aws``): the private DNS of its VPC endpoint publishes
+  no other, while botocore builds it with ``amazonaws.com``. The name comes from the
+  installation's Region alone, never from a call.
 """
 
 import os
+import re
 
 # Read by the server (`AWS_PROFILE`: other credentials; `MCP_*_ENDPOINT`: other endpoints;
 # `MCP_RUN_FROM`: its user agent) and by the MCP SDK (its settings) at import time. Nothing
@@ -42,6 +47,30 @@ for _name in list(os.environ):
 # installation's Region is what the provisioner names: the pack network has no other.
 if _region := os.environ.get("MANGO_PACK_REGION"):
     os.environ["AWS_REGION"] = _region
+
+# A Region of the `aws` partition, the only one whose dual-stack names end in `api.aws`.
+_REGION_RE = re.compile(r"(?!cn-|us-gov-|us-iso)[a-z]{2}(-[a-z]+)+-[0-9]{1,2}", re.ASCII)
+APPLICATION_SIGNALS_ENDPOINT_ENV = "MCP_APPLICATIONSIGNALS_ENDPOINT"
+
+
+def application_signals_endpoint(region: str | None) -> str:
+    """Where the server's Application Signals client goes: the dual-stack name of the Region.
+
+    The interface endpoint ``com.amazonaws.<region>.application-signals`` publishes only
+    ``application-signals.<region>.api.aws`` (and its ``-fips`` name) in its private DNS, and
+    the pack network has no route anywhere else. Every other client keeps botocore's
+    ``amazonaws.com`` name, the one their endpoints publish (STS has no dual-stack name there).
+    """
+    if region is None or not _REGION_RE.fullmatch(region):
+        raise SystemExit("the pack needs the installation's Region (MANGO_PACK_REGION)")
+    return f"https://application-signals.{region}.api.aws"
+
+
+# Read by upstream when it builds the client at import (`aws_clients`), set after every MCP_*
+# variable of the environment was removed: the only endpoint override the server sees.
+os.environ[APPLICATION_SIGNALS_ENDPOINT_ENV] = application_signals_endpoint(
+    os.environ.get("AWS_REGION")
+)
 # Where the server's log sink and the audit payloads go: nowhere. Read at import (the sink)
 # and on every audit call (the payload file), so it stays set for the life of the process.
 os.environ["AUDITOR_LOG_PATH"] = os.devnull
@@ -179,6 +208,25 @@ def hold_to_the_call_account() -> None:
 
 
 hold_to_the_call_account()
+
+
+def only_application_signals_dual_stack() -> None:
+    """Fail closed at start if the server's clients do not go where the pack network leads:
+    Application Signals to its dual-stack name, every other client to botocore's own name
+    (an upstream version that stops reading the override, or applies it to other clients)."""
+    expected = os.environ[APPLICATION_SIGNALS_ENDPOINT_ENV]
+    for name, value in vars(aws_clients).items():
+        if not isinstance(value, BaseClient):
+            continue
+        url = value.meta.endpoint_url
+        if value.meta.service_model.service_name == "application-signals":
+            if url != expected:
+                raise SystemExit(f"upstream client {name} no longer goes to {expected}")
+        elif url.endswith(".api.aws"):
+            raise SystemExit(f"upstream client {name} goes to a dual-stack name: {url}")
+
+
+only_application_signals_dual_stack()
 
 # Arguments whose listed default would be the Region of the process that lists them.
 REGION_ARG = "region"

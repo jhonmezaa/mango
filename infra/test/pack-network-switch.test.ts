@@ -183,6 +183,22 @@ describe("pack network switched per pack (D54, proposed 2026-11-13)", () => {
     expect(domains(now).join()).not.toContain("ec2.");
   });
 
+  it("resolves Application Signals by its dual-stack name, the only one its endpoint publishes", () => {
+    const now = deployed(after, ["PackAwsApplicationSignalsNetwork"]);
+    const added = domains(now).filter((name) => !domains(deployed(before)).includes(name));
+    expect(added).toEqual(
+      [
+        `application-signals.${REGION}.api.aws.`,
+        `synthetics.${REGION}.amazonaws.com.`,
+        `xray.${REGION}.amazonaws.com.`,
+      ].sort(),
+    );
+    // Only that service: every other name of the network is botocore's own `amazonaws.com`.
+    const all = deployed(after, ["PackAwsOpsNetwork", "PackAwsApplicationSignalsNetwork", "PackAwsRdsNetwork"]);
+    expect(domains(all).filter((name) => name.endsWith(".api.aws."))).toEqual([`application-signals.${REGION}.api.aws.`]);
+    expect(domains(all).join()).not.toContain("application-signals.us-east-1.amazonaws.com");
+  });
+
   it("keeps an endpoint two switched packs share while either is on", () => {
     const xray = (on: string[]) => endpoints(deployed(after, on)).includes("xray");
     expect(xray([])).toBe(false);
